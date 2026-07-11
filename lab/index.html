@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Performance Lab | Krystian Zybała</title>
+  <meta name="description" content="Interactive visualisations of false sharing, SPSC ring buffers and JVM JIT compilation.">
+  <link rel="canonical" href="https://kzybala.pl/lab/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Performance Lab | Krystian Zybała">
+  <meta property="og:description" content="Interactive visualisations of false sharing, SPSC ring buffers and JVM JIT compilation.">
+  <meta property="og:url" content="https://kzybala.pl/lab/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero compact prose">
+  <p class="eyebrow">Performance Lab</p>
+  <h1>Interactive models of runtime behaviour.</h1>
+  <p class="lead">These are conceptual visualisations, not cycle-accurate CPU simulators. Their purpose is to expose the mechanics clearly enough that the abstraction stops lying by omission.</p>
+</section>
+
+<section class="section">
+  <div class="lab-shell">
+    <nav class="lab-nav" aria-label="Performance lab modules">
+      <button class="active" data-lab-target="false-sharing">False sharing</button>
+      <button data-lab-target="ring-buffer">SPSC ring buffer</button>
+      <button data-lab-target="jit-pipeline">JIT pipeline</button>
+    </nav>
+
+    <div class="lab-stage">
+      <section id="false-sharing" class="lab-view active">
+        <p class="eyebrow">Cache coherence</p>
+        <h2>False sharing</h2>
+        <p class="lead">Two independent counters occupy the same cache line. Every write invalidates the other core's copy, because silicon remains stubbornly literal.</p>
+        <div class="cpu-grid">
+          <div class="cpu" data-cpu="0">
+            <span class="cpu-label">CPU 0 · state: <b data-state>Modified</b></span>
+            <div class="cache-line">
+              <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell hot"></span>
+              <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+            </div>
+          </div>
+          <div class="cpu" data-cpu="1">
+            <span class="cpu-label">CPU 1 · state: <b data-state>Invalid</b></span>
+            <div class="cache-line">
+              <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+              <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+            </div>
+          </div>
+        </div>
+        <div class="coherence-bus"></div>
+        <div class="control-row">
+          <button class="control primary" data-coherence-step>Write from the other core</button>
+          <span class="counter">Observe Modified → Invalid ownership transfer</span>
+        </div>
+      </section>
+
+      <section id="ring-buffer" class="lab-view">
+        <p class="eyebrow">Lock-free structures</p>
+        <h2>SPSC ring buffer</h2>
+        <p class="lead">A bounded single-producer, single-consumer queue needs ownership discipline more than a heroic number of atomics.</p>
+        <div class="ring">
+          <span class="slot" style="--angle:0deg">0</span>
+          <span class="slot" style="--angle:45deg">1</span>
+          <span class="slot" style="--angle:90deg">2</span>
+          <span class="slot" style="--angle:135deg">3</span>
+          <span class="slot" style="--angle:180deg">4</span>
+          <span class="slot" style="--angle:225deg">5</span>
+          <span class="slot" style="--angle:270deg">6</span>
+          <span class="slot" style="--angle:315deg">7</span>
+          <div class="ring-center"><span>head <b data-head>0</b><br>tail <b data-tail>0</b><br>size <b data-size>0</b></span></div>
+        </div>
+        <div class="ring-controls">
+          <button class="control primary" data-produce>Produce</button>
+          <button class="control" data-consume>Consume</button>
+          <span class="counter">capacity = 8</span>
+        </div>
+      </section>
+
+      <section id="jit-pipeline" class="lab-view">
+        <p class="eyebrow">HotSpot</p>
+        <h2>JIT compilation pipeline</h2>
+        <p class="lead">The source is only the first draft. Runtime profiling and speculative optimisation decide what eventually executes.</p>
+        <div class="jit-flow">
+          <div class="jit-node">Java source</div>
+          <div class="jit-node">Bytecode</div>
+          <div class="jit-node">Interpreter</div>
+          <div class="jit-node">C1 + profiling</div>
+          <div class="jit-node">C2 machine code</div>
+        </div>
+        <button class="control primary" data-jit-step>Advance compilation state</button>
+        <div class="callout"><strong>Remember:</strong> inlining, escape analysis and devirtualisation depend on code shape and profile stability. “The JIT will optimise it” is not a design.</div>
+      </section>
+    </div>
+  </div>
+</section>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+  </div>
+  <p class="footer-note">Static, fast and deliberately framework-free. The browser remains capable of rendering documents without a dependency graph resembling a municipal budget.</p>
+</footer>
+
+</body>
+</html>

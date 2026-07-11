@@ -4,17 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Krystian Zybała | JVM Performance & Low-Latency Systems</title>
-  <meta name="description" content="Principal JVM Performance Engineer and Low-Latency Systems Architect specialising in runtime engineering, concurrency and financial systems.">
+  <meta name="description" content="Principal JVM Performance Engineer specialising in runtime engineering, low-latency concurrency and financial systems.">
   <link rel="canonical" href="https://kzybala.pl/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Krystian Zybała | JVM Performance & Low-Latency Systems">
-  <meta property="og:description" content="Principal JVM Performance Engineer and Low-Latency Systems Architect specialising in runtime engineering, concurrency and financial systems.">
+  <meta property="og:description" content="Principal JVM Performance Engineer specialising in runtime engineering, low-latency concurrency and financial systems.">
   <meta property="og:url" content="https://kzybala.pl/">
   <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/css/styles.css">
-  
   <script defer src="/assets/js/main.js"></script>
 </head>
 <body>
@@ -29,23 +28,39 @@
     <a href="/engineering.html">Engineering</a>
     <a href="/articles/">Articles</a>
     <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
     <a href="/research.html">Research</a>
     <a href="/talks.html">Talks</a>
     <a href="/consulting.html">Consulting</a>
-    <a href="/resume/">Resume</a>
     <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
   </div>
 </nav>
 </header>
   <main id="content">
 <section class="hero">
-  <p class="eyebrow">Principal JVM Performance Engineer</p>
-  <h1>Making complex systems fast, predictable and difficult to embarrass.</h1>
-  <p class="lead">I design and optimize latency-sensitive financial platforms, JVM runtimes and event-driven systems. My work spans architecture, JIT behaviour, memory allocation, concurrency, CPU caches and the operating system underneath the comforting abstractions.</p>
-  <div class="hero-actions">
-    <a class="button primary" href="/case-studies/">Explore case studies</a>
-    
-    <a class="button" href="mailto:kzybalaa@gmail.com">Contact</a>
+  <div class="hero-grid">
+    <div>
+      <p class="eyebrow">Principal JVM Performance Engineer</p>
+      <h1>Building <span class="gradient-text">predictable systems</span> beneath the framework layer.</h1>
+      <p class="lead">I design and optimise latency-sensitive financial platforms, JVM runtimes and event-driven systems. My work spans architecture, JIT behaviour, memory allocation, concurrency, CPU caches and the operating system beneath the convenient abstractions.</p>
+      <div class="hero-actions">
+        <a class="button primary" href="/lab/">Enter Performance Lab</a>
+        <a class="button" href="/case-studies/">Explore case studies</a>
+        <a class="button ghost" href="mailto:contact@kzybala.pl">Contact</a>
+      </div>
+    </div>
+    <aside class="runtime-panel" aria-label="Runtime pipeline visualisation">
+      <div class="panel-top"><span>runtime://hot-path</span><span class="status">● deterministic</span></div>
+      <div class="pipeline">
+        <div class="pipeline-node active">UDP / QUIC ingest</div>
+        <div class="pipeline-node">fixed-layout decode</div>
+        <div class="pipeline-node">thread-per-core compute</div>
+        <div class="pipeline-node">lock-free publication</div>
+        <div class="pipeline-node">binary response</div>
+      </div>
+      <div class="latency-readout"><strong data-latency>7.4</strong><span>µs simulated path</span></div>
+    </aside>
   </div>
 </section>
 
@@ -58,37 +73,49 @@
 
 <section class="section">
   <div class="section-heading">
-    <div><p class="eyebrow">What I work on</p><h2>Engineering below the framework layer</h2></div>
-    <p>Frameworks are occasionally useful. They are not a substitute for understanding what the CPU, runtime and operating system are actually doing.</p>
+    <div><p class="eyebrow">Engineering domains</p><h2>Performance across the execution stack</h2></div>
+    <p>The fastest code is rarely produced by staring harder at a service method. Architecture, ownership, allocation and hardware behaviour have an irritating habit of mattering.</p>
   </div>
-  <div class="grid three">
-    <article class="card"><p class="meta">01 / JVM RUNTIME</p><h3>JIT, GC and allocation</h3><p>HotSpot internals, C1/C2 behaviour, escape analysis, safepoints, object lifetime and allocation elimination.</p><div class="tags"><span class="tag">JIT</span><span class="tag">GC</span><span class="tag">JFR</span></div></article>
-    <article class="card"><p class="meta">02 / CONCURRENCY</p><h3>Predictable parallelism</h3><p>Java Memory Model, VarHandles, lock-free algorithms, contention analysis, cache coherence and false sharing.</p><div class="tags"><span class="tag">JMM</span><span class="tag">SPSC</span><span class="tag">ARM/x86</span></div></article>
-    <article class="card"><p class="meta">03 / LOW LATENCY</p><h3>Deterministic data paths</h3><p>Zero-allocation hot paths, off-heap memory, custom binary protocols, UDP, QUIC and Rust components.</p><div class="tags"><span class="tag">FFM</span><span class="tag">Rust</span><span class="tag">zero-copy</span></div></article>
-  </div>
-</section>
-
-<section class="section">
-  <div class="section-heading">
-    <div><p class="eyebrow">Selected work</p><h2>Case studies</h2></div>
-    <p>Sanitised examples of real engineering problems. No confidential internals, no miraculous benchmark folklore.</p>
-  </div>
-  <div class="grid three">
-    <a class="card" href="/case-studies/parallel-payment-engine.html"><p class="meta">PAYMENT ENGINE</p><h3>From tens of seconds to four</h3><p>Parallel execution, allocation control and a 75% reduction in memory use.</p></a>
-    <a class="card" href="/case-studies/lock-free-infrastructure.html"><p class="meta">SHARED INFRASTRUCTURE</p><h3>Replacing synchronized contention</h3><p>Lock-free, near zero-allocation infrastructure for a high-volume financial platform.</p></a>
-    <a class="card" href="/case-studies/in-memory-decision-runtime.html"><p class="meta">DECISION PLATFORM</p><h3>From database-bound to CPU-bound</h3><p>In-memory computation reduced processing time and infrastructure expenditure.</p></a>
+  <div class="grid four">
+    <article class="card icon-card"><span class="icon">JIT</span><h3>Runtime engineering</h3><p>C1/C2, inlining, escape analysis, deoptimisation, safepoints and generated-code verification.</p></article>
+    <article class="card icon-card"><span class="icon">JMM</span><h3>Concurrency</h3><p>VarHandles, acquire/release, SPSC/MPSC structures, lock contention and cache coherence.</p></article>
+    <article class="card icon-card"><span class="icon">MEM</span><h3>Memory</h3><p>Allocation elimination, FFM, MemorySegment, fixed layouts and deterministic lifetimes.</p></article>
+    <article class="card icon-card"><span class="icon">SYS</span><h3>Systems</h3><p>Linux perf, NUMA, CPU affinity, ARM/x86, UDP, QUIC, shared memory and Rust.</p></article>
   </div>
 </section>
 
 <section class="section">
   <div class="section-heading">
-    <div><p class="eyebrow">Engineering notes</p><h2>Latest articles</h2></div>
-    <p>Short, technical writing about runtime behaviour and performance work that survives contact with production.</p>
+    <div><p class="eyebrow">Interactive learning</p><h2>Performance Lab</h2></div>
+    <p>Small visual models for concepts that are usually explained with three paragraphs, a dubious analogy and avoidable suffering.</p>
   </div>
   <div class="grid three">
-    <a class="card" href="/articles/zero-allocation-is-not-a-goal.html"><p class="meta">MEMORY</p><h3>Zero allocation is not the goal</h3><p>Determinism matters more than a slogan printed on a benchmark chart.</p></a>
-    <a class="card" href="/articles/lock-free-can-be-slower.html"><p class="meta">CONCURRENCY</p><h3>Lock-free can be slower</h3><p>Progress guarantees do not automatically produce lower latency.</p></a>
-    <a class="card" href="/articles/jit-friendly-hot-paths.html"><p class="meta">JIT</p><h3>Designing JIT-friendly hot paths</h3><p>Why giant methods, unstable call sites and allocation noise hurt predictable execution.</p></a>
+    <a class="card" href="/lab/#false-sharing"><p class="meta">CACHE COHERENCE</p><h3>False sharing visualiser</h3><p>Step through invalidation traffic as two cores write to one cache line.</p></a>
+    <a class="card" href="/lab/#ring-buffer"><p class="meta">LOCK-FREE</p><h3>SPSC ring buffer</h3><p>Move producer and consumer cursors through a bounded queue.</p></a>
+    <a class="card" href="/lab/#jit-pipeline"><p class="meta">HOTSPOT</p><h3>JIT compilation path</h3><p>Follow Java source through bytecode, profiling, C1 and C2.</p></a>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-heading">
+    <div><p class="eyebrow">Selected work</p><h2>Engineering case studies</h2></div>
+    <p>Sanitised examples built around problem, evidence, design and result. No confidential internals and no miraculous benchmark folklore.</p>
+  </div>
+  <div class="grid three">
+    <a class="card" href="/case-studies/parallel-payment-engine.html"><p class="meta">PAYMENT ENGINE</p><h3>30–50 seconds to ~4 seconds</h3><p>Parallel execution, allocation control and a 75% reduction in memory use.</p></a>
+    <a class="card" href="/case-studies/lock-free-infrastructure.html"><p class="meta">SHARED INFRASTRUCTURE</p><h3>Replacing synchronized contention</h3><p>Lock-free, near zero-allocation infrastructure for a high-volume platform.</p></a>
+    <a class="card" href="/case-studies/in-memory-decision-runtime.html"><p class="meta">DECISION PLATFORM</p><h3>Database-bound to CPU-bound</h3><p>In-memory computation reduced latency and infrastructure expenditure.</p></a>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-heading">
+    <div><p class="eyebrow">Guided curriculum</p><h2>Performance Academy</h2></div>
+    <p>A structured route from measurement fundamentals to runtime architecture. Not a “become principal in fourteen days” funnel. The universe has enough of those.</p>
+  </div>
+  <div class="grid two">
+    <a class="card" href="/academy/"><p class="meta">LEVELS 01–03</p><h3>Measure, understand, optimise</h3><p>Profiling, benchmarking, JVM internals, memory, concurrency and CPU-aware design.</p></a>
+    <a class="card" href="/academy/"><p class="meta">LEVELS 04–05</p><h3>Architect for predictable latency</h3><p>Execution models, state ownership, bounded work, networking and production validation.</p></a>
   </div>
 </section>
 </main>
@@ -99,11 +126,11 @@
     <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
   </div>
   <div class="footer-links">
-    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="mailto:contact@kzybala.pl">Contact</a>
     <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
-    <a href="/resume/">Resume</a>
+    <a href="/lab/">Performance Lab</a>
   </div>
-  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+  <p class="footer-note">Static, fast and deliberately framework-free. The browser remains capable of rendering documents without a dependency graph resembling a municipal budget.</p>
 </footer>
 
 </body>

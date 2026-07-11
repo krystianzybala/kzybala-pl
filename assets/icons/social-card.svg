@@ -1,9 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-<rect width="1200" height="630" fill="#0b0f14"/>
-<circle cx="1050" cy="-40" r="340" fill="#16202d"/>
-<circle cx="120" cy="640" r="330" fill="#102923"/>
-<text x="90" y="210" font-family="Arial, sans-serif" font-size="42" fill="#53d6c7">KRYSTIAN ZYBAŁA</text>
-<text x="90" y="310" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#e8eef6">JVM Performance</text>
-<text x="90" y="395" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#e8eef6">Low-Latency Systems</text>
-<text x="90" y="490" font-family="Arial, sans-serif" font-size="30" fill="#9aacbd">Runtime engineering · concurrency · architecture</text>
+<defs>
+  <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#070b10"/>
+    <stop offset="1" stop-color="#13202e"/>
+  </linearGradient>
+  <radialGradient id="r">
+    <stop stop-color="#2dd4bf" stop-opacity=".32"/>
+    <stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#g)"/>
+<circle cx="1040" cy="80" r="380" fill="url(#r)"/>
+<g opacity=".14" stroke="#9cafc2"><path d="M0 90h1200M0 180h1200M0 270h1200M0 360h1200M0 450h1200M0 540h1200"/><path d="M100 0v630M200 0v630M300 0v630M400 0v630M500 0v630M600 0v630M700 0v630M800 0v630M900 0v630M1000 0v630M1100 0v630"/></g>
+<text x="90" y="145" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#65ead5">KRYSTIAN ZYBAŁA</text>
+<text x="90" y="270" font-family="Arial, sans-serif" font-size="76" font-weight="800" fill="#eef6ff">JVM Performance</text>
+<text x="90" y="365" font-family="Arial, sans-serif" font-size="76" font-weight="800" fill="#eef6ff">Low-Latency Systems</text>
+<text x="90" y="470" font-family="Arial, sans-serif" font-size="28" fill="#9cafc2">Runtime engineering · concurrency · mechanical sympathy</text>
+<rect x="90" y="520" width="235" height="4" rx="2" fill="#65ead5"/>
 </svg>

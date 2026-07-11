@@ -1,79 +1,54 @@
-# kzybala.pl
+# kzybala.pl premium
 
-Static personal engineering site for Krystian Zybała.
+A static engineering platform for JVM performance, low-latency systems and runtime engineering.
 
-## Stack
+## Included
 
-- plain HTML
-- plain CSS
-- minimal vanilla JavaScript
-- GitHub Pages
-- custom domain: `kzybala.pl`
-
-No build step is required.
+- premium responsive design
+- dark and light themes
+- interactive Performance Lab:
+  - false sharing visualiser
+  - SPSC ring buffer model
+  - JVM JIT pipeline
+- Performance Academy roadmap
+- existing articles and anonymised case studies
+- SEO metadata, sitemap and social card
+- GitHub Pages deployment workflow
+- no public resume download
+- no build system or framework dependency
 
 ## Local preview
-
-From the repository root:
 
 ```bash
 python3 -m http.server 8080
 ```
 
-Open:
+Open `http://localhost:8080`.
 
-```text
-http://localhost:8080
+## Deployment
+
+Replace the files in the current `kzybala-pl` repository with this package and push to `main`.
+
+```bash
+git add .
+git commit -m "Upgrade kzybala.pl to premium engineering platform"
+git push
 ```
 
-Do not open `index.html` directly from the filesystem because root-relative links are intended to behave like a real website.
+The existing GitHub Pages workflow deploys automatically.
 
-## GitHub Pages deployment
+## Contact address
 
-1. Create a **public** repository, for example `kzybala-pl`.
-2. Upload all files from this directory to the repository root.
-3. Push to the `main` branch.
-4. Open **Settings → Pages**.
-5. Under **Build and deployment**, choose **GitHub Actions**.
-6. Wait for the `Deploy static site to GitHub Pages` workflow to complete.
-7. In **Settings → Pages → Custom domain**, enter `kzybala.pl`.
-8. After DNS validation, enable **Enforce HTTPS**.
-
-## DNS for home.pl
-
-Configure the apex domain:
+The site uses:
 
 ```text
-@   A   185.199.108.153
-@   A   185.199.109.153
-@   A   185.199.110.153
-@   A   185.199.111.153
+contact@kzybala.pl
 ```
 
-Configure `www`:
+Change it globally before publishing if the mailbox is not ready.
 
-```text
-www   CNAME   <YOUR-GITHUB-USERNAME>.github.io
-```
+## Important
 
-Replace `<YOUR-GITHUB-USERNAME>` with the actual GitHub username.
+The interactive laboratory contains conceptual educational models. It does not claim cycle-accurate simulation.
 
-The repository contains a `CNAME` file with:
-
-```text
-kzybala.pl
-```
-
-## Updating the CV
-
-Replace:
-
-```text
-assets/cv/Krystian_Zybala_CV.pdf
-```
-
-Keep the same filename so existing links continue to work.
-
-## Content safety
-
-The case studies are deliberately sanitised. Review all public numbers and wording against contractual confidentiality obligations before publishing.
+Review all case-study numbers against contractual confidentiality obligations before publishing.
