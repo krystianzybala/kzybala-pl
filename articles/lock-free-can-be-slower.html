@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lock-free can be slower | Krystian Zybała</title>
+  <meta name="description" content="Progress guarantees do not automatically produce lower latency.">
+  <link rel="canonical" href="https://kzybala.pl/articles/lock-free-can-be-slower.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Lock-free can be slower | Krystian Zybała">
+  <meta property="og:description" content="Progress guarantees do not automatically produce lower latency.">
+  <meta property="og:url" content="https://kzybala.pl/articles/lock-free-can-be-slower.html">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <meta property="og:type" content="article">
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero prose">
+  <p class="eyebrow">Concurrency</p>
+  <h1>Lock-free can be slower</h1>
+  <p class="lead">Progress guarantees do not automatically produce lower latency.</p>
+</section>
+<article class="section prose">
+<h2>Lock-free is a property, not a performance result</h2>
+<p>A lock-free algorithm guarantees system-wide progress. It says nothing about cache-line ping-pong, failed CAS loops, fairness or tail latency under contention.</p>
+<p>A well-designed single-writer model can outperform an impressive lock-free structure because it avoids shared writes altogether. The fastest atomic operation remains the one you did not need.</p>
+<h2>Common failure modes</h2>
+<ul>
+  <li>multiple producers hammering the same cache line,</li>
+  <li>CAS retry storms under bursty load,</li>
+  <li>incorrect memory ordering stronger than required,</li>
+  <li>complex reclamation strategies dominating the useful work.</li>
+</ul>
+<h2>Choose the execution model first</h2>
+<p>Define ownership, communication direction and boundedness before selecting atomics. SPSC queues, thread-per-core execution and batching often solve the actual problem with less coherence traffic.</p>
+</article>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Parallel payment engine | Krystian Zybała</title>
+  <meta name="description" content="A file-processing workflow required too much memory and took tens of seconds. The solution was not another queue, another broker or a larger heap.">
+  <link rel="canonical" href="https://kzybala.pl/case-studies/parallel-payment-engine.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Parallel payment engine | Krystian Zybała">
+  <meta property="og:description" content="A file-processing workflow required too much memory and took tens of seconds. The solution was not another queue, another broker or a larger heap.">
+  <meta property="og:url" content="https://kzybala.pl/case-studies/parallel-payment-engine.html">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero prose">
+  <p class="eyebrow">Payment processing</p>
+  <h1>Parallel payment engine</h1>
+  <p class="lead">A file-processing workflow required too much memory and took tens of seconds. The solution was not another queue, another broker or a larger heap.</p>
+</section>
+<section class="section"><div class="grid three"><div class="card"><div class="metric">30–50s → ~4s</div><div class="metric-label">Processing</div></div><div class="card"><div class="metric">10GB → ~2.5GB</div><div class="metric-label">Memory</div></div><div class="card"><div class="metric">~75% RAM</div><div class="metric-label">Reduction</div></div></div></section>
+<article class="section prose">
+<h2>Problem</h2>
+<p>The workload processed large settlement files through an allocation-heavy execution model. Memory demand exceeded the practical limit and processing time varied between roughly thirty and fifty seconds.</p>
+<h2>Investigation</h2>
+<p>Profiling showed excessive intermediate objects, avoidable copying and insufficient use of CPU parallelism. The limiting factor was the execution model, not Kafka throughput or storage bandwidth.</p>
+<h2>Design</h2>
+<ul>
+  <li>introduced a dedicated parallel compute engine,</li>
+  <li>partitioned work into independent CPU-bound units,</li>
+  <li>removed high-volume temporary allocations,</li>
+  <li>reworked data structures for better locality and bounded memory use.</li>
+</ul>
+<h2>Outcome</h2>
+<p>Processing fell to approximately four seconds and memory demand to about 2.5GB. The important result was not merely throughput. The workload became easier to size, reason about and operate.</p>
+</article>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>

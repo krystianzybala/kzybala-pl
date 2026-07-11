@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Articles | Krystian Zybała</title>
+  <meta name="description" content="Engineering articles about JVM performance, concurrency, JIT compilation and low-latency design.">
+  <link rel="canonical" href="https://kzybala.pl/articles/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Articles | Krystian Zybała">
+  <meta property="og:description" content="Engineering articles about JVM performance, concurrency, JIT compilation and low-latency design.">
+  <meta property="og:url" content="https://kzybala.pl/articles/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero prose">
+  <p class="eyebrow">Engineering notes</p>
+  <h1>Articles about performance without benchmark astrology.</h1>
+  <p class="lead">Notes on JVM internals, concurrency, measurement and low-latency architecture.</p>
+</section>
+<section class="section">
+  <div class="grid three">
+    <a class="card" href="/articles/zero-allocation-is-not-a-goal.html"><p class="meta">MEMORY</p><h3>Zero allocation is not the goal</h3><p>What matters is bounded, predictable allocation behaviour and its effect on the workload.</p></a>
+    <a class="card" href="/articles/lock-free-can-be-slower.html"><p class="meta">CONCURRENCY</p><h3>Lock-free can be slower</h3><p>Why progress guarantees, contention patterns and cache traffic matter more than labels.</p></a>
+    <a class="card" href="/articles/jit-friendly-hot-paths.html"><p class="meta">JIT</p><h3>Designing JIT-friendly hot paths</h3><p>Method size, stable call sites, inlining budgets and avoiding accidental polymorphism.</p></a>
+  </div>
+</section>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>

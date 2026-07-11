@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://kzybala.pl/sitemap.xml

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Systems Research | Krystian Zybała</title>
+  <meta name="description" content="Independent research into deterministic runtimes using Java, Rust, FFM, UDP, QUIC, shared memory and lock-free data structures.">
+  <link rel="canonical" href="https://kzybala.pl/research.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Systems Research | Krystian Zybała">
+  <meta property="og:description" content="Independent research into deterministic runtimes using Java, Rust, FFM, UDP, QUIC, shared memory and lock-free data structures.">
+  <meta property="og:url" content="https://kzybala.pl/research.html">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero prose">
+  <p class="eyebrow">Selected systems research</p>
+  <h1>Deterministic runtime architecture without a framework-shaped safety blanket.</h1>
+  <p class="lead">An independent, long-running engineering programme exploring microsecond-scale processing, explicit memory control and predictable execution across Java and Rust.</p>
+</section>
+<section class="section">
+  <div class="grid three">
+    <div class="card"><p class="meta">EXECUTION</p><h3>Thread per core</h3><p>Shared-nothing execution, bounded work, deterministic scheduling and explicit ownership of mutable state.</p></div>
+    <div class="card"><p class="meta">TRANSPORT</p><h3>UDP, QUIC and IPC</h3><p>Fixed-layout wire formats, low-copy ingest, shared memory and transport choices based on failure semantics rather than fashion.</p></div>
+    <div class="card"><p class="meta">MEMORY</p><h3>FFM and Rust</h3><p>Off-heap data layouts in Java, selected Rust components, arenas and deterministic object lifetimes.</p></div>
+  </div>
+</section>
+<section class="section prose">
+  <h2>Research principles</h2>
+  <ul>
+    <li><strong>Bounded work:</strong> hot paths avoid unbounded queues, surprise blocking and accidental retries.</li>
+    <li><strong>Explicit ownership:</strong> state placement and write authority are defined before concurrency primitives are chosen.</li>
+    <li><strong>Mechanical sympathy:</strong> data layout, cache lines and memory ordering are part of the design.</li>
+    <li><strong>Framework-free core:</strong> deterministic runtime paths do not depend on reflective containers or database calls.</li>
+    <li><strong>Evidence over mythology:</strong> every optimisation must survive measurement across latency percentiles.</li>
+  </ul>
+</section>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>

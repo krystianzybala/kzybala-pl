@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Krystian Zybała | JVM Performance & Low-Latency Systems</title>
+  <meta name="description" content="Principal JVM Performance Engineer and Low-Latency Systems Architect specialising in runtime engineering, concurrency and financial systems.">
+  <link rel="canonical" href="https://kzybala.pl/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Krystian Zybała | JVM Performance & Low-Latency Systems">
+  <meta property="og:description" content="Principal JVM Performance Engineer and Low-Latency Systems Architect specialising in runtime engineering, concurrency and financial systems.">
+  <meta property="og:url" content="https://kzybala.pl/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero">
+  <p class="eyebrow">Principal JVM Performance Engineer</p>
+  <h1>Making complex systems fast, predictable and difficult to embarrass.</h1>
+  <p class="lead">I design and optimize latency-sensitive financial platforms, JVM runtimes and event-driven systems. My work spans architecture, JIT behaviour, memory allocation, concurrency, CPU caches and the operating system underneath the comforting abstractions.</p>
+  <div class="hero-actions">
+    <a class="button primary" href="/case-studies/">Explore case studies</a>
+    
+    <a class="button" href="mailto:kzybalaa@gmail.com">Contact</a>
+  </div>
+</section>
+
+<section class="signal-strip" aria-label="Selected engineering impact">
+  <div class="signal"><strong>10×+</strong><span>faster payment workload</span></div>
+  <div class="signal"><strong>75%</strong><span>lower memory footprint</span></div>
+  <div class="signal"><strong>90%</strong><span>lower infrastructure cost</span></div>
+  <div class="signal"><strong>10+ yrs</strong><span>financial and runtime systems</span></div>
+</section>
+
+<section class="section">
+  <div class="section-heading">
+    <div><p class="eyebrow">What I work on</p><h2>Engineering below the framework layer</h2></div>
+    <p>Frameworks are occasionally useful. They are not a substitute for understanding what the CPU, runtime and operating system are actually doing.</p>
+  </div>
+  <div class="grid three">
+    <article class="card"><p class="meta">01 / JVM RUNTIME</p><h3>JIT, GC and allocation</h3><p>HotSpot internals, C1/C2 behaviour, escape analysis, safepoints, object lifetime and allocation elimination.</p><div class="tags"><span class="tag">JIT</span><span class="tag">GC</span><span class="tag">JFR</span></div></article>
+    <article class="card"><p class="meta">02 / CONCURRENCY</p><h3>Predictable parallelism</h3><p>Java Memory Model, VarHandles, lock-free algorithms, contention analysis, cache coherence and false sharing.</p><div class="tags"><span class="tag">JMM</span><span class="tag">SPSC</span><span class="tag">ARM/x86</span></div></article>
+    <article class="card"><p class="meta">03 / LOW LATENCY</p><h3>Deterministic data paths</h3><p>Zero-allocation hot paths, off-heap memory, custom binary protocols, UDP, QUIC and Rust components.</p><div class="tags"><span class="tag">FFM</span><span class="tag">Rust</span><span class="tag">zero-copy</span></div></article>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-heading">
+    <div><p class="eyebrow">Selected work</p><h2>Case studies</h2></div>
+    <p>Sanitised examples of real engineering problems. No confidential internals, no miraculous benchmark folklore.</p>
+  </div>
+  <div class="grid three">
+    <a class="card" href="/case-studies/parallel-payment-engine.html"><p class="meta">PAYMENT ENGINE</p><h3>From tens of seconds to four</h3><p>Parallel execution, allocation control and a 75% reduction in memory use.</p></a>
+    <a class="card" href="/case-studies/lock-free-infrastructure.html"><p class="meta">SHARED INFRASTRUCTURE</p><h3>Replacing synchronized contention</h3><p>Lock-free, near zero-allocation infrastructure for a high-volume financial platform.</p></a>
+    <a class="card" href="/case-studies/in-memory-decision-runtime.html"><p class="meta">DECISION PLATFORM</p><h3>From database-bound to CPU-bound</h3><p>In-memory computation reduced processing time and infrastructure expenditure.</p></a>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-heading">
+    <div><p class="eyebrow">Engineering notes</p><h2>Latest articles</h2></div>
+    <p>Short, technical writing about runtime behaviour and performance work that survives contact with production.</p>
+  </div>
+  <div class="grid three">
+    <a class="card" href="/articles/zero-allocation-is-not-a-goal.html"><p class="meta">MEMORY</p><h3>Zero allocation is not the goal</h3><p>Determinism matters more than a slogan printed on a benchmark chart.</p></a>
+    <a class="card" href="/articles/lock-free-can-be-slower.html"><p class="meta">CONCURRENCY</p><h3>Lock-free can be slower</h3><p>Progress guarantees do not automatically produce lower latency.</p></a>
+    <a class="card" href="/articles/jit-friendly-hot-paths.html"><p class="meta">JIT</p><h3>Designing JIT-friendly hot paths</h3><p>Why giant methods, unstable call sites and allocation noise hurt predictable execution.</p></a>
+  </div>
+</section>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>

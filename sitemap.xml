@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://kzybala.pl/</loc></url>
+  <url><loc>https://kzybala.pl/engineering.html</loc></url>
+  <url><loc>https://kzybala.pl/research.html</loc></url>
+  <url><loc>https://kzybala.pl/talks.html</loc></url>
+  <url><loc>https://kzybala.pl/consulting.html</loc></url>
+  <url><loc>https://kzybala.pl/articles/</loc></url>
+  <url><loc>https://kzybala.pl/articles/zero-allocation-is-not-a-goal.html</loc></url>
+  <url><loc>https://kzybala.pl/articles/lock-free-can-be-slower.html</loc></url>
+  <url><loc>https://kzybala.pl/articles/jit-friendly-hot-paths.html</loc></url>
+  <url><loc>https://kzybala.pl/case-studies/</loc></url>
+  <url><loc>https://kzybala.pl/case-studies/parallel-payment-engine.html</loc></url>
+  <url><loc>https://kzybala.pl/case-studies/lock-free-infrastructure.html</loc></url>
+  <url><loc>https://kzybala.pl/case-studies/in-memory-decision-runtime.html</loc></url>
+</urlset>

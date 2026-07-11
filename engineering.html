@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Engineering | Krystian Zybała</title>
+  <meta name="description" content="JVM runtime engineering, low-latency concurrency, memory, CPU-aware architecture and distributed financial systems.">
+  <link rel="canonical" href="https://kzybala.pl/engineering.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Engineering | Krystian Zybała">
+  <meta property="og:description" content="JVM runtime engineering, low-latency concurrency, memory, CPU-aware architecture and distributed financial systems.">
+  <meta property="og:url" content="https://kzybala.pl/engineering.html">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero prose">
+  <p class="eyebrow">Engineering</p>
+  <h1>Performance work across the entire execution stack.</h1>
+  <p class="lead">The useful boundary is rarely “the Java code”. Latency emerges from architecture, allocation, compilation, contention, cache topology, kernel behaviour and workload shape conspiring together like a committee.</p>
+</section>
+<section class="section">
+  <div class="grid two">
+    <div class="card"><p class="meta">RUNTIME ENGINEERING</p><h3>HotSpot and JIT behaviour</h3><p>C1/C2 compilation, inlining, escape analysis, deoptimisation, safepoints, code shape and profiling feedback.</p></div>
+    <div class="card"><p class="meta">MEMORY</p><h3>Allocation and object lifetime</h3><p>Allocation-rate analysis, GC pressure, off-heap memory, FFM API, MemorySegment and deterministic lifetime control.</p></div>
+    <div class="card"><p class="meta">CONCURRENCY</p><h3>JMM and lock-free design</h3><p>VarHandles, acquire/release semantics, SPSC/MPSC structures, contention reduction, cache-line padding and false sharing.</p></div>
+    <div class="card"><p class="meta">CPU & OS</p><h3>Hardware-aware execution</h3><p>Linux perf, CPU affinity, NUMA, IRQ affinity, ARM/x86 differences, cache coherence and data locality.</p></div>
+    <div class="card"><p class="meta">DISTRIBUTED SYSTEMS</p><h3>Financial runtime architecture</h3><p>Event sourcing, payment ledgers, compute engines, in-memory processing, Kafka-backed systems and consistency-sensitive workflows.</p></div>
+    <div class="card"><p class="meta">SYSTEMS PROGRAMMING</p><h3>Java and Rust hot paths</h3><p>Binary protocols, UDP, QUIC, shared-memory IPC, zero-copy transport and carefully contained unsafe code.</p></div>
+  </div>
+</section>
+<section class="section prose">
+  <h2>Performance toolchain</h2>
+  <p><strong>Production and runtime analysis:</strong> async-profiler, Java Flight Recorder, Datadog Profiler, Linux perf, flamegraphs and JITWatch.</p>
+  <p><strong>Controlled measurement:</strong> JMH, perf stat, perf record, perfasm and allocation profiling.</p>
+  <p><strong>Method:</strong> establish the workload, measure distributions rather than averages, isolate the limiting resource, validate causality and re-measure under representative load. Revolutionary, apparently.</p>
+</section>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>

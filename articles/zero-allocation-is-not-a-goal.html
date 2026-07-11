@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Zero allocation is not the goal | Krystian Zybała</title>
+  <meta name="description" content="Predictability matters more than turning an optimisation technique into a religion.">
+  <link rel="canonical" href="https://kzybala.pl/articles/zero-allocation-is-not-a-goal.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Zero allocation is not the goal | Krystian Zybała">
+  <meta property="og:description" content="Predictability matters more than turning an optimisation technique into a religion.">
+  <meta property="og:url" content="https://kzybala.pl/articles/zero-allocation-is-not-a-goal.html">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <meta property="og:type" content="article">
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero prose">
+  <p class="eyebrow">Memory</p>
+  <h1>Zero allocation is not the goal</h1>
+  <p class="lead">Predictability matters more than turning an optimisation technique into a religion.</p>
+</section>
+<article class="section prose">
+<h2>The useful question</h2>
+<p>“Does this code allocate?” is too small a question. The useful questions are: how much does it allocate, where, under what load, whether those allocations escape, and whether they disturb the latency distribution.</p>
+<p>A service can allocate heavily and still meet its latency objective. Another can allocate almost nothing and still stall on locks, page faults or cache misses. The runtime has no obligation to respect slogans from conference slides.</p>
+<h2>What I optimise for</h2>
+<ul>
+  <li>bounded allocation rate under representative load,</li>
+  <li>stable object lifetime and promotion behaviour,</li>
+  <li>absence of allocation bursts on the hot path,</li>
+  <li>predictable p99 and p999 rather than attractive averages.</li>
+</ul>
+<h2>When zero allocation is justified</h2>
+<p>It is valuable in tight, repeated, latency-sensitive paths where object churn is measurable and the added complexity remains controlled. It is not a universal architecture principle for every request handler and DTO in the building.</p>
+<div class="callout"><strong>Rule:</strong> remove allocation because measurement shows it is part of the problem, not because the phrase looks good in a pull request.</div>
+</article>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>

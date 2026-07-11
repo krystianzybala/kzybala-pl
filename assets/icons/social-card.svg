@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<rect width="1200" height="630" fill="#0b0f14"/>
+<circle cx="1050" cy="-40" r="340" fill="#16202d"/>
+<circle cx="120" cy="640" r="330" fill="#102923"/>
+<text x="90" y="210" font-family="Arial, sans-serif" font-size="42" fill="#53d6c7">KRYSTIAN ZYBAŁA</text>
+<text x="90" y="310" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#e8eef6">JVM Performance</text>
+<text x="90" y="395" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#e8eef6">Low-Latency Systems</text>
+<text x="90" y="490" font-family="Arial, sans-serif" font-size="30" fill="#9aacbd">Runtime engineering · concurrency · architecture</text>
+</svg>

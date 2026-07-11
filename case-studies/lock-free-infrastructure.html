@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lock-free shared infrastructure | Krystian Zybała</title>
+  <meta name="description" content="A shared infrastructure component relied on coarse synchronized access and generated extreme allocation pressure across the platform.">
+  <link rel="canonical" href="https://kzybala.pl/case-studies/lock-free-infrastructure.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Lock-free shared infrastructure | Krystian Zybała">
+  <meta property="og:description" content="A shared infrastructure component relied on coarse synchronized access and generated extreme allocation pressure across the platform.">
+  <meta property="og:url" content="https://kzybala.pl/case-studies/lock-free-infrastructure.html">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  
+  <script defer src="/assets/js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/resume/">Resume</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero prose">
+  <p class="eyebrow">Concurrency</p>
+  <h1>Lock-free shared infrastructure</h1>
+  <p class="lead">A shared infrastructure component relied on coarse synchronized access and generated extreme allocation pressure across the platform.</p>
+</section>
+<section class="section"><div class="grid three"><div class="card"><div class="metric">coarse lock → lock-free</div><div class="metric-label">Model</div></div><div class="card"><div class="metric">near zero</div><div class="metric-label">Allocation</div></div><div class="card"><div class="metric">shared platform code</div><div class="metric-label">Scope</div></div></div></section>
+<article class="section prose">
+<h2>Problem</h2>
+<p>A commonly used internal component serialised callers through synchronized sections and created a very high allocation rate. Because the library sat beneath many workloads, its cost was multiplied across the platform.</p>
+<h2>Investigation</h2>
+<p>Contention profiles, allocation analysis and flamegraphs identified both shared locking and object churn as structural rather than incidental costs.</p>
+<h2>Redesign</h2>
+<ul>
+  <li>replaced coarse critical sections with a lock-free access model,</li>
+  <li>reused bounded structures on the hot path,</li>
+  <li>separated producer work from slower downstream operations,</li>
+  <li>used weaker memory ordering where correctness allowed it.</li>
+</ul>
+<h2>Outcome</h2>
+<p>The redesigned path was near zero-allocation and removed the principal synchronized bottleneck. The public description intentionally excludes internal rates and component details.</p>
+</article>
+</main>
+  
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:kzybalaa@gmail.com">Email</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/resume/">Resume</a>
+  </div>
+  <p class="footer-note">Static HTML, CSS and a few lines of JavaScript. No framework needed to display text on the internet.</p>
+</footer>
+
+</body>
+</html>
