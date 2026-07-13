@@ -1,0 +1,22 @@
+# Tasks
+
+- [x] Define canonical directories.
+- [x] Define `lab.json` schema.
+- [x] Add metadata validator.
+- [x] Add duplicate ID validator.
+- [x] Add prerequisite validator.
+- [x] Add graph cycle detector.
+- [x] Define design-token contract.
+- [x] Define shared semantic states.
+- [x] Add keyboard rules.
+- [x] Add reduced-motion policy.
+- [x] Add benchmark disclosure component.
+- [x] Add sources component.
+- [x] Add asset-size reporting.
+- [x] Add CI budgets.
+- [x] Add HTML and link validation.
+- [x] Add accessibility smoke checks.
+- [x] Add GitHub Pages smoke check.
+- [x] Document new-lab workflow.
+- [x] Run `openspec validate --strict`.
+- [x] Complete architecture review.

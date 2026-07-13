@@ -23,12 +23,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build labs index
+        run: node scripts/generate-labs-index.js
       - name: Configure Pages
         uses: actions/configure-pages@v5
+      - name: Prepare public site
+        # Deploy only site content — scripts/, docs/, content/, openspec/, package.json
+        # etc. are repo tooling and must not be published (see docs/new-lab-workflow.md).
+        run: |
+          mkdir -p _site
+          cp -r 404.html CNAME index.html engineering.html consulting.html research.html talks.html \
+            robots.txt sitemap.xml .nojekyll academy articles assets case-studies lab _site/
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: GitHub Pages smoke check
+        run: node scripts/check-pages-smoke.js "${{ steps.deployment.outputs.page_url }}"

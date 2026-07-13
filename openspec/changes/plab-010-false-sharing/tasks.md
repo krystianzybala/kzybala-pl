@@ -1,0 +1,43 @@
+# Tasks
+
+- [x] Define objectives and prerequisites.
+- [x] Write cache-line theory.
+- [x] Write false sharing vs data race.
+- [x] Write false sharing vs lock contention.
+- [x] Define shared-line state.
+- [x] Define padded-line state.
+- [x] Define read-mostly state.
+- [x] Implement reducer.
+- [x] Implement two-core visualisation.
+- [x] Implement state inspector.
+- [x] Implement event log.
+- [x] Implement counters.
+- [x] Implement scenario selector.
+- [x] Implement controls.
+- [x] Implement reduced motion.
+- [x] Add screen-reader announcements.
+- [x] Add Java shared counters.
+- [x] Add Java manual padding.
+- [x] Add Java `@Contended` caveat.
+- [x] Add JMH project.
+- [x] Add Rust adjacent atomics.
+- [x] Add Rust aligned wrapper.
+- [x] Add Criterion project.
+- [x] Add benchmark disclosure.
+- [x] Add clearly marked placeholder dataset if needed.
+- [x] Add common mistakes.
+- [x] Add use and non-use guidance.
+- [x] Add quiz.
+- [x] Add investigation task.
+- [x] Add sources.
+- [x] Add reducer tests.
+- [x] Add keyboard tests.
+- [x] Add mobile tests.
+- [x] Add reduced-motion test.
+- [x] Add no-JS fallback.
+- [x] Validate Lighthouse gates.
+- [ ] Validate GitHub Pages. <!-- requires a live deploy from main; run scripts/check-pages-smoke.js against the deployed URL after merge -->
+
+- [x] Run `openspec validate --strict`.
+- [x] Complete technical review.
+- [x] Mark complete only after Java and Rust examples compile.

@@ -1,0 +1,27 @@
+# Tasks
+
+- [x] Create framework modules.
+- [x] Implement lab-definition contract.
+- [x] Implement reducer dispatcher.
+- [x] Implement semantic shell.
+- [x] Implement progressive enhancement bootstrap.
+- [x] Implement metadata loader.
+- [x] Implement scenario selector.
+- [x] Implement previous/next/reset.
+- [x] Implement URL serialisation.
+- [x] Implement status announcer.
+- [x] Implement state inspector.
+- [x] Implement Java/Rust tabs.
+- [x] Implement copy-code control.
+- [x] Implement benchmark disclosure.
+- [x] Implement quiz.
+- [x] Implement trade-offs.
+- [x] Implement sources.
+- [x] Implement registry and filters.
+- [x] Add reducer tests.
+- [x] Add keyboard tests.
+- [x] Add no-JS fallback test.
+- [x] Add visual snapshots.
+- [x] Migrate prototype interactions.
+- [x] Validate static deployment.
+- [x] Run `openspec validate --strict`.

@@ -41,6 +41,8 @@
   --accent: #007f73;
   --accent-strong: #006e65;
   --accent-2: #335fcb;
+  --warning: #a86200;
+  --danger: #c22b3b;
   --shadow: 0 28px 80px rgba(53, 72, 94, .16);
 }
 
@@ -354,6 +356,98 @@ pre {
 .reveal { opacity: 0; transform: translateY(18px); transition: opacity .55s ease, transform .55s ease; }
 .reveal.visible { opacity: 1; transform: none; }
 
+/* Shared semantic states — see docs/design-tokens.md and docs/keyboard-rules.md.
+   Every state pairs a colour with a text label; colour is never the sole signal. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.state-badge {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .25rem .6rem; font: 700 .72rem var(--mono); letter-spacing: .04em;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface);
+}
+.state-badge::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.state-badge.is-idle { color: var(--dim); }
+.state-badge.is-active { color: var(--accent); border-color: var(--line-strong); }
+.state-badge.is-warning { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); }
+.state-badge.is-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.state-badge.is-success { color: var(--accent-strong); }
+
+/* Benchmark disclosure — docs/components.md */
+.disclosure {
+  margin: 1.5rem 0; padding: 1rem 1.2rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface);
+}
+.disclosure-kind { margin: 0 0 .4rem; font: 700 .7rem var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.disclosure.conceptual { border-color: var(--line-strong); }
+.disclosure.conceptual .disclosure-kind { color: var(--accent); }
+.disclosure.measured { border-color: color-mix(in srgb, var(--accent-2) 45%, var(--line)); }
+.disclosure.measured .disclosure-kind { color: var(--accent-2); }
+.disclosure p:last-child { margin: 0; color: var(--muted); font-size: .92rem; }
+
+/* Sources — docs/components.md */
+.sources { display: grid; gap: .5rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.sources li { padding-left: 1.1rem; color: var(--muted); font-size: .9rem; border-left: 2px solid var(--line); }
+.sources cite { color: var(--text); font-style: normal; font-weight: 650; }
+.sources a { color: var(--accent); }
+
+/* Trade-offs — docs/components.md */
+.trade-offs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.trade-offs > div { padding: 1rem 1.2rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.trade-offs h4 { margin: 0 0 .5rem; font: 700 .78rem var(--mono); letter-spacing: .04em; }
+.trade-offs .use h4 { color: var(--accent-strong); }
+.trade-offs .avoid h4 { color: var(--danger); }
+.trade-offs ul { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: .92rem; }
+
+/* Code tabs — docs/lab-framework.md */
+.copy-code { float: right; margin-bottom: .5rem; }
+
+/* Scenario nav + code-language tablist — docs/lab-framework.md, docs/keyboard-rules.md */
+[data-lab-scenario-nav], [data-lab-code-tabs] [role="tablist"] {
+  display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.2rem;
+}
+[data-lab-scenario-nav] [role="tab"], [data-lab-code-tabs] [role="tab"] {
+  padding: .55rem 1rem; color: var(--muted); cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-solid);
+}
+[data-lab-scenario-nav] [role="tab"]:hover, [data-lab-code-tabs] [role="tab"]:hover { border-color: var(--line-strong); }
+[data-lab-scenario-nav] [role="tab"][aria-selected="true"], [data-lab-code-tabs] [role="tab"][aria-selected="true"] {
+  color: var(--text); border-color: var(--accent); background: var(--surface-2);
+}
+
+/* State inspector — docs/lab-framework.md, docs/semantic-states.md */
+[data-lab-inspector] {
+  display: flex; flex-wrap: wrap; gap: .3rem 1.75rem; margin: 1.5rem 0; padding: 1rem 1.2rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+}
+[data-lab-inspector] dt {
+  margin: 0; color: var(--muted); font: 700 .7rem var(--mono); letter-spacing: .05em; text-transform: uppercase;
+}
+[data-lab-inspector] dt::after { content: ":"; margin-right: .35rem; }
+[data-lab-inspector] dd { margin: 0 1.5rem 0 0; color: var(--text); font-weight: 650; }
+.control:disabled { opacity: .4; cursor: not-allowed; }
+.control:disabled:hover { border-color: var(--line); }
+
+/* Event log — design.md "Visual rules": every transition updates a log */
+[data-lab-event-log] {
+  max-height: 220px; margin: 0 0 1.5rem; padding: .75rem 1rem .75rem 2.2rem;
+  overflow-y: auto; color: var(--muted); font: .85rem var(--mono);
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+}
+[data-lab-event-log] li + li { margin-top: .4rem; }
+
+/* Quiz — docs/lab-framework.md */
+.quiz {
+  margin: 1.5rem 0; padding: 1.2rem 1.35rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+}
+.quiz fieldset { padding: 0; margin: 0; border: 0; }
+.quiz legend { padding: 0; margin-bottom: 1rem; color: var(--text); font-weight: 650; }
+.quiz fieldset > div { display: flex; align-items: center; gap: .55rem; margin-bottom: .65rem; }
+.quiz button { margin-top: .5rem; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .reveal { opacity: 1; transform: none; }
@@ -380,7 +474,7 @@ pre {
   main { padding-top: 2rem; }
   .hero { min-height: auto; padding: 3.5rem 0; }
   h1 { font-size: 3.15rem; }
-  .grid.two, .grid.three, .grid.four, .signal-strip, .cpu-grid { grid-template-columns: 1fr; }
+  .grid.two, .grid.three, .grid.four, .signal-strip, .cpu-grid, .trade-offs { grid-template-columns: 1fr; }
   .signal { border-right: 0; border-bottom: 1px solid var(--line); }
   .section-heading { display: block; }
   .timeline-item, .level { grid-template-columns: 1fr; }

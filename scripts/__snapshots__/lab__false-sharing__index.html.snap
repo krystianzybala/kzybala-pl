@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>False Sharing | Performance Lab | Krystian Zybała</title>
+  <meta name="description" content="An interactive reference lab on false sharing: cache-line theory, a conceptual MESI-like model, Java and Rust examples, JMH/Criterion benchmark methodology, and trade-offs.">
+  <link rel="canonical" href="https://kzybala.pl/lab/false-sharing/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="False Sharing | Performance Lab | Krystian Zybała">
+  <meta property="og:description" content="An interactive reference lab on false sharing: cache-line theory, a conceptual MESI-like model, Java and Rust examples, JMH/Criterion benchmark methodology, and trade-offs.">
+  <meta property="og:url" content="https://kzybala.pl/lab/false-sharing/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/labs/false-sharing-lab.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<article data-lab-id="false-sharing">
+  <header class="lab-header prose section">
+    <p class="eyebrow">Cache coherence · <a href="/lab/">Performance Lab</a></p>
+    <h1>False Sharing</h1>
+    <p class="lead">Two threads write to two completely independent counters. No lock, no shared invariant, no data race — and throughput collapses anyway, because the hardware moved both counters in and out of cache as one indivisible block.</p>
+  </header>
+
+  <section class="prose section">
+    <h2>Learning objective</h2>
+    <p>Explain why two threads writing to independent, unrelated variables can destroy each other's throughput, and be able to tell that failure mode apart from a data race or lock contention — then know when padding is worth its memory cost and when it isn't.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>Comfortable reading Java or Rust concurrent code (atomics, threads).</li>
+      <li>A basic idea of what a CPU cache is — a fast copy of main memory kept close to a core. You do not need prior knowledge of coherence protocols; this lab builds that from scratch.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Theory</h2>
+
+    <h3>Cache-line theory</h3>
+    <p>CPUs do not move memory between cache and RAM one byte, or one variable, at a time. They move it in fixed-size blocks called <strong>cache lines</strong> — commonly 64 bytes on current x86-64 and ARM64 parts, but the exact size is a hardware detail, not an architectural guarantee (query <code>CPUID</code> or <code>sysctl hw.cachelinesize</code> at runtime if it matters to you). This lab treats 64 bytes as a common example, never a universal constant.</p>
+    <p>When a core reads a memory address, the whole line containing it is pulled into that core's cache. If two independent <code>long</code> counters happen to sit inside the same 64-byte line — because they're adjacent fields in the same object, or elements of the same small array — the hardware has no way to know they are logically unrelated. As far as the coherence protocol is concerned, there is exactly one cache line, and only one core may hold it writable at a time.</p>
+    <p><strong>False sharing</strong> is what happens when two threads on different cores repeatedly write to <em>different</em> variables that live on that <em>same</em> line. Each write by core A forces core B's copy of the line to be invalidated — even though core B never touched core A's variable — and vice versa. The line ping-pongs between cores, and every write pays the cost of a cross-core transfer instead of hitting a warm local cache.</p>
+
+    <h3>A simplified coherence model</h3>
+    <p>Real coherence protocols (MESI and its variants — MESIF, MOESI) have more states and more nuance than this lab models. The interactive visualisation below uses three states, which is enough to see the mechanism:</p>
+    <table>
+      <thead><tr><th>State</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Shared</td><td>The line holds a clean, read-only copy. Other cores may also hold it.</td></tr>
+        <tr><td>Modified</td><td>This core has the only copy, and it has been written since the last fetch.</td></tr>
+        <tr><td>Invalid</td><td>This core's copy is stale and must be re-fetched before use.</td></tr>
+      </tbody>
+    </table>
+    <p>The rule that produces false sharing: a write always forces every other core's copy of that line to Invalid, regardless of which bytes in the line were actually written.</p>
+
+    <h3>False sharing vs. a data race</h3>
+    <p>A <strong>data race</strong> is a correctness bug: two threads access the same memory location without synchronization, and at least one is a write. The language memory model (JMM, Rust's) gives no guarantee about what value is observed. Fixing it requires synchronization — locks, atomics, happens-before edges.</p>
+    <p><strong>False sharing</strong> is a performance bug on code that is already correct. The two threads write to genuinely independent variables — there is no shared logical state and no synchronization needed for correctness. The cost is purely the extra coherence traffic caused by physical layout. Fixing it requires separating the variables onto different cache lines, not adding synchronization. A data race can exist without false sharing, and false sharing can exist without any race — the two are orthogonal.</p>
+
+    <h3>False sharing vs. lock contention</h3>
+    <p><strong>Lock contention</strong> happens when threads want the same critical section at the same time and must serialize — one waits while another holds the lock. The cost is explicit: queuing, context switches, or spin-wait cycles, visible as threads blocked on the same lock in a profiler or thread dump.</p>
+    <p><strong>False sharing</strong> requires no lock at all. Both threads run concurrently and never wait for each other in the logical sense. The threads make forward progress the whole time; the cost is hidden inside a slower memory subsystem, not visible as blocking — a profiler has to look at cache-miss counters or coherence-traffic hardware counters, not lock wait time, to see it. The two can compound (a lock's own state can itself be a false-sharing victim), but eliminating one does not eliminate the other.</p>
+
+    <div class="callout"><strong>Limitations of this model:</strong> cache-line size is not universal, real coherence protocols have more states and directory-based coherence on many-socket systems, and padding has a real memory cost — see "When not to use padding" below.</div>
+  </section>
+
+  <section data-lab-stage class="section">
+    <p class="eyebrow">Try it</p>
+    <h2>Interactive cache-line model</h2>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>A simplified three-state view of MESI-like ownership (Shared / Modified / Invalid), not a cycle-accurate coherence simulation. See "A simplified coherence model" above for what this leaves out.</p>
+    </div>
+
+    <nav data-lab-scenario-nav aria-label="Scenario"></nav>
+    <p data-scenario-description>Both counters live on one cache line. Every write from either CPU invalidates the other's copy — alternate CPU 0 write / CPU 1 write and watch invalidations climb.</p>
+
+    <div class="cpu-grid">
+      <div class="cpu" data-cpu="0">
+        <p class="cpu-label">CPU 0</p>
+        <span class="state-badge is-idle" data-cpu-badge>Shared</span>
+        <p class="counter" data-cpu-op>Last operation: idle</p>
+        <div class="cache-line">
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+          <span class="cache-cell" data-cpu-cell></span>
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+        </div>
+        <div class="control-row">
+          <button class="control" type="button" data-cpu0-write>CPU 0: write</button>
+          <button class="control" type="button" data-cpu0-read>CPU 0: read</button>
+        </div>
+      </div>
+      <div class="cpu" data-cpu="1">
+        <p class="cpu-label">CPU 1</p>
+        <span class="state-badge is-idle" data-cpu-badge>Shared</span>
+        <p class="counter" data-cpu-op>Last operation: idle</p>
+        <div class="cache-line">
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+          <span class="cache-cell" data-cpu-cell></span>
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+        </div>
+        <div class="control-row">
+          <button class="control" type="button" data-cpu1-write>CPU 1: write</button>
+          <button class="control" type="button" data-cpu1-read>CPU 1: read</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="coherence-bus" data-coherence-bus></div>
+
+    <dl data-lab-inspector>
+      <dt>Scenario</dt><dd>Shared line</dd>
+      <dt>Step</dt><dd>0 of 0</dd>
+      <dt>Owner</dt><dd>none</dd>
+      <dt>Invalidations</dt><dd>0</dd>
+      <dt>Transfers</dt><dd>0</dd>
+    </dl>
+
+    <div class="control-row" data-lab-controls>
+      <button class="control" type="button" disabled>Previous</button>
+      <button class="control" type="button" disabled>Next</button>
+      <button class="control" type="button">Reset</button>
+    </div>
+
+    <h3>Event log</h3>
+    <ol data-lab-event-log>
+      <li>Initial state — both lines shared.</li>
+    </ol>
+
+    <p class="sr-only" role="status" aria-live="polite" data-lab-announcer></p>
+  </section>
+
+  <section class="prose section" data-lab-code-tabs>
+    <h2>Java and Rust</h2>
+    <div role="tablist" aria-label="Language">
+      <button role="tab" id="tab-java" aria-controls="panel-java" aria-selected="true" tabindex="0">Java</button>
+      <button role="tab" id="tab-rust" aria-controls="panel-rust" aria-selected="false" tabindex="-1">Rust</button>
+    </div>
+
+    <div role="tabpanel" id="panel-java" aria-labelledby="tab-java">
+      <h3>Shared counters (the bug)</h3>
+      <pre><code>public class SharedCounters {
+    // Adjacent fields of the same object are very likely to land on the
+    // same 64-byte cache line — the JVM makes no promise either way, but
+    // in practice contiguous long fields with no padding between them do.
+    public volatile long counterA;
+    public volatile long counterB;
+}</code></pre>
+      <p>Thread 1 spins on <code>counterA++</code>, thread 2 spins on <code>counterB++</code>. Neither thread ever touches the other's field — no data race, no lock, no shared invariant. But every write to <code>counterA</code> invalidates core 2's cached copy of the line holding <code>counterB</code>, and vice versa.</p>
+
+      <h3>Manual padding (the fix)</h3>
+      <pre><code>public class PaddedCounters {
+    public volatile long counterA;
+    // 7 longs = 56 bytes of padding. Combined with the 8-byte counterA,
+    // that pushes counterB onto the next 64-byte line on a machine with
+    // that line size — a documented assumption, not a guarantee.
+    public long p1, p2, p3, p4, p5, p6, p7;
+    public volatile long counterB;
+}</code></pre>
+      <p>Two risks: the JIT could in principle eliminate unread padding fields (HotSpot does not currently do this for instance fields shaped like this, but the spec doesn't forbid it), and the JVM is free to reorder fields for alignment, so declaration-order padding is a practical technique, not a guarantee. <code>@Contended</code> avoids both.</p>
+
+      <h3>@Contended (the supported fix)</h3>
+      <pre><code>import jdk.internal.vm.annotation.Contended;
+
+public class ContendedCounters {
+    @Contended
+    public volatile long counterA;
+    @Contended
+    public volatile long counterB;
+}</code></pre>
+      <p><strong>Caveat:</strong> <code>@Contended</code> lives in <code>jdk.internal.vm.annotation</code>, an internal package. Application code needs <code>--add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED</code> on the JVM command line to use it outside the JDK itself, and OpenJDK gives no cross-version compatibility promise for internal packages. It pads to a JVM-internal group size (<code>-XX:ContendedPaddingWidth</code>, default 128 bytes), not the value in source.</p>
+
+      <h3>JMH benchmark</h3>
+      <pre><code>import org.openjdk.jmh.annotations.*;
+import java.util.concurrent.TimeUnit;
+
+@State(Scope.Group)
+@BenchmarkMode(Mode.Throughput)
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@Fork(value = 1, jvmArgsAppend = {"-XX:-RestrictContended"})
+@Warmup(iterations = 5, time = 1)
+@Measurement(iterations = 10, time = 1)
+public class FalseSharingBenchmark {
+
+    private final SharedCounters shared = new SharedCounters();
+    private final PaddedCounters padded = new PaddedCounters();
+
+    @Benchmark
+    @Group("shared")
+    public void writeA_shared() { shared.counterA++; }
+
+    @Benchmark
+    @Group("shared")
+    public void writeB_shared() { shared.counterB++; }
+
+    @Benchmark
+    @Group("padded")
+    public void writeA_padded() { padded.counterA++; }
+
+    @Benchmark
+    @Group("padded")
+    public void writeB_padded() { padded.counterB++; }
+}</code></pre>
+      <p><code>@Group</code> with <code>Scope.Group</code> is what makes JMH run <code>writeA_*</code> and <code>writeB_*</code> concurrently on separate threads within the same group — without it the benchmark never reproduces the cross-core invalidation traffic being measured. JMH assigns one thread per <code>@Benchmark</code> method in a group by default. The runnable Maven/JMH project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/false-sharing/code/java" rel="noopener"><code>content/labs/false-sharing/code/java/</code></a> in this site's repository.</p>
+    </div>
+
+    <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
+      <h3>Adjacent atomics (the bug)</h3>
+      <pre><code>use std::sync::atomic::AtomicU64;
+
+#[repr(C)]
+pub struct SharedCounters {
+    pub counter_a: AtomicU64,
+    pub counter_b: AtomicU64,
+}
+
+impl SharedCounters {
+    pub fn new() -&gt; Self {
+        Self { counter_a: AtomicU64::new(0), counter_b: AtomicU64::new(0) }
+    }
+}</code></pre>
+      <p><code>#[repr(C)]</code> fixes declaration order — Rust's default <code>repr(Rust)</code> layout is otherwise unspecified. With two adjacent 8-byte <code>AtomicU64</code>s only 16 bytes apart, both are comfortably inside one 64-byte line on the common case. <code>Ordering::Relaxed</code> is sufficient for correctness here — this is not an ordering bug, the slowdown is purely coherence traffic.</p>
+
+      <h3>Aligned wrapper (the fix)</h3>
+      <pre><code>use std::sync::atomic::AtomicU64;
+
+#[repr(align(64))]
+pub struct CacheLineAligned&lt;T&gt;(pub T);
+
+pub struct PaddedCounters {
+    pub counter_a: CacheLineAligned&lt;AtomicU64&gt;,
+    pub counter_b: CacheLineAligned&lt;AtomicU64&gt;,
+}
+
+impl PaddedCounters {
+    pub fn new() -&gt; Self {
+        Self {
+            counter_a: CacheLineAligned(AtomicU64::new(0)),
+            counter_b: CacheLineAligned(AtomicU64::new(0)),
+        }
+    }
+}</code></pre>
+      <p><code>#[repr(align(64))]</code> is an alignment guarantee the compiler enforces — unlike the Java manual-padding fields, this cannot be optimized away, because alignment is part of the type's layout contract. Each field starts a fresh 64-byte-aligned line <em>if the target's actual cache line is 64 bytes or a divisor of it</em> — document that assumption; some ARM parts use 128-byte lines, some embedded targets 32.</p>
+      <p><strong>Ordering:</strong> <code>Ordering::Relaxed</code> is enough because nothing else in the program depends on the order in which the two counters' updates become visible relative to other memory operations — only that each individual <code>fetch_add</code> is atomic. If real counters guard or publish other state, that needs <code>Acquire</code>/<code>Release</code>, an orthogonal decision from the alignment fix here.</p>
+
+      <h3>Criterion benchmark</h3>
+      <pre><code>use criterion::{criterion_group, criterion_main, Criterion};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::thread;
+
+fn run_concurrent_increments&lt;F: Fn() + Send + Sync + 'static&gt;(iters: u64, op_a: Arc&lt;F&gt;, op_b: Arc&lt;F&gt;) {
+    let a = op_a.clone();
+    let b = op_b.clone();
+    let t1 = thread::spawn(move || { for _ in 0..iters { a(); } });
+    let t2 = thread::spawn(move || { for _ in 0..iters { b(); } });
+    t1.join().unwrap();
+    t2.join().unwrap();
+}
+
+fn bench_shared(c: &amp;mut Criterion) {
+    c.bench_function("shared_counters", |b| {
+        b.iter(|| {
+            let counters = Arc::new(SharedCounters::new());
+            let c1 = counters.clone();
+            let c2 = counters.clone();
+            run_concurrent_increments(
+                100_000,
+                Arc::new(move || { c1.counter_a.fetch_add(1, Ordering::Relaxed); }),
+                Arc::new(move || { c2.counter_b.fetch_add(1, Ordering::Relaxed); }),
+            );
+        });
+    });
+}
+
+criterion_group!(benches, bench_shared);
+criterion_main!(benches);</code></pre>
+      <p>The runnable Cargo/Criterion project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/false-sharing/code/rust" rel="noopener"><code>content/labs/false-sharing/code/rust/</code></a> in this site's repository — it includes both the shared and padded benchmark functions in full.</p>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Benchmark methodology</h2>
+    <div class="disclosure measured">
+      <p class="disclosure-kind">Measured</p>
+      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores, no SMT), macOS, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 3 warmup + 5 measurement iterations of 1 second each. Rust: 1 s warm-up, 30 samples targeting ~3 s collection. Single developer machine running inside a sandboxed environment, not a dedicated thermally-stable rig — treat absolute numbers as illustrative of the effect's <em>shape</em>, not a portable performance claim.</p>
+    </div>
+    <p>Method: two threads, each incrementing its own dedicated counter in a tight loop, for the shared, padded, and (Java only) <code>@Contended</code> layouts above. JMH <code>@Group</code>/<code>Scope.Group</code> (Java) and two joined <code>std::thread::spawn</code> handles (Rust) ensure both counters are written concurrently from separate OS threads — a single-threaded run of the same code shows no difference between layouts and is not a valid reproduction (see the investigation task below, step 3).</p>
+    <p><strong>Java (JMH, ops/ms, higher is better):</strong></p>
+    <table>
+      <thead><tr><th>Layout</th><th>Throughput</th><th>99.9% CI</th></tr></thead>
+      <tbody>
+        <tr><td>Shared counters</td><td>68,869</td><td>±4,506</td></tr>
+        <tr><td>Padded counters (manual)</td><td>255,796</td><td>±32,251</td></tr>
+        <tr><td>@Contended counters</td><td>325,893</td><td>±7,616</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Rust (Criterion, time per 100,000-increment batch, lower is better):</strong></p>
+    <table>
+      <thead><tr><th>Layout</th><th>Median</th><th>[min, max]</th></tr></thead>
+      <tbody>
+        <tr><td>Adjacent atomics (shared line)</td><td>1.0017 ms</td><td>[984.80 µs, 1.0228 ms]</td></tr>
+        <tr><td>align(64) counters (padded)</td><td>263.44 µs</td><td>[262.21 µs, 265.07 µs]</td></tr>
+      </tbody>
+    </table>
+    <p>On this run: padding gave roughly a 3.7× throughput improvement in Java and a 3.8× reduction in time-per-batch in Rust; <code>@Contended</code> slightly outperformed manual padding in Java. These ratios — not the absolute numbers — are the part worth trusting across machines. The runnable projects (<code>content/labs/false-sharing/code/java/</code>, <code>content/labs/false-sharing/code/rust/</code>) each emit raw per-iteration samples (JMH <code>-rf json</code>; Criterion's <code>target/criterion/**/new/raw.csv</code> plus its generated HTML report) — inspect those, and replace this table with your own environment's numbers, before treating any of it as authoritative for a design decision.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Common mistakes</h2>
+    <ul>
+      <li>Padding by declaration order alone, without <code>@Contended</code> or an explicit alignment attribute, and trusting it survives optimization or field reordering across every JVM/compiler version.</li>
+      <li>Assuming a universal 64-byte cache line — query it or state the assumption explicitly.</li>
+      <li>Diagnosing false sharing as "just make it <code>volatile</code>" or adding a lock — neither addresses layout, and a lock introduces contention that wasn't there before.</li>
+      <li>Padding everything defensively instead of only identified hot, independently-written fields.</li>
+      <li>Benchmarking on one thread — false sharing is invisible in a single-threaded microbenchmark; it only appears with genuinely concurrent access from different cores.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>When to use padding</h2>
+    <div class="trade-offs">
+      <div class="use">
+        <h4>Use padding when</h4>
+        <ul>
+          <li>Counters/flags are hot (frequently written) and written by different threads running on different cores.</li>
+          <li>Fields have no other reason to be adjacent — they aren't part of one atomically updated struct.</li>
+        </ul>
+      </div>
+      <div class="avoid">
+        <h4>Avoid padding when</h4>
+        <ul>
+          <li>Data is read-mostly — reads don't invalidate other cores' copies the way writes do, so the cost padding solves barely exists.</li>
+          <li>Access is single-threaded or confined to one core — there is no false sharing to fix.</li>
+          <li>Applied indiscriminately — extra padding inflates struct size, hurting cache footprint and prefetching across arrays of structs.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Investigation task</h2>
+    <p>Using the Java or Rust project in <code>code/</code>, and a profiler or hardware counter tool available to you:</p>
+    <ol>
+      <li>Run the shared-counters benchmark and the padded-counters benchmark and record throughput for both.</li>
+      <li>Look for a cache-miss or coherence-event counter (e.g. <code>perf stat -e cache-misses</code>, or <code>perf c2c</code> on Linux for cache-to-cache transfer detection) and compare it between the two runs.</li>
+      <li>Reduce the benchmark to a single thread and confirm the shared-vs-padded gap disappears — this isolates the effect to concurrent cross-core access, not the layout alone.</li>
+      <li>Write down your CPU model and core topology (are the two threads pinned to different physical cores, or could they land on SMT siblings of the same core?), your measured numbers, and explain any difference from the disclosed numbers above.</li>
+    </ol>
+  </section>
+
+  <section class="prose section">
+    <h2>Accessibility notes</h2>
+    <ul>
+      <li>The interactive model is fully keyboard operable: the scenario selector and the Java/Rust code tabs are roving-tabindex tablists (arrow keys, Home/End); every write/read/step/reset control is a native <code>&lt;button&gt;</code>.</li>
+      <li>Every state change is announced to screen readers via an <code>aria-live="polite"</code> region, in addition to the visible state badges and the state inspector table — state is never colour-only.</li>
+      <li>The coherence-bus pulse is the only animation on this page; it plays once per action and is fully collapsed under <code>prefers-reduced-motion: reduce</code> (this page has no auto-playing or looping animation to separately gate on that preference).</li>
+      <li>With JavaScript disabled, this page's theory, Java and Rust code, benchmark methodology, trade-offs and sources remain fully readable — only the interactive model and the graded quiz require script.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Review questions</h2>
+    <p>Self-check before or after the graded quiz below:</p>
+    <ol>
+      <li>Why does writing to <code>counterA</code> ever affect a thread that only ever reads or writes <code>counterB</code>?</li>
+      <li>What observable difference distinguishes false sharing from a data race, in both symptom and fix?</li>
+      <li>Why does the JMH example need <code>@Group</code>/<code>Scope.Group</code> rather than two independent single-threaded benchmarks?</li>
+      <li>Give one situation where adding padding would make performance worse, not better.</li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <h2>Quiz</h2>
+    <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><cite>Java Concurrency in Practice</cite> — Goetz et al., Addison-Wesley, 2006.</li>
+      <li><cite>Intel 64 and IA-32 Architectures Software Developer's Manual, Vol. 3A §11 (Memory Cache Control)</cite> — <a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html" rel="noopener">intel.com/sdm</a></li>
+      <li><cite>A Primer on Memory Consistency and Cache Coherence</cite> — Sorin, Hill, Wood, Morgan &amp; Claypool, 2011.</li>
+      <li><cite>JEP 142: Reduce Cache Contention on Specified Fields (@Contended)</cite> — <a href="https://openjdk.org/jeps/142" rel="noopener">openjdk.org/jeps/142</a></li>
+      <li><cite>The Rust Reference — Type Layout (repr(align))</cite> — <a href="https://doc.rust-lang.org/reference/type-layout.html" rel="noopener">doc.rust-lang.org/reference/type-layout</a></li>
+      <li><cite>JMH Samples — JMHSample_22_FalseSharing</cite> — <a href="https://github.com/openjdk/jmh/blob/master/jmh-samples/src/main/java/org/openjdk/jmh/samples/JMHSample_22_FalseSharing.java" rel="noopener">github.com/openjdk/jmh</a></li>
+      <li><cite>Criterion.rs User Guide</cite> — <a href="https://bheisler.github.io/criterion.rs/book/" rel="noopener">bheisler.github.io/criterion.rs</a></li>
+    </ul>
+  </section>
+</article>
+</main>
+
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+  </div>
+</footer>
+
+</body>
+</html>

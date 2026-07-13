@@ -1,0 +1,24 @@
+[
+  {
+    "id": "false-sharing",
+    "title": "False Sharing",
+    "status": "stable",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 25,
+    "topics": [
+      "cpu-cache",
+      "coherence",
+      "concurrency"
+    ],
+    "prerequisites": [],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": true,
+    "benchmark": true,
+    "conceptualModel": true
+  }
+]

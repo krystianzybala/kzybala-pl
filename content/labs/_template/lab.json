@@ -1,0 +1,15 @@
+{
+  "id": "lab-id",
+  "title": "Lab Title",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "beginner",
+  "durationMinutes": 15,
+  "topics": ["topic-slug"],
+  "prerequisites": [],
+  "unlocks": [],
+  "languages": [],
+  "interactive": false,
+  "benchmark": false,
+  "conceptualModel": false
+}

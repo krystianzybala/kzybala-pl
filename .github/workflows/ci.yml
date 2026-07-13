@@ -1,0 +1,35 @@
+name: Quality gates
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate lab metadata
+        run: node scripts/validate-labs.js
+      - name: Build labs index
+        run: node scripts/generate-labs-index.js
+      - name: Check asset-size budgets
+        run: node scripts/check-asset-sizes.js
+      - name: Validate HTML and links
+        run: node scripts/validate-html.js
+      - name: Accessibility smoke checks
+        run: node scripts/check-accessibility.js
+      - name: No-JS fallback check
+        run: node scripts/check-no-js-fallback.js
+      - name: Reducer and framework unit tests
+        run: node --test scripts/test-reducers.js
+      - name: Keyboard/tablist unit tests
+        run: node --test scripts/test-keyboard.js
+      - name: Structural snapshot tests
+        run: node scripts/test-snapshots.js

@@ -15,6 +15,7 @@
   <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/css/styles.css">
   <script defer src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/labs/prototype.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
@@ -44,19 +45,49 @@
   <p class="lead">These are conceptual visualisations, not cycle-accurate CPU simulators. Their purpose is to expose the mechanics clearly enough that the abstraction stops lying by omission.</p>
 </section>
 
+<section class="section" data-lab-registry-root>
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">All labs</p>
+      <h2>Browse the catalogue</h2>
+    </div>
+    <form class="control-row">
+      <label class="sr-only" for="filter-topic">Filter by topic</label>
+      <select id="filter-topic" data-lab-filter="topics" data-lab-filter-dynamic>
+        <option value="">All topics</option>
+      </select>
+      <label class="sr-only" for="filter-difficulty">Filter by difficulty</label>
+      <select id="filter-difficulty" data-lab-filter="difficulty" data-lab-filter-dynamic>
+        <option value="">All difficulties</option>
+      </select>
+      <label class="sr-only" for="filter-status">Filter by status</label>
+      <select id="filter-status" data-lab-filter="status" data-lab-filter-dynamic>
+        <option value="">All statuses</option>
+      </select>
+    </form>
+  </div>
+  <div class="grid three" data-lab-registry></div>
+  <p data-lab-registry-empty hidden>No labs match these filters yet — check back soon.</p>
+</section>
+
 <section class="section">
   <div class="lab-shell">
-    <nav class="lab-nav" aria-label="Performance lab modules">
-      <button class="active" data-lab-target="false-sharing">False sharing</button>
-      <button data-lab-target="ring-buffer">SPSC ring buffer</button>
-      <button data-lab-target="jit-pipeline">JIT pipeline</button>
+    <nav class="lab-nav" role="tablist" aria-label="Performance lab modules">
+      <button id="tab-false-sharing" role="tab" aria-selected="true" aria-controls="false-sharing" tabindex="0" class="active" data-lab-target="false-sharing">False sharing</button>
+      <button id="tab-ring-buffer" role="tab" aria-selected="false" aria-controls="ring-buffer" tabindex="-1" data-lab-target="ring-buffer">SPSC ring buffer</button>
+      <button id="tab-jit-pipeline" role="tab" aria-selected="false" aria-controls="jit-pipeline" tabindex="-1" data-lab-target="jit-pipeline">JIT pipeline</button>
     </nav>
+    <p class="sr-only" role="status" aria-live="polite" data-lab-announcer></p>
 
     <div class="lab-stage">
-      <section id="false-sharing" class="lab-view active">
+      <section id="false-sharing" role="tabpanel" aria-labelledby="tab-false-sharing" class="lab-view active">
         <p class="eyebrow">Cache coherence</p>
         <h2>False sharing</h2>
         <p class="lead">Two independent counters occupy the same cache line. Every write invalidates the other core's copy, because silicon remains stubbornly literal.</p>
+        <div class="disclosure conceptual">
+          <p class="disclosure-kind">Conceptual model</p>
+          <p>A simplified two-state view of MESI ownership transfer, not a cycle-accurate coherence simulation.</p>
+        </div>
         <div class="cpu-grid">
           <div class="cpu" data-cpu="0">
             <span class="cpu-label">CPU 0 · state: <b data-state>Modified</b></span>
@@ -80,10 +111,14 @@
         </div>
       </section>
 
-      <section id="ring-buffer" class="lab-view">
+      <section id="ring-buffer" role="tabpanel" aria-labelledby="tab-ring-buffer" class="lab-view">
         <p class="eyebrow">Lock-free structures</p>
         <h2>SPSC ring buffer</h2>
         <p class="lead">A bounded single-producer, single-consumer queue needs ownership discipline more than a heroic number of atomics.</p>
+        <div class="disclosure conceptual">
+          <p class="disclosure-kind">Conceptual model</p>
+          <p>An illustrative fixed-capacity buffer, not a benchmarked throughput/latency measurement.</p>
+        </div>
         <div class="ring">
           <span class="slot" style="--angle:0deg">0</span>
           <span class="slot" style="--angle:45deg">1</span>
@@ -102,10 +137,14 @@
         </div>
       </section>
 
-      <section id="jit-pipeline" class="lab-view">
+      <section id="jit-pipeline" role="tabpanel" aria-labelledby="tab-jit-pipeline" class="lab-view">
         <p class="eyebrow">HotSpot</p>
         <h2>JIT compilation pipeline</h2>
         <p class="lead">The source is only the first draft. Runtime profiling and speculative optimisation decide what eventually executes.</p>
+        <div class="disclosure conceptual">
+          <p class="disclosure-kind">Conceptual model</p>
+          <p>A simplified tier progression, not a trace of an actual HotSpot compilation log.</p>
+        </div>
         <div class="jit-flow">
           <div class="jit-node">Java source</div>
           <div class="jit-node">Bytecode</div>
@@ -117,6 +156,14 @@
         <div class="callout"><strong>Remember:</strong> inlining, escape analysis and devirtualisation depend on code shape and profile stability. “The JIT will optimise it” is not a design.</div>
       </section>
     </div>
+  </div>
+  <div class="prose">
+    <h3>Sources</h3>
+    <ul class="sources">
+      <li><cite>Java Concurrency in Practice</cite> — Goetz et al.</li>
+      <li><cite>Intel 64 and IA-32 Architectures Software Developer's Manual, Vol. 3A §11 (Memory Cache Control)</cite> — <a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html" rel="noopener">intel.com/sdm</a></li>
+      <li><cite>The Java Virtual Machine Specification, Chapter 2 (Execution Engine / JIT tiers)</cite> — <a href="https://docs.oracle.com/javase/specs/" rel="noopener">docs.oracle.com/javase/specs</a></li>
+    </ul>
   </div>
 </section>
 </main>

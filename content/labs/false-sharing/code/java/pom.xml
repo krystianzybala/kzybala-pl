@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>pl.kzybala.lab</groupId>
+  <artifactId>false-sharing</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+
+  <name>False sharing — JMH benchmark</name>
+  <description>
+    Companion code for the Performance Lab "False sharing" lab
+    (kzybala.pl/lab/false-sharing/): shared vs. padded vs. @Contended counters,
+    benchmarked with JMH under concurrent read/write from two threads.
+  </description>
+
+  <properties>
+    <!-- Not maven.compiler.release: javac rejects the add-exports flag needed
+         for a system module (jdk.internal.vm.annotation, for @Contended)
+         together with "release", since "release" uses the sealed ct.sym API
+         description rather than the running JDK's actual module graph. -->
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <jmh.version>1.37</jmh.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-core</artifactId>
+      <version>${jmh.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-generator-annprocess</artifactId>
+      <version>${jmh.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>benchmarks</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <!-- @Contended lives in an internal package — see java.md/ContendedCounters.java. -->
+          <compilerArgs>
+            <arg>--add-exports</arg>
+            <arg>java.base/jdk.internal.vm.annotation=ALL-UNNAMED</arg>
+          </compilerArgs>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.openjdk.jmh</groupId>
+              <artifactId>jmh-generator-annprocess</artifactId>
+              <version>${jmh.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.3</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>org.openjdk.jmh.Main</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

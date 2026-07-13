@@ -1,0 +1,20 @@
+{
+  "name": "kzybala-pl",
+  "private": true,
+  "type": "module",
+  "description": "Static site build/quality tooling. No runtime dependencies — see docs/new-lab-workflow.md.",
+  "scripts": {
+    "validate:labs": "node scripts/validate-labs.js",
+    "check:sizes": "node scripts/check-asset-sizes.js",
+    "validate:html": "node scripts/validate-html.js",
+    "check:a11y": "node scripts/check-accessibility.js",
+    "check:no-js-fallback": "node scripts/check-no-js-fallback.js",
+    "check:pages": "node scripts/check-pages-smoke.js",
+    "build:labs-index": "node scripts/generate-labs-index.js",
+    "test:reducers": "node --test scripts/test-reducers.js",
+    "test:keyboard": "node --test scripts/test-keyboard.js",
+    "test:snapshots": "node scripts/test-snapshots.js",
+    "test": "npm run test:reducers && npm run test:keyboard && npm run test:snapshots",
+    "verify": "npm run validate:labs && npm run build:labs-index && npm run check:sizes && npm run validate:html && npm run check:a11y && npm run check:no-js-fallback && npm run test"
+  }
+}
