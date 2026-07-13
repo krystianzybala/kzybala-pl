@@ -1,0 +1,31 @@
+# Tasks
+
+- [ ] Write thread-per-core theory.
+- [ ] Write ownership and partitioning theory.
+- [ ] Write affinity and scheduler caveats.
+- [ ] Write NUMA caveats.
+- [ ] Define metadata and prerequisites.
+- [ ] Implement worker-pool scenario.
+- [ ] Implement owned-state scenario.
+- [ ] Implement cross-core handoff.
+- [ ] Implement hot-partition scenario.
+- [ ] Implement scheduler-migration scenario.
+- [ ] Implement backpressure scenario.
+- [ ] Implement state inspector and event log.
+- [ ] Add Java example.
+- [ ] Add Rust example.
+- [ ] Add benchmark methodology.
+- [ ] Add common mistakes.
+- [ ] Add when-to-use guidance.
+- [ ] Add when-not-to-use guidance.
+- [ ] Add quiz.
+- [ ] Add investigation task.
+- [ ] Add sources.
+- [ ] Add reducer tests.
+- [ ] Add keyboard tests.
+- [ ] Add reduced-motion support.
+- [ ] Add no-JS fallback.
+- [ ] Add browser smoke test.
+- [ ] Run npm run verify.
+- [ ] Run openspec validate --all --strict.
+- [ ] Validate live GitHub Pages deployment.

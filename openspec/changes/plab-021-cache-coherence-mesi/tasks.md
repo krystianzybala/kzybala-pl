@@ -1,0 +1,33 @@
+# Tasks
+
+- [ ] Write coherence versus consistency theory.
+- [ ] Write MESI-style state theory.
+- [ ] Document MESIF, MOESI, directory-based, ARM, and Apple caveats.
+- [ ] Define metadata and prerequisites.
+- [ ] Define deterministic reducer state.
+- [ ] Implement single-reader scenario.
+- [ ] Implement two-reader scenario.
+- [ ] Implement reader-to-writer ownership transfer.
+- [ ] Implement competing-writer scenario.
+- [ ] Implement eviction and write-back scenario.
+- [ ] Implement textual state inspector.
+- [ ] Implement event log.
+- [ ] Implement invalidation, transfer, and write-back counters.
+- [ ] Implement keyboard controls.
+- [ ] Implement reduced-motion behaviour.
+- [ ] Add no-JavaScript fallback.
+- [ ] Add Java example.
+- [ ] Add Rust example.
+- [ ] Add perf c2c methodology.
+- [ ] Add common mistakes.
+- [ ] Add when-to-use and when-not-relevant guidance.
+- [ ] Add quiz.
+- [ ] Add investigation task.
+- [ ] Add sources.
+- [ ] Add reducer tests.
+- [ ] Add keyboard tests.
+- [ ] Add accessibility tests.
+- [ ] Add browser smoke test.
+- [ ] Run npm run verify.
+- [ ] Run openspec validate --all --strict.
+- [ ] Validate live GitHub Pages deployment.

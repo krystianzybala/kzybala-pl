@@ -1,0 +1,28 @@
+# Tasks
+
+- [ ] Write CAS theory.
+- [ ] Write contention and cache-traffic theory.
+- [ ] Write backoff theory.
+- [ ] Define metadata and prerequisites.
+- [ ] Implement single-thread scenario.
+- [ ] Implement multi-contender scenario.
+- [ ] Implement fixed backoff.
+- [ ] Implement exponential backoff.
+- [ ] Implement jitter.
+- [ ] Implement single-writer comparison.
+- [ ] Implement counters and event log.
+- [ ] Add Java example and JMH benchmark.
+- [ ] Add Rust example and Criterion benchmark.
+- [ ] Add benchmark disclosure.
+- [ ] Add ABA overview.
+- [ ] Add fairness and starvation caveats.
+- [ ] Add quiz.
+- [ ] Add investigation task.
+- [ ] Add sources.
+- [ ] Add reducer tests.
+- [ ] Add keyboard tests.
+- [ ] Add reduced-motion support.
+- [ ] Add no-JS fallback.
+- [ ] Run npm run verify.
+- [ ] Run openspec validate --all --strict.
+- [ ] Validate live GitHub Pages deployment.

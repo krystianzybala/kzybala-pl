@@ -1,0 +1,29 @@
+# Tasks
+
+- [ ] Write memory-ordering theory.
+- [ ] Write Java Memory Model caveats.
+- [ ] Write Rust memory-model caveats.
+- [ ] Define metadata and prerequisites.
+- [ ] Implement broken-publication scenario.
+- [ ] Implement release/acquire publication scenario.
+- [ ] Implement store-buffering scenario.
+- [ ] Implement happens-before graph.
+- [ ] Implement store-buffer visual model.
+- [ ] Implement ordering selector.
+- [ ] Add Java VarHandle examples.
+- [ ] Add Rust atomic examples.
+- [ ] Add build scripts.
+- [ ] Add methodology and limitations.
+- [ ] Add myths section.
+- [ ] Add common mistakes.
+- [ ] Add quiz.
+- [ ] Add investigation task.
+- [ ] Add sources.
+- [ ] Add reducer tests.
+- [ ] Add keyboard tests.
+- [ ] Add reduced-motion tests.
+- [ ] Add no-JS fallback.
+- [ ] Add browser smoke test.
+- [ ] Run npm run verify.
+- [ ] Run openspec validate --all --strict.
+- [ ] Validate live GitHub Pages deployment.

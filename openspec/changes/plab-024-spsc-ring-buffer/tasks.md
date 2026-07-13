@@ -1,0 +1,32 @@
+# Tasks
+
+- [ ] Write SPSC theory.
+- [ ] Define metadata and prerequisites.
+- [ ] Define deterministic state model.
+- [ ] Implement normal flow.
+- [ ] Implement wrap-around.
+- [ ] Implement full-buffer state.
+- [ ] Implement empty-buffer state.
+- [ ] Implement cached-cursor optimisation.
+- [ ] Implement batch scenario.
+- [ ] Implement incorrect-ordering scenario.
+- [ ] Implement overwrite-bug scenario.
+- [ ] Add Java implementation.
+- [ ] Add Java JMH benchmark.
+- [ ] Add Rust implementation.
+- [ ] Add Rust Criterion benchmark.
+- [ ] Add benchmark disclosure.
+- [ ] Add common mistakes.
+- [ ] Add when-to-use guidance.
+- [ ] Add when-not-to-use guidance.
+- [ ] Add quiz.
+- [ ] Add investigation task.
+- [ ] Add sources.
+- [ ] Add reducer tests.
+- [ ] Add keyboard tests.
+- [ ] Add reduced-motion support.
+- [ ] Add no-JS fallback.
+- [ ] Add browser smoke test.
+- [ ] Run npm run verify.
+- [ ] Run openspec validate --all --strict.
+- [ ] Validate live GitHub Pages deployment.

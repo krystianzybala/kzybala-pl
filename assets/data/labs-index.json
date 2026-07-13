@@ -1,5 +1,28 @@
 [
   {
+    "id": "cache-hierarchy",
+    "title": "Cache Hierarchy",
+    "status": "stable",
+    "level": 1,
+    "difficulty": "beginner",
+    "durationMinutes": 25,
+    "topics": [
+      "cpu-cache",
+      "memory-hierarchy",
+      "locality",
+      "performance"
+    ],
+    "prerequisites": [],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": true,
+    "benchmark": true,
+    "conceptualModel": true
+  },
+  {
     "id": "false-sharing",
     "title": "False Sharing",
     "status": "stable",

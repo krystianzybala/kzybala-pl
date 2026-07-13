@@ -290,6 +290,14 @@ pre {
 }
 .cache-cell { height: 34px; border-radius: 6px; background: var(--surface-2); }
 .cache-cell.hot { background: var(--accent); box-shadow: 0 0 22px rgba(45,212,191,.24); }
+
+/* Cache-hierarchy lab — level-l1/l2/l3 map to state-badge is-success/is-active/is-warning
+   (docs/semantic-states.md); RAM/cold is the unshaded default .cache-cell. */
+.cache-line.line-4 { grid-template-columns: repeat(4,1fr); }
+.cache-cell.level-l1 { background: var(--accent-strong); box-shadow: 0 0 22px rgba(45,212,191,.28); }
+.cache-cell.level-l2 { background: var(--accent-2); }
+.cache-cell.level-l3 { background: var(--warning); opacity: .75; }
+.cache-cell.current { outline: 2px solid var(--text); outline-offset: 2px; }
 .coherence-bus {
   height: 4px; margin: 1rem 12%; border-radius: 999px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);

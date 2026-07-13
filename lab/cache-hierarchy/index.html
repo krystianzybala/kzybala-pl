@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-6EBB8VHM2T"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-6EBB8VHM2T');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cache Hierarchy | Performance Lab | Krystian Zybała</title>
+  <meta name="description" content="An interactive reference lab on the L1/L2/L3/RAM cache hierarchy: locality, cache lines, hardware prefetching, a conceptual working-set model, Java and Rust pointer-chase benchmarks, and trade-offs.">
+  <link rel="canonical" href="https://kzybala.pl/lab/cache-hierarchy/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Cache Hierarchy | Performance Lab | Krystian Zybała">
+  <meta property="og:description" content="An interactive reference lab on the L1/L2/L3/RAM cache hierarchy: locality, cache lines, hardware prefetching, a conceptual working-set model, Java and Rust pointer-chase benchmarks, and trade-offs.">
+  <meta property="og:url" content="https://kzybala.pl/lab/cache-hierarchy/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/labs/cache-hierarchy-lab.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<article data-lab-id="cache-hierarchy">
+  <header class="lab-header prose section">
+    <p class="eyebrow">Memory hierarchy · <a href="/lab/">Performance Lab</a></p>
+    <h1>Cache Hierarchy</h1>
+    <p class="lead">The same bytes, read in a different order, can take fifty times longer. Not because of an algorithm change — because sequential access lets the hardware prefetcher stay ahead of you, and random access leaves every load waiting on main memory alone.</p>
+  </header>
+
+  <section class="prose section">
+    <h2>Learning objective</h2>
+    <p>Explain why the same amount of work can run orders of magnitude slower depending only on memory access pattern, by relating it to the L1/L2/L3/RAM hierarchy, cache lines, spatial and temporal locality, and hardware prefetching — then be able to predict, for a given working-set size and access pattern, roughly which level of the hierarchy will serve most accesses.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>Comfortable reading Java or Rust code that allocates and iterates arrays.</li>
+      <li>No prior knowledge of cache hardware is assumed — this lab builds the hierarchy from scratch. (If you've done the <a href="/lab/false-sharing/">False sharing</a> lab, the cache-line concept here is the same one used there.)</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Theory</h2>
+
+    <h3>The hierarchy</h3>
+    <p>A modern CPU core does not read main memory (RAM) directly on every access — RAM latency, on the order of a hundred nanoseconds or more, would leave the core idle for hundreds of cycles per load. Instead, each core sits behind a hierarchy of progressively larger, progressively slower caches:</p>
+    <table>
+      <thead><tr><th>Level</th><th>Typical size (per core, illustrative)</th><th>Typical latency (illustrative)</th></tr></thead>
+      <tbody>
+        <tr><td>L1 (split I/D)</td><td>32–192 KB</td><td>~4–5 cycles</td></tr>
+        <tr><td>L2</td><td>256 KB–2 MB</td><td>~12–20 cycles</td></tr>
+        <tr><td>L3 / LLC (shared)</td><td>4–64 MB</td><td>~40–70 cycles</td></tr>
+        <tr><td>Main memory (RAM)</td><td>GBs</td><td>~150–400+ cycles</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><strong>These numbers are illustrative, not a spec.</strong> Exact sizes and latencies vary by microarchitecture, vendor, and generation — query <code>CPUID</code> (x86) or <code>sysctl hw.*cachesize</code> (Apple silicon/BSD) at runtime if precision matters, the way the False sharing lab treats the 64-byte cache-line size as a common example rather than a guarantee.</div>
+    <p>When a core requests an address, the hierarchy is checked from L1 outward: a hit at any level returns the data at that level's latency; a miss falls through to the next level, all the way to RAM if nothing above holds it. Because each lower level is also larger, a miss at L1 is often still a hit one or two levels down — the expensive case is a miss all the way to RAM.</p>
+
+    <h3>Cache lines</h3>
+    <p>Every level moves data in fixed-size blocks called <strong>cache lines</strong> — commonly 64 bytes on current x86-64 and ARM64 parts (see the False sharing lab for why this is a common example, not a universal constant). Requesting one byte pulls in the whole 64-byte line containing it. This is the physical basis for locality: touching one element of an array effectively pre-loads its neighbours for free, <em>if</em> you go on to use them before the line is evicted.</p>
+
+    <h3>Spatial and temporal locality</h3>
+    <p>Two independent properties of an access pattern determine how well it uses the hierarchy:</p>
+    <ul>
+      <li><strong>Spatial locality</strong> — how close together in memory the addresses you touch are. Iterating an array index-by-index has excellent spatial locality: each 64-byte line serves roughly 8 consecutive <code>long</code>s (or 16 <code>int</code>s) before the next line is needed. Chasing pointers scattered across a large heap has poor spatial locality: each access may need a fresh line that shares nothing with the line before it.</li>
+      <li><strong>Temporal locality</strong> — how soon you return to an address you already touched. A loop that repeatedly scans a working set small enough to stay resident in a cache level has excellent temporal locality: after the first pass warms the cache, every later pass hits it. A single sweep over a multi-gigabyte array that's never revisited has poor temporal locality — by the time you might return to an early element, it has long since been evicted to make room for everything touched since.</li>
+    </ul>
+    <p>Both matter independently. An access pattern can have good spatial locality but poor temporal locality (one long sequential sweep over data far larger than any cache level), or the reverse (repeatedly re-reading a single scattered set of pointers small enough to fit in L1, where each <em>individual</em> pass has poor spatial locality but the working set as a whole stays warm).</p>
+
+    <h3>Hardware prefetching</h3>
+    <p>Beyond passively caching what was touched, most cores also <em>speculatively</em> fetch data they predict will be touched soon. The simplest and most common form is a <strong>stride/stream prefetcher</strong>: when the memory controller observes a core reading address <code>A</code>, then <code>A + stride</code>, then <code>A + 2·stride</code>, it starts issuing fetches for <code>A + 3·stride</code>, <code>A + 4·stride</code>, … <em>before</em> the core asks for them, hiding RAM latency behind the compute already in flight.</p>
+    <p>This is why sequential access is not simply "as fast as the cache line happens to be big" — a genuinely large, sequentially-swept array can still run close to cache-level latency in steady state, because the prefetcher keeps arriving before the core does. <strong>Random access defeats this mechanism entirely</strong>: with no detectable stride, the prefetcher has nothing to predict, and — once the working set exceeds what fits in cache — every access pays close to full RAM latency, even though the <em>same number of bytes</em> is being read as the sequential case. The interactive model below demonstrates this directly: sequential access to a working set that exceeds every cache level still lands mostly in L2 thanks to a simulated prefetcher; random access over the same size lands in RAM almost every time.</p>
+
+    <h3>Working-set size vs. access pattern: four regimes</h3>
+    <p>Combining "does the working set fit in a given cache level" with "is the access pattern sequential or random" gives four regimes — exactly what the interactive model's four scenarios below let you step through:</p>
+    <ol>
+      <li><strong>Sequential, fits in L1</strong> — cheapest possible case. First pass warms the line; every later access, forward or looped, is an L1 hit.</li>
+      <li><strong>Random, fits in L1</strong> — same eventual steady state as (1) once the whole working set has been touched once, because <em>residency</em>, not order, is what determines an L1 hit for a small enough set — but it gets there without the head start hardware prefetching gives sequential access.</li>
+      <li><strong>Sequential, exceeds every cache level</strong> — the working set can never fully reside in cache, so pure demand-fetch would miss to RAM on every access. Hardware prefetching narrows that gap substantially: most accesses land in L2 because the prefetcher stays ahead of the stream.</li>
+      <li><strong>Random, exceeds every cache level</strong> — the worst case, and the one real systems most need to avoid for hot paths: no predictable stride means no prefetching benefit, and a working set larger than any cache level means almost no reuse either. Close to every access pays RAM latency.</li>
+    </ol>
+
+    <div class="callout"><strong>Limitations of this model:</strong> the interactive visualisation below uses illustrative cache capacities and a simplified single-stride prefetcher — real hardware detects multiple concurrent streams and variable strides with far larger structures. The latency table above is an order-of-magnitude illustration, not a cycle-accurate simulation. See "Limitations of this model" in the investigation task section for the rest.</div>
+  </section>
+
+  <section data-lab-stage class="section">
+    <p class="eyebrow">Try it</p>
+    <h2>Interactive working-set model</h2>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>A simplified three-level LRU cache (illustrative capacities: L1 = 4 lines, L2 = 8 lines, L3 = 16 lines) with a one-line-ahead stride prefetcher for sequential access — not a cycle-accurate hardware simulation. See "Working-set size vs. access pattern" above for what this leaves out.</p>
+    </div>
+
+    <nav data-lab-scenario-nav aria-label="Scenario"></nav>
+    <p data-scenario-description>A 4-line working set, walked in order, wrapping around. Small enough to fit in L1 on its own — watch it settle into all-L1-hit after the first pass.</p>
+
+    <p class="eyebrow">Working set (each cell is one cache line)</p>
+    <div class="cache-line line-4" data-lab-grid>
+      <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+    </div>
+
+    <p class="counter">Last access: <span class="state-badge is-idle" data-lab-result>No accesses yet.</span></p>
+
+    <dl data-lab-inspector>
+      <dt>Scenario</dt><dd>Sequential — fits in L1</dd>
+      <dt>Step</dt><dd>0 of 24</dd>
+      <dt>L1 hits</dt><dd>0</dd>
+      <dt>L2 hits</dt><dd>0</dd>
+      <dt>L3 hits</dt><dd>0</dd>
+      <dt>RAM misses</dt><dd>0</dd>
+    </dl>
+
+    <div class="control-row" data-lab-controls>
+      <button class="control" type="button" disabled>Previous</button>
+      <button class="control" type="button">Next</button>
+      <button class="control" type="button">Reset</button>
+    </div>
+
+    <h3>Event log</h3>
+    <ol data-lab-event-log>
+      <li>Initial state — cache hierarchy empty.</li>
+    </ol>
+
+    <p class="sr-only" role="status" aria-live="polite" data-lab-announcer></p>
+  </section>
+
+  <section class="prose section" data-lab-code-tabs>
+    <h2>Java and Rust</h2>
+    <div role="tablist" aria-label="Language">
+      <button role="tab" id="tab-java" aria-controls="panel-java" aria-selected="true" tabindex="0">Java</button>
+      <button role="tab" id="tab-rust" aria-controls="panel-rust" aria-selected="false" tabindex="-1">Rust</button>
+    </div>
+
+    <div role="tabpanel" id="panel-java" aria-labelledby="tab-java">
+      <p>Both benchmarks use <strong>pointer chasing</strong>: each access reads a value that determines the next address to read, creating a dependent chain the CPU cannot parallelize, reorder around, or predict without actually resolving each step — the standard technique for isolating memory latency, since a plain loop over <code>array[i]</code> can be partly hidden by out-of-order execution or auto-vectorized in ways that no longer reflect a single access's true cost.</p>
+
+      <h3>Building the chase tables</h3>
+      <pre><code>public final class ChaseTables {
+    private ChaseTables() {}
+
+    // A sequential cycle: 0 -&gt; 1 -&gt; 2 -&gt; ... -&gt; size-1 -&gt; 0. Maximal spatial locality.
+    public static long[] sequentialCycle(int size) {
+        long[] next = new long[size];
+        for (int i = 0; i &lt; size; i++) next[i] = (i + 1) % size;
+        return next;
+    }
+
+    // A random single-cycle permutation built with Sattolo's algorithm.
+    // Plain Fisher-Yates would risk producing several short sub-cycles,
+    // which would let a pointer chase loop through only a small hot
+    // subset of the array — Sattolo's algorithm guarantees exactly one
+    // cycle covering all `size` elements.
+    public static long[] randomCycle(int size, long seed) {
+        int[] perm = new int[size];
+        for (int i = 0; i &lt; size; i++) perm[i] = i;
+        Random rnd = new Random(seed);
+        for (int i = size - 1; i &gt; 0; i--) {
+            // nextInt(i), not nextInt(i + 1) as in Fisher-Yates — excluding
+            // self-swaps is what makes this a single cycle instead of a
+            // random permutation (usually several disjoint cycles).
+            int j = rnd.nextInt(i);
+            int tmp = perm[i]; perm[i] = perm[j]; perm[j] = tmp;
+        }
+        long[] next = new long[size];
+        for (int i = 0; i &lt; size; i++) next[perm[i]] = perm[(i + 1) % size];
+        return next;
+    }
+}</code></pre>
+
+      <h3>The benchmark</h3>
+      <pre><code>@State(Scope.Thread)
+@BenchmarkMode(Mode.AverageTime)
+@OutputTimeUnit(TimeUnit.MICROSECONDS)
+@Fork(1)
+@Warmup(iterations = 5, time = 1)
+@Measurement(iterations = 10, time = 1)
+public class CacheHierarchyBenchmark {
+
+    // 16 KB of longs — comfortably fits inside L1D on any current desktop/laptop core.
+    private static final int SMALL_SIZE = 2_048;
+    // 128 MB of longs — exceeds any consumer last-level cache.
+    private static final int LARGE_SIZE = 16_777_216;
+    private static final int CHASES = 1_000_000;
+
+    private long[] sequentialSmallTable, randomSmallTable, sequentialLargeTable, randomLargeTable;
+
+    @Setup(Level.Trial)
+    public void setup() {
+        sequentialSmallTable = ChaseTables.sequentialCycle(SMALL_SIZE);
+        randomSmallTable = ChaseTables.randomCycle(SMALL_SIZE, 1);
+        sequentialLargeTable = ChaseTables.sequentialCycle(LARGE_SIZE);
+        randomLargeTable = ChaseTables.randomCycle(LARGE_SIZE, 2);
+    }
+
+    private static long chase(long[] next, int steps) {
+        long idx = 0;
+        for (int i = 0; i &lt; steps; i++) idx = next[(int) idx];
+        return idx; // returned, not discarded, so the JIT cannot eliminate the loop as dead code.
+    }
+
+    @Benchmark public long sequentialSmall() { return chase(sequentialSmallTable, CHASES); }
+    @Benchmark public long randomSmall() { return chase(randomSmallTable, CHASES); }
+    @Benchmark public long sequentialLarge() { return chase(sequentialLargeTable, CHASES); }
+    @Benchmark public long randomLarge() { return chase(randomLargeTable, CHASES); }
+}</code></pre>
+      <p>Each benchmark method reports the average wall-clock time for one batch of <code>CHASES</code> (1,000,000) dependent chases — see "Benchmark methodology" below for the measured numbers. <strong>Why AverageTime, not Throughput?</strong> Throughput mode (as used in the False sharing lab) suits independent, parallelizable operations. This benchmark's operations are a single dependent chain — there's exactly one chase in flight at a time — so average wall-clock time per batch is the more direct measurement.</p>
+      <p><strong>What isn't eliminated, and what isn't controlled.</strong> <code>next[(int) idx]</code> still performs a normal array bounds check on every access: HotSpot's range-check elimination only removes checks it can prove statically, which requires a loop-invariant index — <code>idx</code> here comes from the array's own contents, not the loop counter, so the check stays. That cost is small, branch-predicts well, and applies identically to every benchmark in this file, so it doesn't bias the comparison. Separately, neither this benchmark nor its Rust counterpart pins the process to a CPU core — Apple silicon's performance and efficiency cores differ in cache size and clock, and macOS documents its thread-affinity API as advisory on Apple silicon, not a hard pin. See "Known limitations" under Benchmark methodology below for a concrete example of what unpinned scheduling did to an earlier run of this exact benchmark.</p>
+      <p>The runnable Maven/JMH project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/cache-hierarchy/code/java" rel="noopener"><code>content/labs/cache-hierarchy/code/java/</code></a> in this site's repository.</p>
+    </div>
+
+    <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
+      <p>Same technique as the Java example: pointer chasing through a single-cycle permutation table, so each access depends on the value read by the previous one and the compiler cannot vectorize or reorder around the memory-latency chain being measured.</p>
+
+      <h3>Building the chase tables</h3>
+      <pre><code>/// A sequential cycle: 0 -&gt; 1 -&gt; 2 -&gt; ... -&gt; size-1 -&gt; 0. Maximal spatial locality.
+pub fn sequential_cycle(size: usize) -&gt; Vec&lt;u64&gt; {
+    (0..size).map(|i| ((i + 1) % size) as u64).collect()
+}
+
+/// A random single-cycle permutation built with Sattolo's algorithm — see
+/// java.md for why this guarantees a single cycle, unlike Fisher-Yates.
+pub fn random_cycle(size: usize, seed: u64) -&gt; Vec&lt;u64&gt; {
+    let mut perm: Vec&lt;usize&gt; = (0..size).collect();
+    let mut state = seed.max(1); // xorshift64 needs a non-zero seed
+    let mut next_rand = |bound: usize| -&gt; usize {
+        state ^= state &lt;&lt; 13;
+        state ^= state &gt;&gt; 7;
+        state ^= state &lt;&lt; 17;
+        (state % bound as u64) as usize
+    };
+    for i in (1..size).rev() {
+        let j = next_rand(i); // exclusive of i, not i + 1 — see java.md
+        perm.swap(i, j);
+    }
+    let mut next = vec![0u64; size];
+    for i in 0..size {
+        next[perm[i]] = perm[(i + 1) % size] as u64;
+    }
+    next
+}</code></pre>
+
+      <h3>The benchmark</h3>
+      <pre><code>use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+const SMALL_SIZE: usize = 2_048;       // 16 KB of u64s — fits inside L1D.
+const LARGE_SIZE: usize = 16_777_216;  // 128 MB of u64s — exceeds any consumer LLC.
+const CHASES: usize = 1_000_000;
+
+fn chase(next: &amp;[u64], steps: usize) -&gt; u64 {
+    let mut idx: u64 = 0;
+    for _ in 0..steps {
+        idx = next[idx as usize];
+    }
+    idx
+}
+
+fn bench_sequential_large(c: &amp;mut Criterion) {
+    let table = sequential_cycle(LARGE_SIZE);
+    c.bench_function("sequential_large", |b| b.iter(|| chase(black_box(&amp;table), CHASES)));
+}
+
+fn bench_random_large(c: &amp;mut Criterion) {
+    let table = random_cycle(LARGE_SIZE, 2);
+    c.bench_function("random_large", |b| b.iter(|| chase(black_box(&amp;table), CHASES)));
+}
+
+criterion_group!(benches, /* ...small variants..., */ bench_sequential_large, bench_random_large);
+criterion_main!(benches);</code></pre>
+      <p><code>black_box(&amp;table)</code> stops the optimizer treating the table as a compile-time constant. The closure's return value doesn't need a second, explicit <code>black_box</code> — Criterion's own <code>Bencher::iter</code> already wraps every closure call in <code>black_box</code> internally. That fallback (this project uses stable Rust, not the nightly-only <code>real_blackbox</code> feature) is a <code>std::ptr::read_volatile</code> + <code>std::mem::forget</code>, which Criterion's own doc comment admits "may... fail to prevent code from being eliminated" — a strong convention, not a compiler guarantee. Disassembling this crate's <code>chase</code> function in isolation (<code>rustc -O --emit=asm</code>) confirms LLVM keeps both the load and its bounds check (a <code>cmp</code>/branch pair immediately before <code>ldr</code>) in the compiled loop — that empirical check, not the doc comment, is what this lab relies on. The same disassembly shows <code>for _ in 0..steps</code> compiles to a plain decrement-and-branch pair, identical in shape to Java's counted loop — no measurable iterator overhead. As with the Java benchmark, this process is not pinned to a CPU core; see "Known limitations" under Benchmark methodology below.</p>
+      <p>The runnable Cargo/Criterion project (including the small-working-set benchmarks omitted above for length) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/cache-hierarchy/code/rust" rel="noopener"><code>content/labs/cache-hierarchy/code/rust/</code></a> in this site's repository.</p>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Benchmark methodology</h2>
+    <div class="disclosure measured">
+      <p class="disclosure-kind">Measured</p>
+      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations of 1 second each, <code>Mode.AverageTime</code>. Rust: default Criterion sampling (100 samples, ~3–5 s target per benchmark). Single developer machine with ordinary desktop load running alongside — not a dedicated, thermally-stable rig, no CPU affinity pinning, no control over performance- vs. efficiency-core scheduling (see "Known limitations" below). Treat absolute numbers as illustrative of the effect's <em>shape</em>, not a portable performance claim.</p>
+    </div>
+    <p>Method: 1,000,000 dependent pointer-chase steps per benchmark, identical down to the byte in both languages — a 16,384-byte working set (fits L1) and a 134,217,728-byte / 128 MiB working set (exceeds cache), each in sequential and random cycle order built by the same Sattolo's-algorithm construction. Approximate per-access latency (ns) = batch time ÷ 1,000,000.</p>
+    <p><strong>Sized against this machine's actual cache hierarchy</strong>, not a generic guess (Apple M1 Max, per AnandTech's teardown): the 16 KB working set fits inside even the smallest L1D on the chip (64 KiB, E-core) with room to spare; the 128 MiB working set exceeds the single largest cache level (48 MiB System Level Cache) by close to 3×, and any per-cluster L2 (12 MiB P-cluster / 4 MiB E-cluster) by an order of magnitude.</p>
+    <p><strong>Java (JMH, mean time per 1,000,000-chase batch ± 99.9% CI, lower is better):</strong></p>
+    <table>
+      <thead><tr><th>Benchmark</th><th>Mean ± CI</th><th>Median</th><th>≈ ns/access</th></tr></thead>
+      <tbody>
+        <tr><td>sequentialSmall</td><td>2,197.141 ± 5.120 µs</td><td>2,197.927 µs</td><td>2.20</td></tr>
+        <tr><td>randomSmall</td><td>2,201.602 ± 18.088 µs</td><td>2,197.129 µs</td><td>2.20</td></tr>
+        <tr><td>sequentialLarge</td><td>2,447.468 ± 365.860 µs</td><td>2,361.393 µs</td><td>2.45</td></tr>
+        <tr><td>randomLarge</td><td>118,539.850 ± 3,185.489 µs</td><td>118,721.567 µs</td><td>118.54</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Rust (Criterion, bootstrap-median time per 1,000,000-chase batch, lower is better):</strong></p>
+    <table>
+      <thead><tr><th>Benchmark</th><th>Median [CI]</th><th>Mean</th><th>≈ ns/access</th></tr></thead>
+      <tbody>
+        <tr><td>sequential_small</td><td>1.2578 ms [1.2557, 1.2626]</td><td>1.2720 ms</td><td>1.26</td></tr>
+        <tr><td>random_small</td><td>1.2739 ms [1.2626, 1.2890]</td><td>1.4172 ms</td><td>1.27</td></tr>
+        <tr><td>sequential_large</td><td>1.2820 ms [1.2809, 1.2841]</td><td>1.2844 ms</td><td>1.28</td></tr>
+        <tr><td>random_large</td><td>110.9753 ms [110.4471, 111.7004]</td><td>110.9466 ms</td><td>110.98</td></tr>
+      </tbody>
+    </table>
+    <p>Small working sets land within rounding of each other regardless of order in both languages (order stops mattering once everything is cache-resident). Large-sequential is nearly as fast as small in both languages — prefetching at work. Large-random is where the two languages actually agree on the physically meaningful number: <strong>118.54 ns/access (Java) vs. 110.98 ns/access (Rust)</strong>, about 7% apart — both plausible single uncontended DRAM accesses, and this is the figure that should generalize across languages on the same hardware, because it's dominated by the memory subsystem rather than either runtime.</p>
+    <p><strong>The naive sequential/random ratio (~48–50× in Java, ~86–87× in Rust) is not directly comparable across languages, and the reason is traceable, not mysterious:</strong> that ~1.75× gap between the two ratios tracks almost exactly the ~1.75× gap between the languages' own <code>sequentialSmall</code>/<code>sequential_small</code> floors (Java ≈ 2.2 µs, Rust ≈ 1.26 µs per batch) — a gap that has nothing to do with memory latency, since a 16 KB, L1-resident chase should cost near-identical CPU cycles regardless of language. That floor is fixed per-invocation harness overhead (JMH's blackhole consumption vs. Criterion's leaner closure call), and because <code>sequentialLarge</code> is also mostly prefetch-hidden, it inherits roughly that same overhead-dominated floor instead of reflecting real memory cost — which mechanically compresses Java's computed ratio relative to Rust's. Treat the ratio as "prefetching helps a lot," not as a precise, portable multiplier — the absolute random-access latency above is the trustworthy cross-language number.</p>
+    <p>Re-run the project in <code>code/</code> on your own hardware before treating any of this as authoritative for a design decision — see the raw per-iteration samples (JMH <code>-rf json</code>; Criterion's <code>target/criterion/**/new/sample.json</code> and <code>estimates.json</code>) for more than the summary line.</p>
+    <h3>Known limitations</h3>
+    <ul>
+      <li><strong>No CPU affinity or core-type pinning.</strong> Neither JMH nor Cargo/Criterion pins the process to a specific core, and macOS documents its thread-affinity API as advisory on Apple silicon, not a hard pin — there is no user-space <code>taskset</code> equivalent here. Results reflect whatever core(s) the OS scheduler actually granted.</li>
+      <li><strong>Concretely observed, not just a theoretical caveat:</strong> an earlier attempt at this exact run, made while an unrelated browser process briefly used &gt;100% CPU on this machine, produced a <code>randomSmall</code> result of 35,257 ± 61,833 µs/op — a mean <em>smaller than its own error bar</em> — with per-iteration samples swinging from 2,267 µs to 93,274 µs within one ten-iteration window. That run was discarded; the numbers above are from a subsequent run taken once load had settled. Latency-bound (random-access) benchmarks are far more exposed to this than throughput-bound (sequential/prefetched) ones, because a prefetched stream has slack to absorb a brief stall where a dependent random chase does not.</li>
+      <li><strong>Bounds checks are retained, in both languages, and that's correct.</strong> <code>idx</code> is data-dependent (read from the array itself), not a loop-invariant range either HotSpot's range-check elimination or LLVM's bounds-check elision can statically prove safe, so the check on every access is not eliminated in either language. Disassembling the Rust <code>chase</code> function (<code>rustc -O --emit=asm</code>) confirms it directly as a <code>cmp</code>/branch pair before the load. This cost applies identically to every benchmark here, so it doesn't bias the sequential-vs-random comparison.</li>
+      <li><strong>Criterion's stable-Rust <code>black_box</code> is a strong convention, not a compiler guarantee</strong> — its own doc comment admits the fallback (a volatile read + forget, since this project doesn't enable the nightly-only <code>real_blackbox</code> feature) "may... fail to prevent code from being eliminated." The disassembly evidence above, not the comment, is what this lab relies on. JMH's auto-detected compiler blackhole is a more mature, purpose-built mechanism by comparison.</li>
+      <li>Benchmarks were run <strong>sequentially, one language at a time</strong>, specifically to avoid the two processes contending for shared L2/SLC bandwidth — an earlier attempt at running both concurrently was caught and abandoned before any numbers from it were used.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Common mistakes</h2>
+    <ul>
+      <li>Treating "it's in the cache" as binary — a cache hierarchy has several levels with very different latencies; "cached" without naming a level is not precise enough to reason about performance.</li>
+      <li>Assuming sequential access is fast because of cache-line reuse alone — for a working set that exceeds cache capacity, hardware prefetching is usually doing most of the work, not just fewer fetched lines.</li>
+      <li>Assuming random access is just "cache-line reuse minus locality" — it also loses hardware prefetching entirely, which is often the larger effect once the working set exceeds cache.</li>
+      <li>Hardcoding a cache-line size or cache size as an architectural constant — these are facts of the machine you measured on, not guarantees.</li>
+      <li>Benchmarking access patterns without defeating the optimizer — a compiler or JIT can hoist, vectorize, or reorder a plain array loop in ways that no longer reflect the memory-access pattern you intended to measure; the benchmarks above use pointer chasing specifically to prevent that.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>When this matters</h2>
+    <div class="trade-offs">
+      <div class="use">
+        <h4>Worth paying attention to memory-access pattern when</h4>
+        <ul>
+          <li>Hot loops over large data structures (arrays, matrices, batch/columnar processing) — layout and traversal order can dominate over algorithmic micro-optimizations once the data no longer fits in cache.</li>
+          <li>Choosing a data structure for a large collection — an array or struct-of-arrays layout gives the prefetcher a stride to find; a linked structure of scattered heap objects does not.</li>
+          <li>A small, algorithmically-correct change (reordering loop nests, switching array-of-structs to struct-of-arrays, changing traversal order) makes something several times slower or faster without changing what it computes.</li>
+        </ul>
+      </div>
+      <div class="avoid">
+        <h4>Low payoff from optimizing access pattern when</h4>
+        <ul>
+          <li>Data already comfortably fits in L1/L2 for the whole hot path — the difference between access patterns shrinks to nothing once nothing ever has to leave the fastest level (scenario 1 vs. 2 above).</li>
+          <li>The workload is I/O-bound or network-bound and memory latency was never the bottleneck to begin with — profile before assuming cache behaviour is the dominant cost.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Investigation task</h2>
+    <p>Using the Java or Rust project in <code>code/</code>, and a profiler or hardware counter tool available to you:</p>
+    <ol>
+      <li>Run all four benchmarks (<code>sequentialSmall</code>, <code>randomSmall</code>, <code>sequentialLarge</code>, <code>randomLarge</code> in Java; the equivalent Criterion functions in Rust) and record the reported time per batch for each.</li>
+      <li>Compute an approximate nanoseconds-per-access figure for each by dividing the reported batch time by the number of chases per batch (1,000,000 — see "Benchmark methodology" above).</li>
+      <li>If you have <code>perf</code> (Linux) or Instruments (macOS) available, look for a last-level-cache-miss or memory-stall counter and compare it between the <code>*Small</code> and <code>*Large</code> variants — confirm the miss rate rises sharply only for the <code>*Large</code> benchmarks.</li>
+      <li>Change <code>LARGE_SIZE</code> to a value that fits inside your machine's actual LLC size (check it first) and re-run <code>sequentialLarge</code>/<code>randomLarge</code> — confirm the sequential/random gap narrows once the working set fits in cache, matching the "fits" vs. "exceeds" scenarios in the interactive model above.</li>
+      <li>Run each benchmark twice — once with the machine otherwise idle, once with a CPU-heavy background task running (a video call, a build, a browser tab doing heavy work) — and compare the reported error bars. Expect the <code>random*</code> benchmarks to show much more run-to-run variance under load than the <code>sequential*</code> ones; "Known limitations" under Benchmark methodology above has a concrete example of this from this lab's own reruns.</li>
+      <li>Write down your CPU model, cache sizes (per level, if you can find them), and your measured numbers, and explain any difference from the disclosed numbers above.</li>
+    </ol>
+  </section>
+
+  <section class="prose section">
+    <h2>Accessibility notes</h2>
+    <ul>
+      <li>The interactive model is fully keyboard operable: the scenario selector and the Java/Rust code tabs are roving-tabindex tablists (arrow keys, Home/End); every step/reset control is a native <code>&lt;button&gt;</code>.</li>
+      <li>Every step is announced to screen readers via an <code>aria-live="polite"</code> region, in addition to the visible result badge and the state inspector table — the working-set grid's colour coding is a supplementary visual aid, never the only carrier of the result.</li>
+      <li>The working-set grid has no animation; step transitions resolve instantly, so there is nothing to gate on <code>prefers-reduced-motion</code> beyond the site-wide CSS rule.</li>
+      <li>With JavaScript disabled, this page's theory, Java and Rust code, benchmark methodology, trade-offs and sources remain fully readable — only the interactive model and the graded quiz require script.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Review questions</h2>
+    <p>Self-check before or after the graded quiz below:</p>
+    <ol>
+      <li>Why can a 128 MB sequential sweep run nearly as fast as a 16 KB one, when neither working set fits in any single cache level except the small one?</li>
+      <li>What specifically does random access lose that sequential access has, once the working set exceeds cache capacity?</li>
+      <li>Give an example of an access pattern with good spatial locality but poor temporal locality, and one with the reverse.</li>
+      <li>Why does the benchmark code use a dependent pointer chase instead of a plain <code>for (i = 0; i &lt; n; i++) sum += array[i]</code> loop?</li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <h2>Quiz</h2>
+    <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><cite>What Every Programmer Should Know About Memory</cite> — Ulrich Drepper, 2007. <a href="https://people.freebsd.org/~lstewart/articles/cpumemory.pdf" rel="noopener">people.freebsd.org/~lstewart/articles/cpumemory.pdf</a></li>
+      <li><cite>Intel 64 and IA-32 Architectures Optimization Reference Manual, Chapter 3 (Cache and Memory Subsystem)</cite> — <a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html" rel="noopener">intel.com/sdm</a></li>
+      <li><cite>A Primer on Memory Consistency and Cache Coherence</cite> — Sorin, Hill, Wood, Morgan &amp; Claypool, 2011.</li>
+      <li><cite>lmbench: Portable Tools for Performance Analysis</cite> — McVoy &amp; Staelin, USENIX ATC 1996.</li>
+      <li><cite>Sattolo's Algorithm</cite> — <a href="https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle#Sattolo's_algorithm" rel="noopener">en.wikipedia.org/wiki/Fisher–Yates_shuffle</a></li>
+      <li><cite>Criterion.rs User Guide</cite> — <a href="https://bheisler.github.io/criterion.rs/book/" rel="noopener">bheisler.github.io/criterion.rs</a></li>
+      <li><cite>JMH: Java Microbenchmark Harness</cite> — <a href="https://openjdk.org/projects/code-tools/jmh/" rel="noopener">openjdk.org/projects/code-tools/jmh</a></li>
+    </ul>
+  </section>
+</article>
+</main>
+
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+  </div>
+</footer>
+
+</body>
+</html>

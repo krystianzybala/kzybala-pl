@@ -13,6 +13,15 @@ import {
   falseSharingReducer as falseSharingLabReducer,
   announceFalseSharing as announceFalseSharingLab,
 } from "../assets/js/labs/false-sharing-scenarios.js";
+import {
+  createCacheHierarchyState,
+  cacheHierarchyScenarios,
+  cacheHierarchyScenarioSize,
+  cacheHierarchyReducer,
+  cacheHierarchyEventLabel,
+  announceCacheHierarchy,
+  MAX_STEPS as CACHE_MAX_STEPS,
+} from "../assets/js/labs/cache-hierarchy-scenarios.js";
 
 test("false-sharing: COHERENCE_STEP flips writeSide", () => {
   const s1 = falseSharingReducer(falseSharingInitialState, { type: "COHERENCE_STEP" });
@@ -206,4 +215,126 @@ test("false-sharing lab: every scenario id is a valid initial-state scenario", (
 test("false-sharing lab: announce reports the invalidation count after a write", () => {
   const state = falseSharingLabReducer(createFalseSharingState("shared-line"), { type: "CPU0_WRITE" });
   assert.match(announceFalseSharingLab(state, { type: "CPU0_WRITE" }), /Invalidations: 1/);
+});
+
+// --- cache-hierarchy lab (interactive working-set model) ---
+
+test("cache-hierarchy lab: initial state is empty with all counts at zero", () => {
+  const state = createCacheHierarchyState("sequential-small");
+  assert.equal(state.step, 0);
+  assert.deepEqual(state.levels, { l1: [], l2: [], l3: [] });
+  assert.deepEqual(state.counts, { l1: 0, l2: 0, l3: 0, ram: 0 });
+  assert.deepEqual(state.log, []);
+});
+
+test("cache-hierarchy lab: every scenario id is a valid initial-state scenario", () => {
+  for (const scenario of cacheHierarchyScenarios) {
+    const state = createCacheHierarchyState(scenario.id);
+    assert.equal(state.scenario, scenario.id);
+  }
+});
+
+test("cache-hierarchy lab: scenario sizes match the fits-in-L1/exceeds-cache framing", () => {
+  assert.equal(cacheHierarchyScenarioSize("sequential-small"), 4);
+  assert.equal(cacheHierarchyScenarioSize("random-small"), 4);
+  assert.equal(cacheHierarchyScenarioSize("sequential-large"), 32);
+  assert.equal(cacheHierarchyScenarioSize("random-large"), 32);
+});
+
+test("cache-hierarchy lab (sequential-small): first access is a cold RAM miss that prefetches line 1", () => {
+  const state = cacheHierarchyReducer(createCacheHierarchyState("sequential-small"), { type: "NEXT_STEP" });
+  assert.deepEqual(state.log[0], { step: 1, line: 0, level: "ram", prefetched: 1 });
+  assert.deepEqual(state.counts, { l1: 0, l2: 0, l3: 0, ram: 1 });
+});
+
+test("cache-hierarchy lab (sequential-small): settles into all-L1-hit once the 4-line working set has been touched once", () => {
+  let state = createCacheHierarchyState("sequential-small");
+  for (let i = 0; i < 6; i++) state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  // Steps 5 and 6 revisit lines 0 and 1, already resident from steps 1-4.
+  assert.equal(state.log[4].level, "l1");
+  assert.equal(state.log[5].level, "l1");
+  assert.deepEqual(state.counts, { l1: 2, l2: 3, l3: 0, ram: 1 });
+});
+
+test("cache-hierarchy lab (sequential-large): hardware prefetch keeps almost every access off RAM despite exceeding total cache capacity", () => {
+  let state = createCacheHierarchyState("sequential-large");
+  for (let i = 0; i < CACHE_MAX_STEPS; i++) state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  // Only the very first access is a cold miss; the prefetcher stays one line
+  // ahead of every subsequent demand access for the rest of the run.
+  assert.equal(state.counts.ram, 1);
+  assert.equal(state.counts.l2, CACHE_MAX_STEPS - 1);
+});
+
+test("cache-hierarchy lab (random-large): no stride to prefetch and a working set larger than the visible window means every access misses to RAM", () => {
+  let state = createCacheHierarchyState("random-large");
+  for (let i = 0; i < CACHE_MAX_STEPS; i++) state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  assert.deepEqual(state.counts, { l1: 0, l2: 0, l3: 0, ram: CACHE_MAX_STEPS });
+  assert.ok(state.log.every(entry => entry.prefetched === null));
+});
+
+test("cache-hierarchy lab (random-small): no prefetch, but still settles into all-L1-hit once every line has been touched once", () => {
+  let state = createCacheHierarchyState("random-small");
+  for (let i = 0; i < CACHE_MAX_STEPS; i++) state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  assert.deepEqual(state.counts, { l1: 20, l2: 0, l3: 0, ram: 4 });
+  assert.ok(state.log.every(entry => entry.prefetched === null));
+});
+
+test("cache-hierarchy lab: PREVIOUS_STEP exactly restores the prior derived state", () => {
+  let state = createCacheHierarchyState("sequential-large");
+  state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  const afterStep1 = state;
+  state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  state = cacheHierarchyReducer(state, { type: "PREVIOUS_STEP" });
+  assert.deepEqual(state, afterStep1);
+});
+
+test("cache-hierarchy lab: NEXT_STEP/PREVIOUS_STEP are no-ops at the ends of the run (same reference)", () => {
+  const initial = createCacheHierarchyState("sequential-small");
+  assert.equal(cacheHierarchyReducer(initial, { type: "PREVIOUS_STEP" }), initial);
+  let atMax = initial;
+  for (let i = 0; i < CACHE_MAX_STEPS; i++) atMax = cacheHierarchyReducer(atMax, { type: "NEXT_STEP" });
+  assert.equal(cacheHierarchyReducer(atMax, { type: "NEXT_STEP" }), atMax);
+});
+
+test("cache-hierarchy lab: RESET returns the exact initial state for the current scenario", () => {
+  let state = createCacheHierarchyState("random-large");
+  state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  state = cacheHierarchyReducer(state, { type: "RESET" });
+  assert.deepEqual(state, createCacheHierarchyState("random-large"));
+});
+
+test("cache-hierarchy lab: SELECT_SCENARIO switches scenario and resets progress", () => {
+  let state = createCacheHierarchyState("sequential-small");
+  state = cacheHierarchyReducer(state, { type: "NEXT_STEP" });
+  state = cacheHierarchyReducer(state, { type: "SELECT_SCENARIO", scenario: "random-large" });
+  assert.deepEqual(state, createCacheHierarchyState("random-large"));
+});
+
+test("cache-hierarchy lab: SELECT_SCENARIO with the current scenario is a no-op (same reference)", () => {
+  const state = createCacheHierarchyState("sequential-small");
+  assert.equal(cacheHierarchyReducer(state, { type: "SELECT_SCENARIO", scenario: "sequential-small" }), state);
+});
+
+test("cache-hierarchy lab: unknown event is a no-op (same reference)", () => {
+  const state = createCacheHierarchyState("sequential-small");
+  assert.equal(cacheHierarchyReducer(state, { type: "NOPE" }), state);
+});
+
+test("cache-hierarchy lab: event label names the line and outcome, including prefetch", () => {
+  assert.equal(
+    cacheHierarchyEventLabel({ step: 1, line: 0, level: "ram", prefetched: 1 }),
+    "Step 1: accessed line 0 — RAM miss; prefetched line 1 into L2."
+  );
+  assert.equal(
+    cacheHierarchyEventLabel({ step: 5, line: 0, level: "l1", prefetched: null }),
+    "Step 5: accessed line 0 — L1 hit."
+  );
+});
+
+test("cache-hierarchy lab: announce describes the last step, reset, and scenario change", () => {
+  const stepped = cacheHierarchyReducer(createCacheHierarchyState("sequential-small"), { type: "NEXT_STEP" });
+  assert.match(announceCacheHierarchy(stepped, { type: "NEXT_STEP" }), /RAM miss/);
+  assert.equal(announceCacheHierarchy(stepped, { type: "RESET" }), "Reset. Cache hierarchy empty, no accesses yet.");
+  assert.match(announceCacheHierarchy(stepped, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
+  assert.equal(announceCacheHierarchy(stepped, { type: "NOPE" }), null);
 });
