@@ -43,5 +43,27 @@
     "interactive": true,
     "benchmark": true,
     "conceptualModel": true
+  },
+  {
+    "id": "mesi",
+    "title": "Cache Coherence and MESI",
+    "status": "stable",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 25,
+    "topics": [
+      "cpu-cache",
+      "coherence",
+      "concurrency"
+    ],
+    "prerequisites": [],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": true,
+    "benchmark": false,
+    "conceptualModel": true
   }
 ]

@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p _site
           cp -r 404.html CNAME index.html engineering.html consulting.html research.html talks.html \
-            robots.txt sitemap.xml .nojekyll academy articles assets case-studies lab _site/
+            robots.txt sitemap.xml .nojekyll about academy articles assets case-studies lab _site/
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:

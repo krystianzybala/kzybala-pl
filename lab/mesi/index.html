@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-6EBB8HVM2T"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-6EBB8HVM2T');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cache Coherence and MESI | Performance Lab | Krystian Zybała</title>
+  <meta name="description" content="An interactive reference lab on cache coherence: coherence vs. consistency, the four-state MESI protocol, read-for-ownership, cache-to-cache transfer, write-back, eviction, Java and Rust examples, and perf c2c methodology.">
+  <link rel="canonical" href="https://kzybala.pl/lab/mesi/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Cache Coherence and MESI | Performance Lab | Krystian Zybała">
+  <meta property="og:description" content="An interactive reference lab on cache coherence: coherence vs. consistency, the four-state MESI protocol, read-for-ownership, cache-to-cache transfer, write-back, eviction, Java and Rust examples, and perf c2c methodology.">
+  <meta property="og:url" content="https://kzybala.pl/lab/mesi/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/labs/mesi-lab.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/#about">About</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<article data-lab-id="mesi">
+  <header class="lab-header prose section">
+    <p class="eyebrow">Cache coherence · <a href="/lab/">Performance Lab</a></p>
+    <h1>Cache Coherence and MESI</h1>
+    <p class="lead">A core cannot simply write to its cache and move on — first it has to make sure every other core's copy of that line is gone. That rule, and the four states used to teach it, is cache coherence.</p>
+  </header>
+
+  <section class="prose section">
+    <h2>Learning objective</h2>
+    <p>Explain why a write to a cache line requires exclusive ownership of that line, distinguish cache coherence from memory consistency and memory ordering, and follow a line's state transitions across two cores through read misses, write misses, read-for-ownership, invalidation, cache-to-cache transfer, write-back, and eviction — while clearly separating this conceptual MESI teaching model from what any specific real processor implements.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>A basic idea of what a CPU cache and a cache line are. No prior knowledge of coherence protocols is assumed — this lab builds it from scratch. (If you've done the <a href="/lab/false-sharing/">False sharing</a> lab, this explains the mechanism beneath the symptom shown there — but that lab is not required first.)</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Theory</h2>
+
+    <h3>Coherence vs. consistency vs. memory ordering</h3>
+    <p><strong>Cache coherence</strong> answers: for a single memory location, do all cores eventually agree on its value, and is there a well-defined order of writes to that one location that every core observes consistently? Coherence is a per-location guarantee, enforced by hardware protocols like MESI.</p>
+    <p><strong>Memory consistency</strong> (the memory model) answers a much broader question: across multiple different memory locations, what orderings between operations is a program allowed to observe? Two coherent caches can still permit surprising reorderings across different addresses unless the consistency model forbids it.</p>
+    <p><strong>Memory ordering</strong> (fences, <code>volatile</code>, <code>Ordering::Acquire</code>/<code>Release</code>, happens-before) is the language- and hardware-level mechanism used to constrain what a consistency model otherwise allows.</p>
+    <div class="callout"><strong>Keep them apart:</strong> coherence guarantees a single <code>AtomicLong</code> never goes backwards or forks into two values on different cores. It says nothing about whether a write to a <em>different</em> variable becomes visible before or after that one — that's a consistency and memory-ordering question, and it's out of scope for this lab.</div>
+
+    <h3>The MESI states</h3>
+    <p>MESI names four states a cache line can be in, from any one core's point of view:</p>
+    <table>
+      <thead><tr><th>State</th><th>Meaning</th><th>Other cores hold a copy?</th><th>Dirty (differs from memory)?</th></tr></thead>
+      <tbody>
+        <tr><td>Modified</td><td>Sole copy, written since fetched.</td><td>No</td><td>Yes</td></tr>
+        <tr><td>Exclusive</td><td>Sole copy, not yet written — matches memory.</td><td>No</td><td>No</td></tr>
+        <tr><td>Shared</td><td>Clean, read-only copy.</td><td>Possibly</td><td>No</td></tr>
+        <tr><td>Invalid</td><td>Stale or absent — must be re-fetched.</td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p>The state that makes MESI more than a toy: <strong>Exclusive</strong>. A line fetched by a read, when no other core holds any copy, becomes Exclusive rather than Shared — so a later write to that same line by the same core silently upgrades Exclusive → Modified with <em>no bus traffic at all</em>, because no other cache needs to be told anything. Without an Exclusive state, that write would issue an invalidation broadcast even though nothing else was sharing the line.</p>
+
+    <h3>Transitions the interactive model demonstrates</h3>
+    <ul>
+      <li><strong>Read miss, no sharers</strong> — fetches from memory, takes the line Exclusive.</li>
+      <li><strong>Read miss, another core holds it clean</strong> — a cache-to-cache transfer supplies the data; both end up Shared, downgrading a lone Exclusive holder.</li>
+      <li><strong>Read miss, another core holds it Modified</strong> — the dirty holder transfers its value and writes it back to memory (which was stale); both end up Shared.</li>
+      <li><strong>Write miss (read-for-ownership)</strong> — every other copy must be invalidated before the requester becomes sole Modified owner; a Modified holder is transferred and written back first.</li>
+      <li><strong>Write hit, Exclusive → Modified</strong> — silent local upgrade, no bus transaction.</li>
+      <li><strong>Eviction</strong> — a Modified line must be written back first; an Exclusive or Shared line is simply dropped.</li>
+    </ul>
+
+    <h3>Caveats: a teaching model, not a universal contract</h3>
+    <p><strong>MESIF</strong> (some Intel processors) adds a Forward state so only one Shared holder answers a snoop. <strong>MOESI</strong> (some AMD processors) adds an Owned state, letting a Modified line be shared without an immediate write-back. <strong>Directory-based coherence</strong> replaces broadcast snooping with a directory tracking sharers, used because broadcast snooping stops scaling past a modest core/socket count — common on large multi-socket servers. <strong>ARM and Apple Silicon</strong>: ARM's architecture reference does not mandate one specific coherence protocol, and Apple has not published the exact protocol its silicon uses — this lab does not claim to model either.</p>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>Conceptual MESI-style model. Real processors may implement MESIF, MOESI, directory-based coherence, proprietary protocols, different replacement policies, and undocumented microarchitectural behaviour.</p>
+    </div>
+  </section>
+
+  <section data-lab-stage class="section">
+    <p class="eyebrow">Try it</p>
+    <h2>Interactive MESI model</h2>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>A simplified four-state view of MESI (Modified / Exclusive / Shared / Invalid) for one conceptual memory line and two CPUs, not a cycle-accurate coherence simulation. See "Caveats" above for what this leaves out.</p>
+    </div>
+
+    <nav data-lab-scenario-nav aria-label="Scenario"></nav>
+    <p data-scenario-description>CPU 0 reads. No other cache holds the line, so it fetches from memory and takes it Exclusive — a clean copy nobody else needs to be told about. Try CPU 0: read.</p>
+
+    <div class="cpu-grid">
+      <div class="cpu" data-cpu="0">
+        <p class="cpu-label">CPU 0</p>
+        <span class="state-badge is-danger" data-cpu-badge>Invalid</span>
+        <p class="counter" data-cpu-value>Value: —</p>
+        <div class="cache-line">
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+          <span class="cache-cell" data-cpu-cell></span>
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+        </div>
+        <div class="control-row">
+          <button class="control" type="button" data-cpu0-read>CPU 0: read</button>
+          <button class="control" type="button" data-cpu0-write>CPU 0: write</button>
+          <button class="control" type="button" data-cpu0-evict>CPU 0: evict</button>
+        </div>
+      </div>
+      <div class="cpu" data-cpu="1">
+        <p class="cpu-label">CPU 1</p>
+        <span class="state-badge is-danger" data-cpu-badge>Invalid</span>
+        <p class="counter" data-cpu-value>Value: —</p>
+        <div class="cache-line">
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+          <span class="cache-cell" data-cpu-cell></span>
+          <span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span><span class="cache-cell"></span>
+        </div>
+        <div class="control-row">
+          <button class="control" type="button" data-cpu1-read>CPU 1: read</button>
+          <button class="control" type="button" data-cpu1-write>CPU 1: write</button>
+          <button class="control" type="button" data-cpu1-evict>CPU 1: evict</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="coherence-bus" data-coherence-bus></div>
+
+    <dl data-lab-inspector>
+      <dt>Scenario</dt><dd>Single reader</dd>
+      <dt>Step</dt><dd>0 of 0</dd>
+      <dt>Memory value</dt><dd>0</dd>
+      <dt>Owner</dt><dd>none</dd>
+      <dt>Invalidations</dt><dd>0</dd>
+      <dt>Transfers</dt><dd>0</dd>
+      <dt>Write-backs</dt><dd>0</dd>
+    </dl>
+
+    <div class="control-row" data-lab-controls>
+      <button class="control" type="button" disabled>Previous</button>
+      <button class="control" type="button" disabled>Next</button>
+      <button class="control" type="button">Reset</button>
+    </div>
+
+    <h3>Event log</h3>
+    <ol data-lab-event-log>
+      <li>Initial state — both lines Invalid.</li>
+    </ol>
+
+    <p class="sr-only" role="status" aria-live="polite" data-lab-announcer></p>
+  </section>
+
+  <section class="prose section" data-lab-code-tabs>
+    <h2>Java and Rust</h2>
+    <div role="tablist" aria-label="Language">
+      <button role="tab" id="tab-java" aria-controls="panel-java" aria-selected="true" tabindex="0">Java</button>
+      <button role="tab" id="tab-rust" aria-controls="panel-rust" aria-selected="false" tabindex="-1">Rust</button>
+    </div>
+
+    <div role="tabpanel" id="panel-java" aria-labelledby="tab-java">
+      <h3>Shared-writer example</h3>
+      <pre><code>public class SharedWriterExample {
+    // Two threads both write this counter, from different cores — the JVM
+    // guarantees atomicity and visibility, but says nothing about, and does
+    // not let you observe, which coherence protocol state the line is in.
+    private final AtomicLong counter = new AtomicLong();
+
+    public void incrementFrom(int iterations) {
+        for (int i = 0; i &lt; iterations; i++) counter.incrementAndGet();
+    }
+
+    public long value() { return counter.get(); }
+}</code></pre>
+      <p>Two threads calling <code>incrementFrom</code> concurrently on the same instance produce exactly the coherence traffic the interactive model calls "competing writers": every increment from one thread invalidates the other's cached copy of the line. <code>AtomicLong</code> guarantees the arithmetic is correct regardless — this example demonstrates the coherence <em>cost</em> of shared mutable state, not a correctness bug.</p>
+
+      <h3>Single-writer ownership example</h3>
+      <pre><code>public class SingleOwnerExample {
+    // No synchronization needed: exactly one thread ever reads or writes
+    // this field for the object's whole lifetime. In coherence terms, that
+    // thread's core can hold this line Exclusive/Modified indefinitely and
+    // never has to respond to another core's invalidation.
+    private long total;
+
+    public void addFrom(int iterations) {
+        for (int i = 0; i &lt; iterations; i++) total += i;
+    }
+
+    public long total() { return total; }
+}</code></pre>
+      <p><strong>Not synchronized, and correct anyway</strong> — because only one thread ever touches <code>total</code>. This is the software-level analogue of the model's Exclusive/Modified single-owner path: no other core contends for the line, so there is no invalidation traffic to pay for. Contrast with <code>SharedWriterExample</code>, where two threads writing the same field is what produces cross-core invalidation.</p>
+      <p><strong>These examples do not, and cannot, directly control which MESI state a line is in.</strong> The JVM and JIT give no API for observing or forcing coherence states — <code>perf c2c</code> (see "Diagnostic methodology" below) is how you observe the resulting traffic on Linux, not the source code.</p>
+      <p>The runnable Maven project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/mesi/code/java" rel="noopener"><code>content/labs/mesi/code/java/</code></a> in this site's repository.</p>
+    </div>
+
+    <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
+      <h3>Shared-writer example</h3>
+      <pre><code>use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+/// Two threads both call `increment` on the same instance, from different
+/// cores — `Relaxed` is sufficient here since only the counter's own
+/// atomicity matters, not ordering relative to other memory operations.
+pub struct SharedWriter {
+    counter: AtomicU64,
+}
+
+impl SharedWriter {
+    pub fn new() -&gt; Self { Self { counter: AtomicU64::new(0) } }
+    pub fn increment(&amp;self) { self.counter.fetch_add(1, Ordering::Relaxed); }
+    pub fn value(&amp;self) -&gt; u64 { self.counter.load(Ordering::Relaxed) }
+}</code></pre>
+      <p>Two threads calling <code>increment</code> concurrently on a shared <code>Arc&lt;SharedWriter&gt;</code> reproduce the "competing writers" coherence traffic the interactive model shows — each <code>fetch_add</code> from one core invalidates the other's cached copy of the line.</p>
+
+      <h3>Single-owner example</h3>
+      <pre><code>/// No atomics, no synchronization: exactly one thread ever touches `total`
+/// for the value's whole lifetime, so there is no other core to invalidate
+/// this line — the software analogue of an Exclusive/Modified single owner.
+pub struct SingleOwner {
+    total: u64,
+}
+
+impl SingleOwner {
+    pub fn new() -&gt; Self { Self { total: 0 } }
+    pub fn add_from(&amp;mut self, iterations: u64) {
+        for i in 0..iterations { self.total += i; }
+    }
+    pub fn total(&amp;self) -&gt; u64 { self.total }
+}</code></pre>
+      <p>As with the Java example, neither struct here lets you directly observe or force a MESI state from source code — <code>perf c2c</code> (Linux) is the tool for observing the resulting cross-core traffic, described below.</p>
+      <p>The runnable Cargo project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/mesi/code/rust" rel="noopener"><code>content/labs/mesi/code/rust/</code></a> in this site's repository.</p>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Diagnostic methodology: perf c2c</h2>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Methodology, not a benchmark</p>
+      <p>This section describes how to <em>investigate</em> coherence traffic on supported Linux systems — it deliberately does not present a synthetic "MESI benchmark" as a portable performance number. Cross-core coherence cost depends heavily on topology, core placement, and microarchitecture; a single measured ratio here would invite exactly the kind of universal claim this lab argues against.</p>
+    </div>
+    <p><code>perf c2c</code> (Linux <code>perf</code>'s cache-to-cache module) samples hardware performance-monitoring-unit events tagged with the physical cache line address involved in a load, and groups them by which cores took cross-core "HITM" (hit-modified) responses — i.e. cache-to-cache transfers of a dirty line, exactly the transition the "competing writers" and "reader then writer" scenarios above model. It requires:</p>
+    <ul>
+      <li>A Linux kernel and CPU with the relevant PMU events available (`perf c2c record`/`perf c2c report`) — this is Linux-specific tooling; there is no equivalent invocation on macOS.</li>
+      <li>Sufficient privileges to use hardware performance counters (commonly <code>CAP_PERFMON</code>/<code>CAP_SYS_ADMIN</code>, or a permissive <code>/proc/sys/kernel/perf_event_paranoid</code>).</li>
+      <li>A workload that actually contends — running <code>perf c2c</code> against a single-threaded program produces nothing interesting to report, by construction.</li>
+    </ul>
+    <pre><code># Record cache-to-cache events for a running workload
+perf c2c record -- ./your-contended-workload
+
+# Summarize which cache lines saw the most HITM (cache-to-cache) traffic
+perf c2c report --stdio</code></pre>
+    <p><strong>Caveats:</strong> exact event availability and column meaning vary by microarchitecture and kernel version; virtualized environments frequently restrict or disable the underlying PMU events entirely; and <code>perf c2c</code>'s output identifies contended cache lines and the cores/threads touching them, not MESI state names — the mapping from "HITM" back to "this was a Modified→Shared transition" is an interpretation this lab teaches, not something the tool states directly.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Common mistakes</h2>
+    <ul>
+      <li>Treating MESI as the coherence protocol every CPU implements — it is a teaching model; real hardware ships MESIF, MOESI, or directory-based coherence.</li>
+      <li>Assuming coherence gives you memory ordering for free — coherence guarantees agreement on one location's value, not the order in which writes to different locations become visible.</li>
+      <li>Assuming Apple Silicon, or any specific chip, is "just MESI" — vendors rarely publish their exact protocol.</li>
+      <li>Confusing invalidation with write-back — invalidation discards a stale copy; write-back flushes a dirty value to memory. A single transition can require both, or just one.</li>
+      <li>Reading <code>perf c2c</code> output as if it named MESI states directly — it reports contended cache lines and cross-core HITM events, which this lab's theory maps to MESI transitions, but the tool itself does not use MESI terminology.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>When this matters</h2>
+    <div class="trade-offs">
+      <div class="use">
+        <h4>Worth reasoning about coherence when</h4>
+        <ul>
+          <li>Multiple threads on different cores write to the same or nearby memory — understanding ownership transfer explains why throughput drops even without a lock.</li>
+          <li>Diagnosing a multi-threaded slowdown with no visible lock contention and no data race — cross-core invalidation traffic is often the missing explanation, and <code>perf c2c</code> is the tool to confirm it.</li>
+          <li>Designing a concurrent data structure where read-mostly vs. write-heavy access patterns should be laid out differently to minimize ownership transfers.</li>
+        </ul>
+      </div>
+      <div class="avoid">
+        <h4>Low payoff from reasoning about coherence when</h4>
+        <ul>
+          <li>The workload is single-threaded, or threads never touch the same or nearby memory — there is no cross-core coherence traffic to reason about.</li>
+          <li>The bottleneck is already known to be I/O-, network-, or lock-bound — profile before assuming coherence traffic is the dominant cost.</li>
+          <li>You need the exact coherence protocol a specific chip implements — this lab's model is a teaching simplification, not a substitute for that vendor's own documentation (where it exists).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Investigation task</h2>
+    <p>Using the Java or Rust project in <code>code/</code>, and a Linux machine with <code>perf</code> available:</p>
+    <ol>
+      <li>Run two threads concurrently calling the shared-writer example's increment method on the same instance, and separately run the single-owner example on one thread only.</li>
+      <li>Record <code>perf c2c record</code>/<code>perf c2c report</code> output for the shared-writer run and look for HITM (cache-to-cache, dirty-line) events on the counter's address.</li>
+      <li>Re-run <code>perf c2c</code> against the single-owner example and confirm it reports little or no HITM traffic for that field — there is only one core ever touching it.</li>
+      <li>Change the shared-writer benchmark to pin both threads to the same physical core (if your OS exposes CPU affinity) instead of different cores, and predict — then confirm — whether HITM events for that line disappear even though both threads still write it concurrently.</li>
+      <li>Write down your CPU model, core topology, and what you observed, and explain any difference from the mechanism described in "Theory" above.</li>
+    </ol>
+  </section>
+
+  <section class="prose section">
+    <h2>Accessibility notes</h2>
+    <ul>
+      <li>The interactive model is fully keyboard operable: the scenario selector and the Java/Rust code tabs are roving-tabindex tablists (arrow keys, Home/End); every read/write/evict/step/reset control is a native <code>&lt;button&gt;</code>.</li>
+      <li>Every state change is announced to screen readers via an <code>aria-live="polite"</code> region, in addition to the visible state badges and the state inspector table — state is never colour-only.</li>
+      <li>The coherence-bus pulse is the only animation on this page; it plays once per action and is fully collapsed under <code>prefers-reduced-motion: reduce</code> (this page has no auto-playing or looping animation to separately gate on that preference).</li>
+      <li>With JavaScript disabled, this page's theory, Java and Rust code, diagnostic methodology, trade-offs and sources remain fully readable — only the interactive model and the graded quiz require script.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Review questions</h2>
+    <p>Self-check before or after the graded quiz below:</p>
+    <ol>
+      <li>Why does a write to an Exclusive line cost no bus traffic, while a write to a Shared line does?</li>
+      <li>Give a concrete example of something cache coherence guarantees, and something it does not (that memory ordering separately provides).</li>
+      <li>Why does reading a line held Modified by another core force both a write-back and a transfer, rather than just one or the other?</li>
+      <li>Name one thing a real processor's coherence protocol might do differently from this lab's four-state model.</li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <h2>Quiz</h2>
+    <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><cite>A Primer on Memory Consistency and Cache Coherence</cite> — Sorin, Hill, Wood, Morgan &amp; Claypool, 2011.</li>
+      <li><cite>Computer Organization and Design: The Hardware/Software Interface</cite> — Patterson &amp; Hennessy.</li>
+      <li><cite>Intel 64 and IA-32 Architectures Software Developer's Manual, Vol. 3A §11 (Memory Cache Control)</cite> — <a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html" rel="noopener">intel.com/sdm</a></li>
+      <li><cite>AMD64 Architecture Programmer's Manual, Vol. 2 — Cache Coherency</cite> — <a href="https://www.amd.com/en/support/tech-docs" rel="noopener">amd.com/support/tech-docs</a></li>
+      <li><cite>Arm Architecture Reference Manual — memory ordering and coherency</cite> — <a href="https://developer.arm.com/documentation/ddi0487/latest/" rel="noopener">developer.arm.com/documentation/ddi0487</a></li>
+      <li><cite>perf-c2c(1) — Linux manual page</cite> — <a href="https://man7.org/linux/man-pages/man1/perf-c2c.1.html" rel="noopener">man7.org/linux/man-pages/man1/perf-c2c.1.html</a></li>
+      <li><cite>Java Concurrency in Practice</cite> — Goetz et al., Addison-Wesley, 2006.</li>
+      <li><cite>The Rust Reference — Atomics and concurrency</cite> — <a href="https://doc.rust-lang.org/std/sync/atomic/" rel="noopener">doc.rust-lang.org/std/sync/atomic</a></li>
+    </ul>
+  </section>
+</article>
+</main>
+
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -57,7 +57,7 @@
     <a href="/research.html">Research</a>
     <a href="/talks.html">Talks</a>
     <a href="/consulting.html">Consulting</a>
-    <a href="/#about">About</a>
+    <a href="/about/">About</a>
     <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
   </div>
 </nav>
@@ -181,17 +181,6 @@
       <div class="about-avatar" aria-hidden="true">KZ</div>
       <h3>Krystian Zybała</h3>
       <p class="role">Performance Engineer</p>
-      <div class="about-meta-block">
-        <h4>Current focus</h4>
-        <ul class="focus-list">
-          <li>Runtime Engineering</li>
-          <li>JVM Internals</li>
-          <li>Rust</li>
-          <li>Mechanical Sympathy</li>
-          <li>Low-Latency Systems</li>
-          <li>Performance Engineering</li>
-        </ul>
-      </div>
       <nav class="about-links" aria-label="Krystian Zybała elsewhere">
         <a href="https://www.linkedin.com/in/krystian-zybala" rel="noopener">LinkedIn</a>
         <a href="https://github.com/krystianzybala" rel="noopener">GitHub</a>
@@ -200,39 +189,11 @@
       </nav>
     </div>
     <div class="about-bio prose">
-      <p>Hi, I'm Krystian Zybała.</p>
-      <p>I'm a Performance Engineer focused on runtime systems, low-latency software, and distributed architectures.</p>
-      <p>My work combines software architecture with low-level performance analysis, helping engineering teams understand how software behaves under real production workloads rather than synthetic benchmarks.</p>
-      <p>Over the years I've investigated performance problems across financial systems, event-driven platforms, and high-throughput services, working with topics such as JVM internals, memory management, concurrency, CPU efficiency, allocation behaviour, and production observability.</p>
-      <p>More recently I'm expanding the same engineering approach into Rust, exploring deterministic runtimes, lock-free data structures, explicit memory management, and modern systems programming.</p>
-      <p>Performance Lab is my long-term research and education project. It allows me to document experiments, explain difficult runtime concepts, and share practical engineering knowledge that often doesn't fit into conference talks or short technical articles.</p>
-      <p><strong>My goal is simple:</strong> help engineers understand not only how software is written, but how it actually runs.</p>
-      <div class="about-meta-block">
-        <h4>Areas of expertise</h4>
-        <ul class="expertise-list">
-          <li>JVM internals</li>
-          <li>Memory management</li>
-          <li>Concurrency</li>
-          <li>CPU efficiency</li>
-          <li>Allocation behaviour</li>
-          <li>Production observability</li>
-          <li>Rust systems programming</li>
-        </ul>
-      </div>
-      <div class="about-meta-block">
-        <h4>Research interests</h4>
-        <ul class="expertise-list">
-          <li>Deterministic runtimes</li>
-          <li>Lock-free data structures</li>
-          <li>Explicit memory management</li>
-          <li>Low-latency networking</li>
-        </ul>
-      </div>
+      <p>I'm a Performance Engineer focused on runtime systems, low-latency software, and distributed architectures — JVM internals, memory management, concurrency, and more recently, the same approach carried into Rust.</p>
+      <p>Performance Lab is my long-term research and education project: interactive laboratories, reproducible experiments, and the reasoning kept next to the code.</p>
+      <p><a href="/about/">Read the full about page →</a> for the project's philosophy, roadmap, and how it's built in public.</p>
     </div>
   </div>
-  <blockquote class="principle-quote">
-    <p>The best optimisation starts with understanding the system.</p>
-  </blockquote>
 </section>
 </main>
 
@@ -245,6 +206,7 @@
     <a href="mailto:contact@kzybala.pl">Contact</a>
     <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
     <a href="/lab/">Performance Lab</a>
+    <a href="/about/">About</a>
   </div>
 
 </footer>

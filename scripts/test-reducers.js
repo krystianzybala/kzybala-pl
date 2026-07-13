@@ -22,6 +22,13 @@ import {
   announceCacheHierarchy,
   MAX_STEPS as CACHE_MAX_STEPS,
 } from "../assets/js/labs/cache-hierarchy-scenarios.js";
+import {
+  createMesiState,
+  mesiScenarios,
+  mesiReducer,
+  mesiEventLabel,
+  announceMesi,
+} from "../assets/js/labs/mesi-scenarios.js";
 
 test("false-sharing: COHERENCE_STEP flips writeSide", () => {
   const s1 = falseSharingReducer(falseSharingInitialState, { type: "COHERENCE_STEP" });
@@ -337,4 +344,184 @@ test("cache-hierarchy lab: announce describes the last step, reset, and scenario
   assert.equal(announceCacheHierarchy(stepped, { type: "RESET" }), "Reset. Cache hierarchy empty, no accesses yet.");
   assert.match(announceCacheHierarchy(stepped, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
   assert.equal(announceCacheHierarchy(stepped, { type: "NOPE" }), null);
+});
+
+// --- mesi lab (interactive cache-coherence model) ---
+
+test("mesi lab: initial state has both lines Invalid, no memory value, no counters", () => {
+  const state = createMesiState("single-reader");
+  assert.equal(state.cpu0.state, "Invalid");
+  assert.equal(state.cpu1.state, "Invalid");
+  assert.equal(state.memoryValue, 0);
+  assert.equal(state.owner, null);
+  assert.equal(state.invalidations, 0);
+  assert.equal(state.transfers, 0);
+  assert.equal(state.writeBacks, 0);
+  assert.equal(state.step, 0);
+});
+
+test("mesi lab: every scenario id is a valid initial-state scenario", () => {
+  for (const scenario of mesiScenarios) {
+    const state = createMesiState(scenario.id);
+    assert.equal(state.scenario, scenario.id);
+  }
+});
+
+test("mesi lab (single reader): a read with no sharers fetches from memory and takes Exclusive", () => {
+  const state = mesiReducer(createMesiState("single-reader"), { type: "CPU0_READ" });
+  assert.equal(state.cpu0.state, "Exclusive");
+  assert.equal(state.cpu0.value, 0);
+  assert.equal(state.cpu1.state, "Invalid");
+  assert.equal(state.owner, 0);
+  assert.equal(state.invalidations, 0);
+  assert.equal(state.transfers, 0);
+  assert.equal(state.writeBacks, 0);
+});
+
+test("mesi lab: a read hit on an already-valid line leaves the state unchanged", () => {
+  let state = mesiReducer(createMesiState("single-reader"), { type: "CPU0_READ" });
+  const afterFirstRead = state;
+  state = mesiReducer(state, { type: "CPU0_READ" });
+  assert.equal(state.cpu0.state, "Exclusive");
+  assert.equal(state.cpu0.value, afterFirstRead.cpu0.value);
+  assert.equal(state.transfers, afterFirstRead.transfers);
+});
+
+test("mesi lab (two readers): a second reader forces a cache-to-cache transfer and downgrades both to Shared", () => {
+  let state = createMesiState("two-readers");
+  state = mesiReducer(state, { type: "CPU0_READ" });
+  state = mesiReducer(state, { type: "CPU1_READ" });
+  assert.equal(state.cpu0.state, "Shared");
+  assert.equal(state.cpu1.state, "Shared");
+  assert.equal(state.cpu0.value, state.cpu1.value);
+  assert.equal(state.owner, null);
+  assert.equal(state.transfers, 1);
+  assert.equal(state.invalidations, 0);
+  assert.equal(state.writeBacks, 0);
+});
+
+test("mesi lab (reader then writer): a write from the other CPU invalidates the reader and claims Modified", () => {
+  let state = createMesiState("reader-then-writer");
+  state = mesiReducer(state, { type: "CPU0_READ" });
+  state = mesiReducer(state, { type: "CPU1_WRITE" });
+  assert.equal(state.cpu1.state, "Modified");
+  assert.equal(state.cpu1.value, 1);
+  assert.equal(state.cpu0.state, "Invalid");
+  assert.equal(state.owner, 1);
+  assert.equal(state.invalidations, 1);
+  assert.equal(state.transfers, 1);
+  assert.equal(state.writeBacks, 0);
+});
+
+test("mesi lab: a write hit on Exclusive silently upgrades to Modified with no bus traffic", () => {
+  let state = createMesiState("single-reader");
+  state = mesiReducer(state, { type: "CPU0_READ" });
+  state = mesiReducer(state, { type: "CPU0_WRITE" });
+  assert.equal(state.cpu0.state, "Modified");
+  assert.equal(state.cpu0.value, 1);
+  assert.equal(state.invalidations, 0);
+  assert.equal(state.transfers, 0);
+  assert.equal(state.writeBacks, 0);
+});
+
+test("mesi lab (competing writers): a write against a Modified holder forces write-back, transfer, and invalidation together", () => {
+  let state = createMesiState("competing-writers");
+  state = mesiReducer(state, { type: "CPU0_WRITE" });
+  state = mesiReducer(state, { type: "CPU1_WRITE" });
+  assert.equal(state.cpu0.state, "Invalid");
+  assert.equal(state.cpu1.state, "Modified");
+  assert.equal(state.cpu1.value, 2);
+  assert.equal(state.memoryValue, 1);
+  assert.equal(state.owner, 1);
+  assert.equal(state.invalidations, 1);
+  assert.equal(state.transfers, 1);
+  assert.equal(state.writeBacks, 1);
+});
+
+test("mesi lab (eviction and write-back): evicting a Modified line writes it back to memory before going Invalid", () => {
+  let state = createMesiState("eviction-writeback");
+  state = mesiReducer(state, { type: "CPU0_WRITE" });
+  state = mesiReducer(state, { type: "CPU0_EVICT" });
+  assert.equal(state.cpu0.state, "Invalid");
+  assert.equal(state.cpu0.value, null);
+  assert.equal(state.memoryValue, 1);
+  assert.equal(state.writeBacks, 1);
+});
+
+test("mesi lab: evicting a clean (Exclusive) line does not write back", () => {
+  let state = createMesiState("eviction-writeback");
+  state = mesiReducer(state, { type: "CPU0_READ" });
+  state = mesiReducer(state, { type: "CPU0_EVICT" });
+  assert.equal(state.cpu0.state, "Invalid");
+  assert.equal(state.memoryValue, 0);
+  assert.equal(state.writeBacks, 0);
+});
+
+test("mesi lab: PREVIOUS_STEP exactly restores the prior derived state", () => {
+  let state = createMesiState("competing-writers");
+  state = mesiReducer(state, { type: "CPU0_WRITE" });
+  const afterFirstWrite = state;
+  state = mesiReducer(state, { type: "CPU1_WRITE" });
+  state = mesiReducer(state, { type: "PREVIOUS_STEP" });
+  assert.deepEqual(state, { ...afterFirstWrite, history: state.history });
+  assert.equal(state.step, 1);
+});
+
+test("mesi lab: NEXT_STEP redoes after an undo, but a new op truncates the redo branch", () => {
+  let state = createMesiState("competing-writers");
+  state = mesiReducer(state, { type: "CPU0_WRITE" });
+  state = mesiReducer(state, { type: "CPU1_WRITE" });
+  state = mesiReducer(state, { type: "PREVIOUS_STEP" });
+  const redone = mesiReducer(state, { type: "NEXT_STEP" });
+  assert.equal(redone.owner, 1);
+  assert.equal(redone.history.length, 2);
+
+  const branched = mesiReducer(state, { type: "CPU0_EVICT" });
+  assert.equal(branched.history.length, 2);
+  assert.equal(branched.history[1], "CPU0_EVICT");
+});
+
+test("mesi lab: NEXT_STEP/PREVIOUS_STEP are no-ops at the ends of history (same reference)", () => {
+  const initial = createMesiState("single-reader");
+  assert.equal(mesiReducer(initial, { type: "PREVIOUS_STEP" }), initial);
+  const stepped = mesiReducer(initial, { type: "CPU0_READ" });
+  assert.equal(mesiReducer(stepped, { type: "NEXT_STEP" }), stepped);
+});
+
+test("mesi lab: RESET returns the exact initial state for the current scenario", () => {
+  let state = createMesiState("competing-writers");
+  state = mesiReducer(state, { type: "CPU0_WRITE" });
+  state = mesiReducer(state, { type: "RESET" });
+  assert.deepEqual(state, createMesiState("competing-writers"));
+});
+
+test("mesi lab: SELECT_SCENARIO switches scenario and resets history", () => {
+  let state = createMesiState("single-reader");
+  state = mesiReducer(state, { type: "CPU0_READ" });
+  state = mesiReducer(state, { type: "SELECT_SCENARIO", scenario: "two-readers" });
+  assert.deepEqual(state, createMesiState("two-readers"));
+});
+
+test("mesi lab: SELECT_SCENARIO with the current scenario is a no-op (same reference)", () => {
+  const state = createMesiState("single-reader");
+  assert.equal(mesiReducer(state, { type: "SELECT_SCENARIO", scenario: "single-reader" }), state);
+});
+
+test("mesi lab: unknown event is a no-op (same reference)", () => {
+  const state = createMesiState("single-reader");
+  assert.equal(mesiReducer(state, { type: "NOPE" }), state);
+});
+
+test("mesi lab: event label names the CPU and the operation", () => {
+  assert.equal(mesiEventLabel("CPU0_READ"), "CPU 0 read.");
+  assert.equal(mesiEventLabel("CPU1_WRITE"), "CPU 1 wrote.");
+  assert.equal(mesiEventLabel("CPU0_EVICT"), "CPU 0 evicted.");
+});
+
+test("mesi lab: announce describes CPU states and counters after an op, and reset/scenario-change/unknown", () => {
+  const state = mesiReducer(createMesiState("competing-writers"), { type: "CPU0_WRITE" });
+  assert.match(announceMesi(state, { type: "CPU0_WRITE" }), /CPU 0: Modified \(value 1\)/);
+  assert.equal(announceMesi(state, { type: "RESET" }), "Reset. Both lines Invalid, no invalidations, transfers, or write-backs.");
+  assert.match(announceMesi(state, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
+  assert.equal(announceMesi(state, { type: "NOPE" }), null);
 });

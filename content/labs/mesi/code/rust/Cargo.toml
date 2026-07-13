@@ -1,0 +1,10 @@
+[package]
+name = "mesi-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Cache coherence and MESI\" lab (kzybala.pl/lab/mesi/)."
+publish = false
+
+[lib]
+name = "mesi_lab"
+path = "src/lib.rs"

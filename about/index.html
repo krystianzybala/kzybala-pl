@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-6EBB8HVM2T"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-6EBB8HVM2T');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>About | Krystian Zybała</title>
+  <meta name="description" content="Why Performance Lab exists, the engineering principles behind it, what's on the site, the current roadmap, the author, and the OpenSpec-first workflow used to build it in public.">
+  <link rel="canonical" href="https://kzybala.pl/about/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="About | Krystian Zybała">
+  <meta property="og:description" content="Why Performance Lab exists, the engineering principles behind it, what's on the site, the current roadmap, the author, and the OpenSpec-first workflow used to build it in public.">
+  <meta property="og:url" content="https://kzybala.pl/about/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Krystian Zybała",
+    "url": "https://kzybala.pl/about/",
+    "email": "mailto:contact@kzybala.pl",
+    "jobTitle": "Performance Engineer",
+    "description": "Principal JVM Performance Engineer building Performance Lab, an open, spec-driven collection of interactive laboratories on runtime, memory and concurrency mechanics.",
+    "worksFor": { "@type": "Organization", "name": "Webosystem", "url": "https://webosystem.pl" },
+    "sameAs": [
+      "https://www.linkedin.com/in/krystian-zybala",
+      "https://github.com/krystianzybala",
+      "https://webosystem.pl"
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/about/">About</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<section class="hero compact prose">
+  <p class="eyebrow">Read me first</p>
+  <h1>This page documents a project, not a career.</h1>
+  <p class="lead">Performance Lab is a working engineer's research notebook: why it exists, the principles every laboratory follows, what's actually built, what's next, who maintains it, and the spec-driven workflow used to build it — all in one place, the way a serious project's own documentation would explain itself.</p>
+</section>
+
+<nav class="tags" aria-label="On this page">
+  <a class="tag" href="#why-it-exists">Why it exists</a>
+  <a class="tag" href="#philosophy">Engineering philosophy</a>
+  <a class="tag" href="#whats-here">What you'll find here</a>
+  <a class="tag" href="#current-focus">Current focus</a>
+  <a class="tag" href="#author">About the author</a>
+  <a class="tag" href="#built-in-public">Built in public</a>
+  <a class="tag" href="#connect">Connect</a>
+</nav>
+
+<section class="signal-strip" aria-label="Performance Lab by the numbers">
+  <div class="signal"><strong data-lab-count-strong>3</strong><span data-lab-count-label>interactive laboratories</span></div>
+  <div class="signal"><strong>0</strong><span>runtime npm dependencies</span></div>
+  <div class="signal"><strong>60+</strong><span>automated reducer tests</span></div>
+  <div class="signal"><strong>100%</strong><span>spec-driven via OpenSpec</span></div>
+</section>
+
+<section class="section" id="why-it-exists">
+  <div class="section-heading">
+    <div><p class="eyebrow">Why it exists</p><h2>Frameworks explain what to call things. They rarely explain why systems behave the way they do.</h2></div>
+  </div>
+  <div class="prose">
+    <p>Most performance problems are not solved by reading the framework's documentation more carefully. They're solved by understanding what's underneath it: how the CPU actually fetches and caches memory, how the JIT compiler decides what to inline, how a coherence protocol moves a cache line between cores, how a runtime schedules threads onto hardware that does not care about your abstractions.</p>
+    <p>Individually, each of those topics has excellent specialist material — a hardware manual here, a JEP there, a conference talk somewhere else. What's harder to find is the connective tissue: a place that walks from "here's the mechanism" to "here's why it matters" to "here's how to go verify it yourself," for one topic at a time, without asking you to already be an expert in three adjacent fields first.</p>
+    <p><strong>Performance Lab exists to be that place.</strong> Not a benchmark leaderboard, not a collection of "10x your Java app" claims, and not a course you pay for and forget. Every laboratory is a small, interactive, source-available explanation of one mechanism — built to be read, clicked through, questioned, and rebuilt on your own machine.</p>
+  </div>
+</section>
+
+<section class="section" id="philosophy">
+  <div class="section-heading">
+    <div><p class="eyebrow">Engineering philosophy</p><h2>Five rules every laboratory follows</h2></div>
+    <p>These aren't aspirational. They're enforced — the OpenSpec workflow below turns each one into a requirement a change has to satisfy before it ships.</p>
+  </div>
+  <div class="grid three">
+    <article class="card principle-card"><p class="meta">01</p><h3>Mechanism before optimization</h3><p>Explain the underlying mechanism before presenting an optimization. A trick without a model just becomes cargo-culted advice.</p></article>
+    <article class="card principle-card"><p class="meta">02</p><h3>Conceptual vs. measured</h3><p>Distinguish conceptual models from measured behaviour, explicitly and visibly. A simplified diagram is labelled as one — it is never confused with a benchmark.</p></article>
+    <article class="card principle-card"><p class="meta">03</p><h3>Reproducible, not impressive</h3><p>Provide reproducible benchmarks rather than impressive numbers. Every measured result discloses hardware, method, and raw data so you can question it.</p></article>
+    <article class="card principle-card"><p class="meta">04</p><h3>Trade-offs over rules</h3><p>Discuss trade-offs instead of universal rules. "Always pad your fields" and "always avoid locks" are both wrong somewhere — the lab says where.</p></article>
+    <article class="card principle-card"><p class="meta">05</p><h3>Experimentation over memorization</h3><p>Encourage experimentation rather than memorization. Every interactive model exists so you can change the input and watch what actually happens.</p></article>
+  </div>
+</section>
+
+<section class="section" id="whats-here">
+  <div class="section-heading">
+    <div><p class="eyebrow">What you'll find here</p><h2>Seven ways into the same underlying material</h2></div>
+    <p>Same engineering, different formats — pick whichever fits how you learn.</p>
+  </div>
+  <div class="grid four">
+    <a class="card icon-card" href="/lab/"><span class="icon">LAB</span><h3>Performance Lab</h3><p><span data-lab-count-sentence>3 interactive laboratories</span> with deterministic, keyboard-accessible visual models and Java/Rust code.</p></a>
+    <a class="card icon-card" href="/case-studies/"><span class="icon">CASE</span><h3>Case studies</h3><p>Sanitised, real-shaped engagements: problem, evidence, design, and result — no confidential internals.</p></a>
+    <a class="card icon-card" href="/articles/"><span class="icon">ART</span><h3>Articles</h3><p>Longer-form technical writing on JVM internals, concurrency, and hot-path design.</p></a>
+    <a class="card icon-card" href="/academy/"><span class="icon">ACAD</span><h3>Academy</h3><p>A five-level curriculum from measurement fundamentals to production performance leadership.</p></a>
+    <a class="card icon-card" href="/research.html"><span class="icon">RES</span><h3>Research</h3><p>Deeper investigations into runtime and hardware behaviour that don't fit a single lab.</p></a>
+    <a class="card icon-card" href="/talks.html"><span class="icon">TALK</span><h3>Talks</h3><p>Conference and meetup talks on VarHandles, Loom, garbage collection, and distributed pitfalls.</p></a>
+    <a class="card icon-card" href="/consulting.html"><span class="icon">CONS</span><h3>Consulting</h3><p>Engagements on JVM performance, low-latency architecture, and production investigations.</p></a>
+  </div>
+</section>
+
+<section class="section" id="current-focus">
+  <div class="section-heading">
+    <div><p class="eyebrow">Current focus</p><h2>What's shipped, what's next</h2></div>
+    <p>Performance Lab's own roadmap — not a projection, the actual sequence of OpenSpec changes in progress.</p>
+  </div>
+  <div class="timeline">
+    <article class="timeline-item">
+      <div><span class="state-badge is-success">Shipped</span></div>
+      <div><h3>Cache Coherence and MESI</h3><p>Coherence vs. consistency, the four-state MESI model, read-for-ownership, cache-to-cache transfer, and <code>perf c2c</code> methodology.</p></div>
+    </article>
+    <article class="timeline-item">
+      <div><span class="state-badge is-active">In progress</span></div>
+      <div><h3>Memory Ordering in Java and Rust</h3><p>Program order versus observed order, compiler and CPU reordering, happens-before, and data races — compared across VarHandles and Rust atomics.</p></div>
+    </article>
+    <article class="timeline-item">
+      <div><span class="state-badge is-idle">Planned</span></div>
+      <div><h3>CAS Contention and Backoff</h3><p>Compare-and-set semantics, failed retries, contention collapse, exponential backoff, and why lock-free doesn't automatically mean low-latency.</p></div>
+    </article>
+    <article class="timeline-item">
+      <div><span class="state-badge is-idle">Planned</span></div>
+      <div><h3>SPSC Ring Buffer, rebuilt</h3><p>Replacing the early prototype with a complete reference laboratory: bounded capacity, head/tail ownership, wrap-around, full/empty detection.</p></div>
+    </article>
+    <article class="timeline-item">
+      <div><span class="state-badge is-idle">Planned</span></div>
+      <div><h3>Thread-per-Core Architecture</h3><p>Shared-nothing ownership, partitioning, affinity, handoff, backpressure, and predictable tail latency.</p></div>
+    </article>
+  </div>
+</section>
+
+<section class="section" id="author">
+  <div class="section-heading">
+    <div><p class="eyebrow">About the author</p><h2>Who's writing this</h2></div>
+  </div>
+  <div class="about-grid">
+    <div class="about-card">
+      <div class="about-avatar" aria-hidden="true">KZ</div>
+      <h3>Krystian Zybała</h3>
+      <p class="role">Principal JVM Performance Engineer</p>
+      <div class="about-meta-block">
+        <h4>Current focus</h4>
+        <ul class="focus-list">
+          <li>Runtime Engineering</li>
+          <li>JVM Internals</li>
+          <li>Rust</li>
+          <li>Mechanical Sympathy</li>
+        </ul>
+      </div>
+    </div>
+    <div class="about-bio prose">
+      <p>I'm a Performance Engineer working on runtime systems, low-latency software, and financial platforms — the kind of work where "it's probably fine" isn't an acceptable answer, and where the difference between a good and bad decision shows up as a number in a percentile chart.</p>
+      <p>Most of my career has been investigating why software is slow, unpredictable, or both, across JVM internals, memory management, concurrency, CPU efficiency, and production observability. More recently, I've been carrying the same approach into Rust — deterministic runtimes, lock-free data structures, and explicit memory management, without a garbage collector to blame things on.</p>
+      <p>Performance Lab is where that investigation gets written down properly instead of living in conference slides and internal wikis. It's a long-term project, built the same way I'd want a piece of production infrastructure built: incrementally, with a spec, and with the reasoning kept next to the code.</p>
+      <p><a href="#connect">Get in touch →</a></p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="built-in-public">
+  <div class="section-heading">
+    <div><p class="eyebrow">Built in public</p><h2>Every change follows the same OpenSpec workflow</h2></div>
+    <p>Nothing here ships because it "felt done." Each change moves through the same artifacts, in the same order, and the same automated gates run before it merges.</p>
+  </div>
+  <div class="hero-grid workflow-grid">
+    <div class="prose">
+      <p>This site's source, including every lab you can click through, is a public git repository. New work starts as an OpenSpec change: a <strong>proposal</strong> stating the motivation and scope, a <strong>design</strong> defining the interactive model's state and events, a <strong>spec</strong> of testable requirements written as concrete scenarios, and a <strong>task list</strong> breaking the work into checkable steps.</p>
+      <p>Only after that does implementation start — and even then, nothing merges on trust. Every push runs the same gate a human reviewer would: lab metadata validation, asset-size budgets, HTML and link validation, accessibility smoke checks, a no-JavaScript fallback check, and a suite of pure, dependency-free unit tests for every interactive model's state machine.</p>
+      <p>Once a change ships, its spec deltas are synced into the site's living specification and the change is archived — so the documentation and the deployed behaviour never quietly drift apart.</p>
+      <p><a href="https://github.com/krystianzybala/kzybala-pl" rel="noopener">Browse the source on GitHub →</a></p>
+    </div>
+    <aside class="runtime-panel" aria-label="OpenSpec change lifecycle">
+      <div class="panel-top"><span>openspec://change-lifecycle</span><span class="status">● enforced in CI</span></div>
+      <div class="pipeline">
+        <div class="pipeline-node">Proposal — motivation &amp; scope</div>
+        <div class="pipeline-node">Design — state &amp; events</div>
+        <div class="pipeline-node">Spec — scenarios as requirements</div>
+        <div class="pipeline-node">Tasks — checklist of work</div>
+        <div class="pipeline-node">Implementation — code + tests</div>
+        <div class="pipeline-node">Verify — metadata, a11y, no-JS, tests</div>
+        <div class="pipeline-node">Archive — specs synced, done</div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="section" id="connect">
+  <div class="section-heading">
+    <div><p class="eyebrow">Connect</p><h2>Where to find me</h2></div>
+  </div>
+  <div class="grid four">
+    <a class="card icon-card" href="https://www.linkedin.com/in/krystian-zybala" rel="noopener"><span class="icon">IN</span><h3>LinkedIn</h3><p>Professional background, and where I post when something new ships.</p></a>
+    <a class="card icon-card" href="https://github.com/krystianzybala" rel="noopener"><span class="icon">GH</span><h3>GitHub</h3><p>Source code for this entire site, including every lab's implementation.</p></a>
+    <a class="card icon-card" href="https://webosystem.pl" rel="noopener"><span class="icon">WEB</span><h3>Webosystem</h3><p>Where consulting and engagement work is organised.</p></a>
+    <a class="card icon-card" href="mailto:contact@kzybala.pl"><span class="icon">@</span><h3>Email</h3><p>contact@kzybala.pl — for consulting enquiries, corrections, or questions about a lab.</p></a>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+    <a href="/about/">About</a>
+  </div>
+
+</footer>
+
+<script type="module">
+  import { loadLabsIndex } from "/assets/js/core/metadata.js";
+  loadLabsIndex().then(labs => {
+    const count = labs.length;
+    document.querySelectorAll("[data-lab-count-strong]").forEach(el => { el.textContent = String(count); });
+    document.querySelectorAll("[data-lab-count-label]").forEach(el => { el.textContent = "interactive laboratories"; });
+    document.querySelectorAll("[data-lab-count-sentence]").forEach(el => { el.textContent = `${count} interactive laboratories`; });
+  }).catch(() => {});
+</script>
+</body>
+</html>

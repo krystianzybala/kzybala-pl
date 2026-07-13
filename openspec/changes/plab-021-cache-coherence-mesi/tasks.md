@@ -1,33 +1,33 @@
 # Tasks
 
-- [ ] Write coherence versus consistency theory.
-- [ ] Write MESI-style state theory.
-- [ ] Document MESIF, MOESI, directory-based, ARM, and Apple caveats.
-- [ ] Define metadata and prerequisites.
-- [ ] Define deterministic reducer state.
-- [ ] Implement single-reader scenario.
-- [ ] Implement two-reader scenario.
-- [ ] Implement reader-to-writer ownership transfer.
-- [ ] Implement competing-writer scenario.
-- [ ] Implement eviction and write-back scenario.
-- [ ] Implement textual state inspector.
-- [ ] Implement event log.
-- [ ] Implement invalidation, transfer, and write-back counters.
-- [ ] Implement keyboard controls.
-- [ ] Implement reduced-motion behaviour.
-- [ ] Add no-JavaScript fallback.
-- [ ] Add Java example.
-- [ ] Add Rust example.
-- [ ] Add perf c2c methodology.
-- [ ] Add common mistakes.
-- [ ] Add when-to-use and when-not-relevant guidance.
-- [ ] Add quiz.
-- [ ] Add investigation task.
-- [ ] Add sources.
-- [ ] Add reducer tests.
-- [ ] Add keyboard tests.
-- [ ] Add accessibility tests.
-- [ ] Add browser smoke test.
-- [ ] Run npm run verify.
-- [ ] Run openspec validate --all --strict.
+- [x] Write coherence versus consistency theory.
+- [x] Write MESI-style state theory.
+- [x] Document MESIF, MOESI, directory-based, ARM, and Apple caveats.
+- [x] Define metadata and prerequisites.
+- [x] Define deterministic reducer state.
+- [x] Implement single-reader scenario.
+- [x] Implement two-reader scenario.
+- [x] Implement reader-to-writer ownership transfer.
+- [x] Implement competing-writer scenario.
+- [x] Implement eviction and write-back scenario.
+- [x] Implement textual state inspector.
+- [x] Implement event log.
+- [x] Implement invalidation, transfer, and write-back counters.
+- [x] Implement keyboard controls.
+- [x] Implement reduced-motion behaviour.
+- [x] Add no-JavaScript fallback.
+- [x] Add Java example.
+- [x] Add Rust example.
+- [x] Add perf c2c methodology.
+- [x] Add common mistakes.
+- [x] Add when-to-use and when-not-relevant guidance.
+- [x] Add quiz.
+- [x] Add investigation task.
+- [x] Add sources.
+- [x] Add reducer tests.
+- [x] Add keyboard tests.
+- [x] Add accessibility tests.
+- [x] Add browser smoke test.
+- [x] Run npm run verify.
+- [x] Run openspec validate --all --strict.
 - [ ] Validate live GitHub Pages deployment.
