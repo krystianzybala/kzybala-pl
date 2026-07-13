@@ -42,6 +42,7 @@
     <a href="/research.html">Research</a>
     <a href="/talks.html">Talks</a>
     <a href="/consulting.html">Consulting</a>
+    <a href="/#about">About</a>
     <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
   </div>
 </nav>
@@ -59,21 +60,34 @@
       <p class="eyebrow">All labs</p>
       <h2>Browse the catalogue</h2>
     </div>
-    <form class="control-row">
-      <label class="sr-only" for="filter-topic">Filter by topic</label>
-      <select id="filter-topic" data-lab-filter="topics" data-lab-filter-dynamic>
-        <option value="">All topics</option>
-      </select>
-      <label class="sr-only" for="filter-difficulty">Filter by difficulty</label>
-      <select id="filter-difficulty" data-lab-filter="difficulty" data-lab-filter-dynamic>
-        <option value="">All difficulties</option>
-      </select>
-      <label class="sr-only" for="filter-status">Filter by status</label>
-      <select id="filter-status" data-lab-filter="status" data-lab-filter-dynamic>
-        <option value="">All statuses</option>
-      </select>
+    <form class="filter-bar" aria-label="Filter labs">
+      <div class="filter-field">
+        <label for="filter-topic">Topic</label>
+        <div class="filter-control">
+          <select id="filter-topic" class="filter-select" data-lab-filter="topics" data-lab-filter-dynamic>
+            <option value="">All topics</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-field">
+        <label for="filter-difficulty">Difficulty</label>
+        <div class="filter-control">
+          <select id="filter-difficulty" class="filter-select" data-lab-filter="difficulty" data-lab-filter-dynamic>
+            <option value="">All difficulties</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-field">
+        <label for="filter-status">Status</label>
+        <div class="filter-control">
+          <select id="filter-status" class="filter-select" data-lab-filter="status" data-lab-filter-dynamic>
+            <option value="">All statuses</option>
+          </select>
+        </div>
+      </div>
     </form>
   </div>
+  <p class="filter-count" role="status" aria-live="polite" data-lab-filter-count></p>
   <div class="grid three" data-lab-registry></div>
   <p data-lab-registry-empty hidden>No labs match these filters yet — check back soon.</p>
 </section>

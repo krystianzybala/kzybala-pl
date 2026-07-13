@@ -38,8 +38,8 @@ The lab's interactive model MUST let a user step through sequential and random m
 - **WHEN** a user operates the model without a pointing device
 - **THEN** every control (scenario tabs, step controls) is reachable and operable by keyboard
 
-### Requirement: Java example
-The lab MUST provide a JMH-based Java example demonstrating sequential vs. random memory-access latency over a working set that fits in L1 and one that exceeds the last-level cache.
+### Requirement: Cache hierarchy Java example
+The cache-hierarchy lab MUST provide a JMH-based Java example demonstrating sequential vs. random memory-access latency over a working set that fits in L1 and one that exceeds the last-level cache.
 
 #### Scenario: Uses JMH
 - **WHEN** the Java example is inspected
@@ -53,8 +53,8 @@ The lab MUST provide a JMH-based Java example demonstrating sequential vs. rando
 - **WHEN** the Java example is inspected
 - **THEN** it includes both a working set sized to fit comfortably in L1 and one sized to exceed any consumer last-level cache
 
-### Requirement: Rust example
-The lab MUST provide a Criterion-based Rust example demonstrating the same sequential-vs-random, small-vs-large comparison as the Java example.
+### Requirement: Cache hierarchy Rust example
+The cache-hierarchy lab MUST provide a Criterion-based Rust example demonstrating the same sequential-vs-random, small-vs-large comparison as the Java example.
 
 #### Scenario: Uses Criterion
 - **WHEN** the Rust example is benchmarked
@@ -68,7 +68,7 @@ The lab MUST provide a Criterion-based Rust example demonstrating the same seque
 - **WHEN** the Rust example builds its random access order
 - **THEN** it documents why a single-cycle permutation (Sattolo's algorithm) is used instead of a plain shuffle, which can produce short sub-cycles
 
-### Requirement: Honest results
+### Requirement: Cache hierarchy honest results
 Benchmark data MUST be clearly disclosed and simulated data MUST be clearly labelled.
 
 #### Scenario: Simulated model labelled
@@ -83,8 +83,8 @@ Benchmark data MUST be clearly disclosed and simulated data MUST be clearly labe
 - **WHEN** the benchmark tables are shown
 - **THEN** they state time units and a confidence interval or min/max spread across repeated runs, not a single bare number
 
-### Requirement: Educational completion
-The lab MUST include common mistakes, usage guidance, an investigation task, review questions, and sources.
+### Requirement: Cache hierarchy educational completion
+The cache-hierarchy lab MUST include common mistakes, usage guidance, an investigation task, review questions, and sources.
 
 #### Scenario: Common mistakes
 - **WHEN** a user reads the lab

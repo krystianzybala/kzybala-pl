@@ -13,7 +13,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 const SNAPSHOT_DIR = join(import.meta.dirname, "__snapshots__");
 const UPDATE = process.argv.includes("--update");
 
-const TARGETS = ["lab/index.html", "lab/false-sharing/index.html"];
+const TARGETS = ["index.html", "lab/index.html", "lab/false-sharing/index.html"];
 
 function normalize(html) {
   return html

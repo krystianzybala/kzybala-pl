@@ -30,6 +30,7 @@ export async function mountRegistry(root) {
   const labs = await loadLabsIndex();
   const filterInputs = [...root.querySelectorAll("[data-lab-filter]")];
   const empty = root.querySelector("[data-lab-registry-empty]");
+  const count = root.querySelector("[data-lab-filter-count]");
 
   // Filters marked [data-lab-filter-dynamic] get their <option>s populated
   // from the labs actually present, instead of a hand-maintained static list.
@@ -50,6 +51,7 @@ export async function mountRegistry(root) {
     const filtered = applyFilters(labs, filters);
     list.replaceChildren(...filtered.map(labCard));
     if (empty) empty.hidden = filtered.length > 0;
+    if (count) count.textContent = `Showing ${filtered.length} of ${labs.length} laboratories`;
   };
 
   filterInputs.forEach(input => input.addEventListener("change", render));
