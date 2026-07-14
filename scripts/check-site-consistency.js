@@ -69,6 +69,11 @@ if (!/data-lab-registry-empty\s+hidden(?:\s|>)/.test(catalogue)) {
   fail(`lab/index.html: [data-lab-registry-empty] must have the "hidden" attribute in the static markup so it never flashes visible before JS (or without JS) runs`);
 }
 
+// --- 8b. Curriculum roadmap's "no results" message is hidden by default too ---
+if (!/data-curriculum-registry-empty\s+hidden(?:\s|>)/.test(catalogue)) {
+  fail(`lab/index.html: [data-curriculum-registry-empty] must have the "hidden" attribute in the static markup so it never flashes visible before JS (or without JS) runs`);
+}
+
 // --- 9. Homepage must not link to the retired prototype anchors for labs that now have a full reference page ---
 for (const [anchor, realId] of [["#false-sharing", "false-sharing"], ["#ring-buffer", "spsc-ring-buffer"]]) {
   if (homepage.includes(`/lab/${anchor}`) && stableLabs.some(lab => lab.json.id === realId)) {

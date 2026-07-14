@@ -1,0 +1,8 @@
+[toolchain]
+# Pinned toolchain (plab-002): rustup resolves this automatically when you
+# run cargo inside this directory. benchmark.md discloses the exact rustc
+# build actually used for measured numbers; this pin keeps `cargo test` and
+# `cargo bench` reproducible for anyone who clones this project out on its
+# own, per the project README ("a standalone Cargo project you clone/copy
+# out and run on your own machine").
+channel = "1.88.0"

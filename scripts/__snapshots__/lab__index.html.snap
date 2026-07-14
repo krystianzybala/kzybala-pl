@@ -12,11 +12,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Performance Lab | Krystian Zybała</title>
-  <meta name="description" content="Interactive visualisations of false sharing, SPSC ring buffers and JVM JIT compilation.">
+  <meta name="description" content="Interactive labs on CPU caches, cache coherence, memory ordering, lock-free structures, and thread-per-core architecture, measured in Java and Rust.">
   <link rel="canonical" href="https://kzybala.pl/lab/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Performance Lab | Krystian Zybała">
-  <meta property="og:description" content="Interactive visualisations of false sharing, SPSC ring buffers and JVM JIT compilation.">
+  <meta property="og:description" content="Interactive labs on CPU caches, cache coherence, memory ordering, lock-free structures, and thread-per-core architecture, measured in Java and Rust.">
   <meta property="og:url" content="https://kzybala.pl/lab/">
   <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
   <meta name="twitter:card" content="summary_large_image">
@@ -42,7 +42,7 @@
     <a href="/research.html">Research</a>
     <a href="/talks.html">Talks</a>
     <a href="/consulting.html">Consulting</a>
-    <a href="/#about">About</a>
+    <a href="/about/">About</a>
     <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
   </div>
 </nav>
@@ -90,6 +90,45 @@
   <p class="filter-count" role="status" aria-live="polite" data-lab-filter-count></p>
   <div class="grid three" data-lab-registry></div>
   <p data-lab-registry-empty hidden>No labs match these filters yet — check back soon.</p>
+</section>
+
+<section class="section" data-curriculum-registry-root>
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">The full curriculum</p>
+      <h2>Reference labs and the 36-lab curriculum</h2>
+      <p class="lead">41 laboratories total: the 8-lab reference tier (cache hierarchy through thread-per-core, plus JIT pipeline) and the 36-lab curriculum defined by the plab-010–plab-606 proposals — three labs (False Sharing, SPSC Ring Buffer, JIT Pipeline) belong to both, so the totals below aren't a simple sum. Status is never inferred: cards without a link haven't been built yet, and every result names its own evidence maturity before you trust a number.</p>
+    </div>
+    <form class="filter-bar" aria-label="Filter curriculum">
+      <div class="filter-field">
+        <label for="curriculum-filter-category">Category</label>
+        <div class="filter-control">
+          <select id="curriculum-filter-category" class="filter-select" data-curriculum-filter="category" data-curriculum-filter-dynamic>
+            <option value="">All categories</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-field">
+        <label for="curriculum-filter-level">Level</label>
+        <div class="filter-control">
+          <select id="curriculum-filter-level" class="filter-select" data-curriculum-filter="level" data-curriculum-filter-dynamic>
+            <option value="">All levels</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-field">
+        <label for="curriculum-filter-status">Status</label>
+        <div class="filter-control">
+          <select id="curriculum-filter-status" class="filter-select" data-curriculum-filter="curriculumStatus" data-curriculum-filter-dynamic>
+            <option value="">All statuses</option>
+          </select>
+        </div>
+      </div>
+    </form>
+  </div>
+  <p class="filter-count" role="status" aria-live="polite" data-curriculum-filter-count></p>
+  <div class="grid three" data-curriculum-registry></div>
+  <p data-curriculum-registry-empty hidden>No curriculum entries match these filters yet.</p>
 </section>
 
 <section class="section">
@@ -199,6 +238,7 @@
     <a href="mailto:contact@kzybala.pl">Contact</a>
     <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
     <a href="/lab/">Performance Lab</a>
+    <a href="/about/">About</a>
   </div>
 
 </footer>

@@ -57,18 +57,24 @@
 </section>
 <section class="section"><div class="grid three"><div class="card"><div class="metric">30–50s → ~4s</div><div class="metric-label">Processing</div></div><div class="card"><div class="metric">10GB → ~2.5GB</div><div class="metric-label">Memory</div></div><div class="card"><div class="metric">~75% RAM</div><div class="metric-label">Reduction</div></div></div></section>
 <article class="section prose">
+<h2>Context</h2>
+<p>A payment settlement workflow processed large batch files on a schedule tied to a Kafka ingestion pipeline. Processing time and memory demand had grown with volume to the point where both were operational concerns, not just performance ones.</p>
 <h2>Problem</h2>
 <p>The workload processed large settlement files through an allocation-heavy execution model. Memory demand exceeded the practical limit and processing time varied between roughly thirty and fifty seconds.</p>
+<h2>Constraints</h2>
+<p>The fix had to fit inside the existing Kafka-based ingestion pipeline and file format — this was a redesign of the compute step, not a re-architecture of the surrounding system, and it had to run on the memory budget already provisioned rather than assume more RAM.</p>
 <h2>Investigation</h2>
 <p>Profiling showed excessive intermediate objects, avoidable copying and insufficient use of CPU parallelism. The limiting factor was the execution model, not Kafka throughput or storage bandwidth.</p>
-<h2>Design</h2>
+<h2>Approach</h2>
 <ul>
   <li>introduced a dedicated parallel compute engine,</li>
   <li>partitioned work into independent CPU-bound units,</li>
   <li>removed high-volume temporary allocations,</li>
   <li>reworked data structures for better locality and bounded memory use.</li>
 </ul>
-<h2>Outcome</h2>
+<h2>Trade-offs</h2>
+<p>Adding another queue, another broker, or simply a larger heap were all rejected: profiling had already shown Kafka throughput and storage bandwidth were not the limiting factor, so those changes would have added operational surface (more infrastructure to run and monitor) without addressing the actual bottleneck, which was the allocation-heavy execution model itself.</p>
+<h2>Measured outcome</h2>
 <p>Processing fell to approximately four seconds and memory demand to about 2.5GB. The important result was not merely throughput. The workload became easier to size, reason about and operate.</p>
 </article>
 </main>

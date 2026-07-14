@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 // Validates content/labs/*/lab.json against docs/lab-metadata-schema.md.
-// Checks: metadata schema, duplicate IDs, prerequisite references, cycle detection.
-import { loadLabs } from "./lib/labs.js";
+// Checks: metadata schema, duplicate IDs, prerequisite references, cycle
+// detection, and required content files (spec.md "Standard learning
+// sequence": theory, language write-ups, benchmark and sources must
+// actually exist, not just be implied by lab.json flags).
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { loadLabs, LABS_DIR } from "./lib/labs.js";
 
 const STATUS_VALUES = new Set(["draft", "stable", "deprecated"]);
 const DIFFICULTY_VALUES = new Set(["beginner", "intermediate", "advanced"]);
@@ -152,6 +157,23 @@ function detectCycle(id, stack) {
 
 for (const id of graph.keys()) {
   if (color.get(id) === WHITE) detectCycle(id, []);
+}
+
+// --- 5. Standard learning sequence: required content files actually exist ---
+// content/labs/README.md's contract: theory.md and sources.md are always
+// required; java.md/rust.md are required per lab.json#/languages;
+// benchmark.md is required when lab.json#/benchmark is true.
+for (const [dir, lab] of validLabs) {
+  const { languages = [], benchmark } = lab.json;
+  const required = ["theory.md", "sources.md"];
+  if (languages.includes("java")) required.push("java.md");
+  if (languages.includes("rust")) required.push("rust.md");
+  if (benchmark) required.push("benchmark.md");
+  for (const file of required) {
+    if (!existsSync(join(LABS_DIR, dir, file))) {
+      fail(dir, `missing required content file "${file}" (standard learning sequence)`);
+    }
+  }
 }
 
 if (errors.length > 0) {

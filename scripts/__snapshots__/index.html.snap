@@ -90,9 +90,9 @@
 </section>
 
 <section class="signal-strip" aria-label="Selected engineering impact">
-  <div class="signal"><strong>10×+</strong><span>faster payment workload</span></div>
-  <div class="signal"><strong>75%</strong><span>lower memory footprint</span></div>
-  <div class="signal"><strong>90%</strong><span>lower infrastructure cost</span></div>
+  <a class="signal" href="/case-studies/parallel-payment-engine.html"><strong>10×+</strong><span>faster payment workload — case study</span></a>
+  <a class="signal" href="/case-studies/parallel-payment-engine.html"><strong>75%</strong><span>lower memory footprint — case study</span></a>
+  <a class="signal" href="/case-studies/in-memory-decision-runtime.html"><strong>90%</strong><span>lower infrastructure cost — case study</span></a>
   <div class="signal"><strong>10+ yrs</strong><span>financial and runtime systems</span></div>
 </section>
 
@@ -149,7 +149,7 @@
     <a class="card" href="/lab/thread-per-core/"><p class="meta">ARCHITECTURE</p><h3>Thread-per-core architecture</h3><p>Owned partitions vs. a shared worker pool, cross-core handoff, and backpressure.</p></a>
   </div>
   <div class="prose">
-    <p><a href="/lab/">Browse all 7 labs in the Performance Lab catalogue →</a> — including Cache Coherence and MESI, Memory Ordering, and CAS Contention and Backoff.</p>
+    <p><a href="/lab/">Browse all <span data-lab-count-sentence>7 labs</span> in the Performance Lab catalogue →</a> — including Cache Coherence and MESI, Memory Ordering, and CAS Contention and Backoff.</p>
     <p>An early, non-reference <strong>prototype</strong> exploring the JIT compilation pipeline is also still up at <a href="/lab/#jit-pipeline">/lab/#jit-pipeline</a> — it predates the interactive framework above and isn't held to the same bar; a full reference lab for it hasn't shipped yet.</p>
   </div>
 </section>
@@ -215,6 +215,13 @@
   </div>
 
 </footer>
+
+<script type="module">
+  import { loadLabsIndex } from "/assets/js/core/metadata.js";
+  loadLabsIndex().then(labs => {
+    document.querySelectorAll("[data-lab-count-sentence]").forEach(el => { el.textContent = `${labs.length} labs`; });
+  }).catch(() => {});
+</script>
 
 </body>
 </html>

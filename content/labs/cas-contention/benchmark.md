@@ -55,7 +55,7 @@ contention at all is the steepest drop in both runs. Throughput keeps
 falling, not plateauing, all the way to 8 threads: this is "contention
 collapse" from the theory above, measured rather than asserted.
 
-**The single-writer counter is dramatically faster than even
+**The single-writer counter measured substantially faster than even
 *uncontended* CAS** — roughly 3.5× in Java (483,985 vs. 139,813 ops/ms) and
 about 27× in Rust (3,177,654 vs. 119,200 ops/ms derived). This gap is not
 "CAS is slow" in isolation; it's the cost of an atomic

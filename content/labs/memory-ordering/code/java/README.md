@@ -22,4 +22,4 @@ observed the classic anomaly on your machine/JVM — it does not fail the
 build either way, since not reproducing it proves nothing (see the lab's
 investigation task).
 
-Requires JDK 21+.
+Requires JDK 21+. `mvn` enforces this floor at build time (`maven-enforcer-plugin`, plab-002) — an older JDK fails fast with a clear error instead of a confusing compile failure.

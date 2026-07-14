@@ -26,4 +26,4 @@ consumer last-level cache). Full HTML report and raw per-sample CSV are
 written to `target/criterion/`. Expect several minutes total, dominated by
 the two `*_large` benchmarks.
 
-Requires a recent stable Rust toolchain (edition 2021).
+Requires a recent stable Rust toolchain (edition 2021). `rust-toolchain.toml` pins the exact channel used for the disclosed benchmark.md numbers (plab-002); rustup resolves it automatically inside this directory.

@@ -2,3 +2,8 @@
 .idea/
 .vscode/
 .claude/settings.local.json
+
+# Immutable raw benchmark run artifacts (docs/benchmark-artifact-layout.md).
+# Regenerable on your own hardware; committed only when it is the specific
+# evidence backing a benchmark.md number.
+/results/

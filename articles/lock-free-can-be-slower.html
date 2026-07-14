@@ -14,7 +14,6 @@
   <title>Lock-free can be slower | Krystian Zybała</title>
   <meta name="description" content="Progress guarantees do not automatically produce lower latency.">
   <link rel="canonical" href="https://kzybala.pl/articles/lock-free-can-be-slower.html">
-  <meta property="og:type" content="website">
   <meta property="og:title" content="Lock-free can be slower | Krystian Zybała">
   <meta property="og:description" content="Progress guarantees do not automatically produce lower latency.">
   <meta property="og:url" content="https://kzybala.pl/articles/lock-free-can-be-slower.html">
@@ -54,8 +53,13 @@
   <p class="eyebrow">Concurrency</p>
   <h1>Lock-free can be slower</h1>
   <p class="lead">Progress guarantees do not automatically produce lower latency.</p>
+<p>Published <time datetime="2026-07-11">11 Jul 2026</time> · updated <time datetime="2026-07-13">13 Jul 2026</time> · ~1 min read · Difficulty: Advanced</p>
 </section>
 <article class="section prose">
+<h2>Prerequisites</h2>
+<ul>
+  <li>Comfortable with CAS loops and basic memory-ordering vocabulary — see the <a href="/lab/cas-contention/">CAS contention</a> and <a href="/lab/memory-ordering/">memory ordering</a> labs if these are new.</li>
+</ul>
 <h2>Lock-free is a property, not a performance result</h2>
 <p>A lock-free algorithm guarantees system-wide progress. It says nothing about cache-line ping-pong, failed CAS loops, fairness or tail latency under contention.</p>
 <p>A well-designed single-writer model can outperform an impressive lock-free structure because it avoids shared writes altogether. The fastest atomic operation remains the one you did not need.</p>
@@ -68,6 +72,15 @@
 </ul>
 <h2>Choose the execution model first</h2>
 <p>Define ownership, communication direction and boundedness before selecting atomics. SPSC queues, thread-per-core execution and batching often solve the actual problem with less coherence traffic.</p>
+<h2>Trade-offs</h2>
+<p>Single-writer and SPSC designs remove contention by construction, but only where the problem genuinely decomposes into one writer per resource. Force a workload that needs real multi-writer semantics into a single-writer shape and the queue in front of that writer becomes the new bottleneck — the coherence traffic didn't disappear, it moved to a serialization point.</p>
+<h2>Evidence and related laboratories</h2>
+<p>The magnitude here is measured on this site, not just asserted: the <a href="/lab/thread-per-core/">thread-per-core</a> lab's benchmark shows owned partitions outperforming a shared, lock-guarded pool by roughly 38× in Java and 36× in Rust on the disclosed test hardware, and the <a href="/lab/cas-contention/">CAS contention</a> lab's benchmark shows an uncontended single-writer counter measuring substantially faster than uncontended CAS. Both benchmark pages disclose hardware, method and limitations — see them for the numbers behind this article's claims, and see the <a href="/lab/spsc-ring-buffer/">SPSC ring buffer</a> and <a href="/lab/memory-ordering/">memory ordering</a> labs for the underlying mechanisms.</p>
+<h2>Sources and further reading</h2>
+<ul class="sources">
+  <li><cite>The Art of Multiprocessor Programming</cite> — Maurice Herlihy &amp; Nir Shavit, Morgan Kaufmann, 2nd ed., 2020.</li>
+  <li><cite>Java Concurrency in Practice</cite> — Brian Goetz et al., Addison-Wesley, 2006.</li>
+</ul>
 </article>
 </main>
   

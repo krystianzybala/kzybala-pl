@@ -5,6 +5,7 @@
   "description": "Static site build/quality tooling. No runtime dependencies — see docs/new-lab-workflow.md.",
   "scripts": {
     "validate:labs": "node scripts/validate-labs.js",
+    "validate:curriculum": "node scripts/validate-curriculum.js",
     "check:sizes": "node scripts/check-asset-sizes.js",
     "validate:html": "node scripts/validate-html.js",
     "check:a11y": "node scripts/check-accessibility.js",
@@ -16,8 +17,10 @@
     "test:reducers": "node --test scripts/test-reducers.js",
     "test:keyboard": "node --test scripts/test-keyboard.js",
     "test:registry": "node --test scripts/test-registry.js",
+    "test:curriculum": "node --test scripts/test-curriculum.js",
+    "test:benchmark-platform": "node --test scripts/test-benchmark-platform.js",
     "test:snapshots": "node scripts/test-snapshots.js",
-    "test": "npm run test:reducers && npm run test:keyboard && npm run test:registry && npm run test:snapshots",
-    "verify": "npm run validate:labs && npm run build:labs-index && npm run build:sitemap && npm run check:sizes && npm run validate:html && npm run check:a11y && npm run check:no-js-fallback && npm run check:consistency && npm run test"
+    "test": "npm run test:reducers && npm run test:keyboard && npm run test:registry && npm run test:curriculum && npm run test:benchmark-platform && npm run test:snapshots",
+    "verify": "npm run validate:labs && npm run validate:curriculum && npm run build:labs-index && npm run build:sitemap && npm run check:sizes && npm run validate:html && npm run check:a11y && npm run check:no-js-fallback && npm run check:consistency && npm run test"
   }
 }

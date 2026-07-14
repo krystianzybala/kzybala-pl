@@ -20,4 +20,4 @@ Confirms both examples behave correctly under the concurrency pattern each
 is meant to illustrate: `SharedWriterExample` under two concurrent writer
 threads, `SingleOwnerExample` on its one owning thread.
 
-Requires JDK 21+.
+Requires JDK 21+. `mvn` enforces this floor at build time (`maven-enforcer-plugin`, plab-002) — an older JDK fails fast with a clear error instead of a confusing compile failure.

@@ -42,8 +42,10 @@ threads.
 
 **Owned partitions outperform the shared, lock-guarded pool by roughly
 38× in Java (1,861,212 vs. 48,784 ops/ms) and roughly 36× in Rust (derived
-1,223,982 vs. 33,798 ops/ms) — consistent in <em>magnitude</em> across both
-languages, even though their absolute baselines differ (as with every
+1,223,982 vs. 33,798 ops/ms) — both are order-of-magnitude figures from a
+single run's confidence intervals, not precise to the ones digit, but
+consistent in <em>magnitude</em> across both languages, even though their
+absolute baselines differ (as with every
 cross-language comparison on this site — see the SPSC Ring Buffer lab's
 benchmark notes on why absolute numbers don't transfer across language/JIT
 boundaries).** This is the concrete cost of one shared lock serializing 4

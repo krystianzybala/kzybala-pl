@@ -57,19 +57,25 @@
 </section>
 <section class="section"><div class="grid three"><div class="card"><div class="metric">coarse lock → lock-free</div><div class="metric-label">Model</div></div><div class="card"><div class="metric">near zero</div><div class="metric-label">Allocation</div></div><div class="card"><div class="metric">shared platform code</div><div class="metric-label">Scope</div></div></div></section>
 <article class="section prose">
+<h2>Context</h2>
+<p>A shared internal component sat beneath many workloads on the platform, so its per-call cost was multiplied by every caller rather than being a cost one team could absorb in isolation.</p>
 <h2>Problem</h2>
 <p>A commonly used internal component serialised callers through synchronized sections and created a very high allocation rate. Because the library sat beneath many workloads, its cost was multiplied across the platform.</p>
+<h2>Constraints</h2>
+<p>The component was shared infrastructure with many existing callers, so its external behaviour and correctness guarantees had to be preserved — this ruled out a rewrite that changed call-site semantics, and left ordering/visibility guarantees as the main thing that could safely be relaxed.</p>
 <h2>Investigation</h2>
 <p>Contention profiles, allocation analysis and flamegraphs identified both shared locking and object churn as structural rather than incidental costs.</p>
-<h2>Redesign</h2>
+<h2>Approach</h2>
 <ul>
   <li>replaced coarse critical sections with a lock-free access model,</li>
   <li>reused bounded structures on the hot path,</li>
   <li>separated producer work from slower downstream operations,</li>
-  <li>used weaker memory ordering where correctness allowed it.</li>
+  <li>used weaker memory ordering only where the happens-before requirements of each access were verified not to need more.</li>
 </ul>
-<h2>Outcome</h2>
-<p>The redesigned path was near zero-allocation and removed the principal synchronized bottleneck. The public description intentionally excludes internal rates and component details.</p>
+<h2>Trade-offs</h2>
+<p>Lock-free access moved complexity from "one critical section to reason about" to "an ordering argument for each access" — correct, but harder for future maintainers to verify by inspection than a synchronized block. That cost was accepted because the component sat on enough hot paths that the alternative (leaving the lock in place) was multiplied across the whole platform.</p>
+<h2>Measured outcome</h2>
+<p>The redesigned path was near zero-allocation and removed the principal synchronized bottleneck, measured via the same allocation and contention profiling used to diagnose the original problem. Specific throughput/allocation-rate figures and component identity are withheld here as client-confidential; the qualitative before/after (coarse lock → lock-free, high allocation → near zero) is what this page discloses.</p>
 </article>
 </main>
   

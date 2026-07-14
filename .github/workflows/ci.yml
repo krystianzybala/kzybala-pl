@@ -17,6 +17,8 @@ jobs:
           node-version: 22
       - name: Validate lab metadata
         run: node scripts/validate-labs.js
+      - name: Validate curriculum manifest
+        run: node scripts/validate-curriculum.js
       - name: Build labs index
         run: node scripts/generate-labs-index.js
       - name: Check asset-size budgets
@@ -29,7 +31,46 @@ jobs:
         run: node scripts/check-no-js-fallback.js
       - name: Reducer and framework unit tests
         run: node --test scripts/test-reducers.js
+      - name: Curriculum unit tests
+        run: node --test scripts/test-curriculum.js
+      - name: Benchmark platform unit tests
+        run: node --test scripts/test-benchmark-platform.js
       - name: Keyboard/tablist unit tests
         run: node --test scripts/test-keyboard.js
       - name: Structural snapshot tests
         run: node scripts/test-snapshots.js
+
+  # Proves the false-sharing pilot lab's Java/Rust benchmarks are wired and
+  # buildable on a fresh x86_64 runner. Uses the "smoke" profile
+  # (content/labs/_shared/benchmark-profiles.json): zero statistical value,
+  # never cited in a benchmark.md table. Publication-grade numbers only ever
+  # come from a designated controlled host (docs/benchmark-publication-procedure.md),
+  # never from this or any other shared CI runner (design.md CI policy).
+  benchmark-smoke:
+    name: Benchmark smoke (wiring only — not publication evidence)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Correctness gate (false-sharing pilot lab)
+        run: node scripts/benchmark-platform/run-correctness-gate.js false-sharing
+      - name: Build false-sharing JMH benchmark jar
+        working-directory: content/labs/false-sharing/code/java
+        run: mvn --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED -DskipTests package
+      - name: JMH smoke run (wiring only — not publication evidence)
+        working-directory: content/labs/false-sharing/code/java
+        run: java --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED -jar target/benchmarks.jar $(node ../../../../../scripts/benchmark-platform/print-profile-args.js smoke jmh)
+      - name: Criterion smoke run (wiring only — not publication evidence)
+        working-directory: content/labs/false-sharing/code/rust
+        run: cargo bench --bench false_sharing -- $(node ../../../../../scripts/benchmark-platform/print-profile-args.js smoke criterion)

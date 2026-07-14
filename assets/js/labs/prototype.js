@@ -8,11 +8,13 @@
 import { initTablist } from "../core/keyboard.js";
 import { createLabDefinition, mountLab } from "../core/lab-framework.js";
 import { mountRegistry } from "../core/registry.js";
+import { mountCurriculum } from "../core/curriculum.js";
 import { falseSharingInitialState, falseSharingReducer, announceFalseSharing } from "./false-sharing-reducer.js";
 import { ringBufferInitialState, ringBufferReducer, announceRingBuffer, ringBufferCapacity } from "./ring-buffer-reducer.js";
 import { jitPipelineInitialState, jitPipelineReducer, announceJitPipeline, jitStageLabels } from "./jit-pipeline-reducer.js";
 
 mountRegistry(document.querySelector("[data-lab-registry-root]"));
+mountCurriculum(document.querySelector("[data-curriculum-registry-root]"));
 
 // Page-level tab switcher between the three demo sections.
 const nav = document.querySelector('.lab-nav[role="tablist"]');

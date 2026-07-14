@@ -46,12 +46,25 @@
 | `align(64)` counters (padded) | 263.44 µs | [262.21 µs, 265.07 µs] |
 
 On this run: padding gave roughly a 3.7× throughput improvement in Java and
-a 3.8× reduction in time-per-batch in Rust; `@Contended` slightly
-outperformed manual padding in Java. These ratios — not the absolute
-numbers — are the part worth trusting across machines; re-run the project
-in `code/` on your own hardware and replace this table with your own
+a 3.8× reduction in time-per-batch in Rust; `@Contended` counters slightly
+outperformed manual padding in Java (325,893 ± 7,616 vs. 255,796 ± 32,251
+ops/ms — non-overlapping 99.9% confidence intervals, so this ranking is not
+measurement noise, though the margin is modest). These ratios — not the
+absolute numbers — are the part worth trusting across machines; re-run the
+project in `code/` on your own hardware and replace this table with your own
 numbers before using either the ratio or the absolute figures for a real
 design decision.
+
+## Known limitations
+
+- Single machine, single run per language — no cross-run variance data
+  beyond the reported CIs, and no CPU pinning was used to isolate benchmark
+  threads from OS scheduling noise.
+- `@Contended` vs. manual padding is the closest comparison in this lab;
+  treat it as directionally reliable, not precise to the percentage point.
+- See `theory.md`'s "Limitations of this model" for how the interactive
+  visualisation simplifies coherence-traffic timing relative to real
+  hardware.
 
 ## Raw data and reproduction
 

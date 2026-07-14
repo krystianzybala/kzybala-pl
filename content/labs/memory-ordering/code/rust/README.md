@@ -20,4 +20,4 @@ test runs 500 iterations and prints how many times it observed the classic
 anomaly on your machine/target — it does not fail either way, since not
 reproducing it proves nothing (see the lab's investigation task).
 
-Requires a recent stable Rust toolchain (edition 2021).
+Requires a recent stable Rust toolchain (edition 2021). `rust-toolchain.toml` pins the exact channel used for the disclosed benchmark.md numbers (plab-002); rustup resolves it automatically inside this directory.

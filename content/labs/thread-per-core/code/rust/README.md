@@ -26,4 +26,4 @@ Runs `shared_pool_increment_4_threads` (4 threads contending for one
 unshared counter), 20,000 increments per thread per sample. Full HTML
 report and raw per-sample CSV are written to `target/criterion/`.
 
-Requires a recent stable Rust toolchain (edition 2021).
+Requires a recent stable Rust toolchain (edition 2021). `rust-toolchain.toml` pins the exact channel used for the disclosed benchmark.md numbers (plab-002); rustup resolves it automatically inside this directory.

@@ -14,7 +14,6 @@
   <title>Designing JIT-friendly hot paths | Krystian Zybała</title>
   <meta name="description" content="Code shape matters when predictable execution depends on successful optimisation.">
   <link rel="canonical" href="https://kzybala.pl/articles/jit-friendly-hot-paths.html">
-  <meta property="og:type" content="website">
   <meta property="og:title" content="Designing JIT-friendly hot paths | Krystian Zybała">
   <meta property="og:description" content="Code shape matters when predictable execution depends on successful optimisation.">
   <meta property="og:url" content="https://kzybala.pl/articles/jit-friendly-hot-paths.html">
@@ -54,8 +53,13 @@
   <p class="eyebrow">JIT</p>
   <h1>Designing JIT-friendly hot paths</h1>
   <p class="lead">Code shape matters when predictable execution depends on successful optimisation.</p>
+<p>Published <time datetime="2026-07-11">11 Jul 2026</time> · updated <time datetime="2026-07-13">13 Jul 2026</time> · ~1 min read · Difficulty: Advanced</p>
 </section>
 <article class="section prose">
+<h2>Prerequisites</h2>
+<ul>
+  <li>Familiarity with JIT terminology: inlining, tiered compilation, deoptimization, monomorphic vs. megamorphic call sites.</li>
+</ul>
 <h2>Keep hot paths legible to the compiler</h2>
 <p>Very large methods, unstable call sites, megamorphic dispatch and mixed exceptional behaviour make optimisation harder. The code may still compile, but not necessarily into the shape you expected.</p>
 <h2>Practical constraints</h2>
@@ -65,8 +69,18 @@
   <li>avoid accidental interface polymorphism inside tight loops,</li>
   <li>verify inlining and generated code rather than assuming it.</li>
 </ul>
+<h2>Trade-offs</h2>
+<p>Splitting cold validation and error paths out of a hot method costs readability: the logic that guards a code path moves away from the code it guards, and a single polymorphic call site sometimes has to become several concrete ones. That cost is only worth paying where profiling shows the JIT is actually failing to do its job on this code — not applied everywhere as a house style.</p>
 <h2>Measure the generated behaviour</h2>
 <p>Use JITWatch, compilation logs, perfasm and profiles under representative load. Source code is merely a suggestion submitted to several layers of machinery with opinions of their own.</p>
+<h2>Evidence and related laboratories</h2>
+<p>Performance Lab does not yet host a benchmarked reference lab for JIT compilation behaviour, so the guidance above is experience-based rather than measured data on this site. An early, non-reference prototype exploring the compilation pipeline is at <a href="/lab/#jit-pipeline">/lab/#jit-pipeline</a>, but it predates the interactive framework and isn't held to the same evidentiary bar as the labs in the main catalogue — verify these claims on your own workload with the tools below.</p>
+<h2>Sources and further reading</h2>
+<ul class="sources">
+  <li><cite>Optimizing Java</cite> — Benjamin J Evans, James Gough &amp; Chris Newland, O'Reilly, 2018.</li>
+  <li><cite>JITWatch</cite> — <a href="https://github.com/AdoptOpenJDK/jitwatch" rel="noopener">github.com/AdoptOpenJDK/jitwatch</a></li>
+  <li><cite>HotSpot <code>-XX:+PrintCompilation</code> / <code>-XX:+PrintInlining</code> diagnostic options</cite> — Oracle HotSpot VM options reference.</li>
+</ul>
 </article>
 </main>
   

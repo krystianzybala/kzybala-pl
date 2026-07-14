@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "smoke": {
+      "purpose": "Prove the benchmark is wired and runs to completion. Zero statistical value — never cite these numbers.",
+      "rigor": "none",
+      "jmh": {
+        "forks": 1,
+        "warmupIterations": 0,
+        "warmupTime": "200ms",
+        "measurementIterations": 1,
+        "measurementTime": "200ms"
+      },
+      "criterion": {
+        "flags": ["--quick", "--noplot"]
+      },
+      "macro": {
+        "warmupRuns": 0,
+        "measuredRuns": 1
+      }
+    },
+    "development": {
+      "purpose": "Fast local feedback while changing implementation code. Indicative trend only, not for a benchmark.md table.",
+      "rigor": "indicative",
+      "jmh": {
+        "forks": 1,
+        "warmupIterations": 2,
+        "warmupTime": "500ms",
+        "measurementIterations": 3,
+        "measurementTime": "500ms"
+      },
+      "criterion": {
+        "flags": ["--warm-up-time", "1", "--measurement-time", "2", "--sample-size", "20", "--noplot"]
+      },
+      "macro": {
+        "warmupRuns": 1,
+        "measuredRuns": 5
+      }
+    },
+    "full": {
+      "purpose": "Statistically useful evidence for day-to-day conclusions on a developer machine. Suitable for a benchmark.md table when the disclosure names the host and marks it non-controlled.",
+      "rigor": "statistical",
+      "jmh": {
+        "forks": 2,
+        "warmupIterations": 3,
+        "warmupTime": "1s",
+        "measurementIterations": 5,
+        "measurementTime": "1s"
+      },
+      "criterion": {
+        "flags": ["--warm-up-time", "3", "--measurement-time", "5", "--sample-size", "100", "--noplot"]
+      },
+      "macro": {
+        "warmupRuns": 3,
+        "measuredRuns": 15
+      }
+    },
+    "publication": {
+      "purpose": "Publication-grade evidence. Only valid when run on a designated controlled host (docs/benchmark-publication-procedure.md) — never synthesized on an ordinary shared runner.",
+      "rigor": "controlled",
+      "requiresControlledHost": true,
+      "jmh": {
+        "forks": 5,
+        "warmupIterations": 5,
+        "warmupTime": "1s",
+        "measurementIterations": 10,
+        "measurementTime": "1s"
+      },
+      "criterion": {
+        "flags": ["--warm-up-time", "3", "--measurement-time", "10", "--sample-size", "200", "--noplot"]
+      },
+      "macro": {
+        "warmupRuns": 5,
+        "measuredRuns": 30
+      }
+    }
+  }
+}

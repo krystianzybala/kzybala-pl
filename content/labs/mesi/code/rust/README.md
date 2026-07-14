@@ -20,4 +20,4 @@ Confirms both types behave correctly under the concurrency pattern each is
 meant to illustrate: `SharedWriter` under two concurrent incrementing
 threads, `SingleOwner` on its one owning thread.
 
-Requires a recent stable Rust toolchain (edition 2021).
+Requires a recent stable Rust toolchain (edition 2021). `rust-toolchain.toml` pins the exact channel used for the disclosed benchmark.md numbers (plab-002); rustup resolves it automatically inside this directory.

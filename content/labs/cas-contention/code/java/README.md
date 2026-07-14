@@ -21,4 +21,4 @@ Runs five benchmarks (`casIncrement1Thread`, `casIncrement2Threads`,
 ~15 s each by default (5 warmup + 10 measurement iterations of 1 s). Add
 `-rf json -rff results.json` for raw per-iteration samples.
 
-Requires JDK 21+. Uses JMH 1.37 (see `pom.xml`).
+Requires JDK 21+. Uses JMH 1.37 (see `pom.xml`). `mvn` enforces this floor at build time (`maven-enforcer-plugin`, plab-002) — an older JDK fails fast with a clear error instead of a confusing compile failure.

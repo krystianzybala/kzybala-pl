@@ -24,4 +24,4 @@ one cache line) against `PaddedCounters` (`#[repr(align(64))]`, separate
 lines) under concurrent writes from two threads. Full HTML report and raw
 per-sample CSV are written to `target/criterion/`.
 
-Requires a recent stable Rust toolchain (edition 2021).
+Requires a recent stable Rust toolchain (edition 2021). `rust-toolchain.toml` pins the exact channel used for the disclosed benchmark.md numbers (plab-002); rustup resolves it automatically inside this directory.

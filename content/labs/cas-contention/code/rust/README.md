@@ -25,4 +25,4 @@ aggregate CAS throughput at 1/2/4/8 contending threads against a
 single-writer counter. Full HTML report and raw per-sample CSV are written
 to `target/criterion/`.
 
-Requires a recent stable Rust toolchain (edition 2021).
+Requires a recent stable Rust toolchain (edition 2021). `rust-toolchain.toml` pins the exact channel used for the disclosed benchmark.md numbers (plab-002); rustup resolves it automatically inside this directory.

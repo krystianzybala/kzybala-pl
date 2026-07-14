@@ -57,16 +57,22 @@
 </section>
 <section class="section"><div class="grid three"><div class="card"><div class="metric">~90% lower</div><div class="metric-label">Cost</div></div><div class="card"><div class="metric">minutes → 1–2s</div><div class="metric-label">Latency</div></div><div class="card"><div class="metric">underused → saturated</div><div class="metric-label">CPU</div></div></div></section>
 <article class="section prose">
+<h2>Context</h2>
+<p>A decision-serving system used PostgreSQL as both the system of record and the compute engine: scoring logic ran as SQL, and the application tier mainly shuttled requests to and from the database.</p>
 <h2>Problem</h2>
 <p>Core computations were pushed into PostgreSQL while the application tier used only a small fraction of available CPU. Scaling the existing design increased infrastructure cost without fixing the execution model.</p>
-<h2>Redesign</h2>
+<h2>Constraints</h2>
+<p>The database had to remain the durable, authoritative store — this was not a rewrite that could relax consistency guarantees. The system was live, so the migration had to preserve correctness throughout, not just at a finish line.</p>
+<h2>Approach</h2>
 <ul>
   <li>moved the critical computation into an in-memory execution layer,</li>
   <li>used parallel CPU-bound processing for scoring workloads,</li>
   <li>kept the database for durable state rather than treating it as a compute engine,</li>
   <li>measured the machine as a whole rather than tuning a single query in isolation.</li>
 </ul>
-<h2>Outcome</h2>
+<h2>Trade-offs</h2>
+<p>Moving computation off the database traded SQL's transactional simplicity for application-level correctness responsibility — consistency between the in-memory execution layer and the durable store had to be maintained explicitly rather than left to the database engine.</p>
+<h2>Measured outcome</h2>
 <p>Processing dropped from minutes to roughly one or two seconds, CPU resources were used effectively and infrastructure expenditure fell from approximately $70k to $7k.</p>
 </article>
 </main>

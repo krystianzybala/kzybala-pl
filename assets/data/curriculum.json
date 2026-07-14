@@ -1,0 +1,897 @@
+[
+  {
+    "id": "cache-hierarchy",
+    "title": "Cache Hierarchy",
+    "category": "reference",
+    "curriculumMember": false,
+    "path": "foundational",
+    "level": 1,
+    "focusQuestion": "Why does the same access pattern get dramatically slower as data moves from L1 to L2, L3 and DRAM?",
+    "curriculumStatus": "implemented",
+    "evidenceMaturity": "reproduced",
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [],
+    "route": "/lab/cache-hierarchy/",
+    "sourceChange": "plab-020-cache-hierarchy",
+    "plannedChange": null
+  },
+  {
+    "id": "false-sharing",
+    "title": "False Sharing",
+    "category": "reference",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 1,
+    "focusQuestion": "Why can independent counters destroy throughput when they occupy the same cache line?",
+    "curriculumStatus": "implemented",
+    "evidenceMaturity": "reproduced",
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [],
+    "route": "/lab/false-sharing/",
+    "sourceChange": "plab-010-false-sharing",
+    "plannedChange": "plab-010-false-sharing-reference-lab"
+  },
+  {
+    "id": "mesi",
+    "title": "Cache Coherence and MESI",
+    "category": "reference",
+    "curriculumMember": false,
+    "path": "intermediate",
+    "level": 1,
+    "focusQuestion": "How do CPU caches stay coherent across cores, and what does perf c2c actually reveal about it?",
+    "curriculumStatus": "implemented",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [],
+    "route": "/lab/mesi/",
+    "sourceChange": "plab-021-cache-coherence-mesi",
+    "plannedChange": null
+  },
+  {
+    "id": "memory-ordering",
+    "title": "Memory Ordering in Java and Rust",
+    "category": "reference",
+    "curriculumMember": false,
+    "path": "advanced",
+    "level": 2,
+    "focusQuestion": "What can compiler and CPU reordering do to program order, and how do VarHandles and Rust atomics constrain it?",
+    "curriculumStatus": "implemented",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "mesi"
+    ],
+    "route": "/lab/memory-ordering/",
+    "sourceChange": "plab-022-memory-ordering-java-rust",
+    "plannedChange": null
+  },
+  {
+    "id": "cas-contention",
+    "title": "CAS Contention and Backoff",
+    "category": "reference",
+    "curriculumMember": false,
+    "path": "advanced",
+    "level": 3,
+    "focusQuestion": "Why does lock-free contention collapse under load, and when does backoff help?",
+    "curriculumStatus": "implemented",
+    "evidenceMaturity": "reproduced",
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "memory-ordering"
+    ],
+    "route": "/lab/cas-contention/",
+    "sourceChange": "plab-023-cas-contention-and-backoff",
+    "plannedChange": null
+  },
+  {
+    "id": "spsc-ring-buffer",
+    "title": "SPSC Ring Buffer",
+    "category": "reference",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 4,
+    "focusQuestion": "How can one producer and one consumer exchange messages with bounded, allocation-free latency?",
+    "curriculumStatus": "implemented",
+    "evidenceMaturity": "reproduced",
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "cas-contention"
+    ],
+    "route": "/lab/spsc-ring-buffer/",
+    "sourceChange": "plab-024-spsc-ring-buffer",
+    "plannedChange": "plab-013-spsc-ring-buffer-reference-lab"
+  },
+  {
+    "id": "thread-per-core",
+    "title": "Thread-per-Core Architecture",
+    "category": "reference",
+    "curriculumMember": false,
+    "path": "advanced",
+    "level": 5,
+    "focusQuestion": "Can ownership partitioning remove synchronization from the hot path, one core at a time?",
+    "curriculumStatus": "implemented",
+    "evidenceMaturity": "reproduced",
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 35,
+    "prerequisites": [
+      "spsc-ring-buffer"
+    ],
+    "route": "/lab/thread-per-core/",
+    "sourceChange": "plab-025-thread-per-core",
+    "plannedChange": null
+  },
+  {
+    "id": "jit-pipeline",
+    "title": "JIT Pipeline: Interpretation, C1, C2 and Deoptimization",
+    "category": "reference",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 1,
+    "focusQuestion": "How does Java code move from bytecode through tiered compilation, and why do benchmark results change during warm-up?",
+    "curriculumStatus": "partial",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-012-jit-pipeline-reference-lab"
+  },
+  {
+    "id": "benchmark-harness-traps",
+    "title": "Benchmark Harness Traps",
+    "category": "foundations",
+    "curriculumMember": true,
+    "path": "foundational",
+    "level": 1,
+    "focusQuestion": "How can a benchmark report convincing numbers while measuring almost nothing useful?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 20,
+    "prerequisites": [],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-101-benchmark-harness-traps"
+  },
+  {
+    "id": "clocks-latency-histograms",
+    "title": "Clocks, Latency Histograms and Percentiles",
+    "category": "foundations",
+    "curriculumMember": true,
+    "path": "foundational",
+    "level": 2,
+    "focusQuestion": "What does a nanosecond timestamp actually mean, and how should latency distributions be recorded without distorting the hot path?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 20,
+    "prerequisites": [
+      "benchmark-harness-traps"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-102-clocks-latency-histograms"
+  },
+  {
+    "id": "branch-prediction",
+    "title": "Branch Prediction and Data Distribution",
+    "category": "foundations",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 3,
+    "focusQuestion": "When does a simple conditional become more expensive than the work guarded by it?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [
+      "clocks-latency-histograms"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-103-branch-prediction"
+  },
+  {
+    "id": "cache-locality-working-set",
+    "title": "Cache Locality and Working-Set Size",
+    "category": "foundations",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 4,
+    "focusQuestion": "Why does the same loop collapse when the working set moves from L1 to L2, L3 and DRAM?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [
+      "branch-prediction"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-104-cache-locality-working-set"
+  },
+  {
+    "id": "aos-vs-soa",
+    "title": "Array of Structures vs Structure of Arrays",
+    "category": "foundations",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 5,
+    "focusQuestion": "How does record layout affect cache density, SIMD potential and update cost?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [
+      "cache-locality-working-set"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-105-aos-vs-soa"
+  },
+  {
+    "id": "bounds-checks-loop-shape",
+    "title": "Bounds Checks and Loop Shape",
+    "category": "foundations",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 6,
+    "focusQuestion": "When can compilers eliminate bounds checks, and when does a harmless-looking loop shape prevent it?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [
+      "cache-locality-working-set"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-106-bounds-checks-loop-shape"
+  },
+  {
+    "id": "inlining-call-site-shape",
+    "title": "Inlining and Call-Site Shape",
+    "category": "jit-compiler",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 1,
+    "focusQuestion": "How do monomorphic, bimorphic and megamorphic call sites change optimization opportunities?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "bounds-checks-loop-shape"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-202-inlining-call-site-shape"
+  },
+  {
+    "id": "escape-analysis-scalar-replacement",
+    "title": "Escape Analysis and Scalar Replacement",
+    "category": "jit-compiler",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 2,
+    "focusQuestion": "When is an allocation in Java source code not an allocation at runtime?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "inlining-call-site-shape"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-203-escape-analysis-scalar-replacement"
+  },
+  {
+    "id": "deoptimization-uncommon-traps",
+    "title": "Deoptimization and Uncommon Traps",
+    "category": "jit-compiler",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 3,
+    "focusQuestion": "What happens when optimized code assumptions stop being true in production?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "escape-analysis-scalar-replacement"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-204-deoptimization-uncommon-traps"
+  },
+  {
+    "id": "safepoints-ttsp",
+    "title": "Safepoints and Time to Safepoint",
+    "category": "jit-compiler",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 4,
+    "focusQuestion": "Why can a short stop-the-world operation still produce a long application pause?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "deoptimization-uncommon-traps"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-205-safepoints-ttsp"
+  },
+  {
+    "id": "gc-tail-latency",
+    "title": "GC Algorithms and Tail Latency",
+    "category": "jit-compiler",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 5,
+    "focusQuestion": "How do allocation rate, live-set size and collector choice shape latency tails?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "safepoints-ttsp"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-206-gc-tail-latency"
+  },
+  {
+    "id": "allocation-object-layout",
+    "title": "Allocation Cost and Object Layout",
+    "category": "memory-layout",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 1,
+    "focusQuestion": "What are the real byte and CPU costs of convenient object models?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [
+      "cache-locality-working-set"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-301-allocation-object-layout"
+  },
+  {
+    "id": "ffm-memory-segments",
+    "title": "Heap vs Off-Heap with FFM MemorySegment",
+    "category": "memory-layout",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 2,
+    "focusQuestion": "When does moving data off heap help, and what costs replace GC-managed objects?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "allocation-object-layout"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-302-ffm-memory-segments"
+  },
+  {
+    "id": "struct-layout-alignment",
+    "title": "Struct Layout, Alignment and Padding",
+    "category": "memory-layout",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 3,
+    "focusQuestion": "How do field order, alignment and cache-line boundaries affect footprint and access cost?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "ffm-memory-segments"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-303-struct-layout-alignment"
+  },
+  {
+    "id": "arena-lifetimes-reuse",
+    "title": "Arena Lifetimes, Pools and Reuse",
+    "category": "memory-layout",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 4,
+    "focusQuestion": "Can explicit lifetime regions eliminate allocation pressure without becoming a manual-memory disaster?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "struct-layout-alignment"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-304-arena-lifetimes-reuse"
+  },
+  {
+    "id": "zero-copy-binary-parsing",
+    "title": "Zero-Copy Binary Parsing and Views",
+    "category": "memory-layout",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 5,
+    "focusQuestion": "How can a decoder expose typed fields without copying payloads or allocating object graphs?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "arena-lifetimes-reuse"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-305-zero-copy-binary-parsing"
+  },
+  {
+    "id": "simd-vector-api-rust",
+    "title": "SIMD: Java Vector API and Rust",
+    "category": "memory-layout",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 6,
+    "focusQuestion": "When does explicit SIMD outperform scalar code, and when does memory bandwidth make it irrelevant?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "aos-vs-soa"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-306-simd-vector-api-rust"
+  },
+  {
+    "id": "memory-ordering-atomics",
+    "title": "Memory Ordering: VarHandles and Rust Atomics",
+    "category": "concurrency-lockfree",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 1,
+    "focusQuestion": "What correctness and performance guarantees do plain, opaque, acquire/release and sequentially consistent operations provide?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "cas-contention"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-402-memory-ordering-atomics"
+  },
+  {
+    "id": "mpsc-contention",
+    "title": "MPSC Queues and Producer Contention",
+    "category": "concurrency-lockfree",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 2,
+    "focusQuestion": "What changes when many producers contend for one consumer-owned stream?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "memory-ordering-atomics"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-404-mpsc-contention"
+  },
+  {
+    "id": "locks-spin-parking",
+    "title": "Locks, Spin Waiting and Parking",
+    "category": "concurrency-lockfree",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 3,
+    "focusQuestion": "When is a lock cheaper than a lock-free algorithm, and when should a waiter spin, yield or park?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "mpsc-contention"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-405-locks-spin-parking"
+  },
+  {
+    "id": "thread-per-core-sharding",
+    "title": "Thread-per-Core and Shared-Nothing Sharding",
+    "category": "concurrency-lockfree",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 4,
+    "focusQuestion": "Can ownership partitioning remove synchronization from the hot path?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "locks-spin-parking",
+      "thread-per-core"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-406-thread-per-core-sharding"
+  },
+  {
+    "id": "fixed-binary-serialization",
+    "title": "Object Serialization vs Fixed Binary Layout",
+    "category": "io-systems",
+    "curriculumMember": true,
+    "path": "intermediate",
+    "level": 1,
+    "focusQuestion": "How much latency and allocation are spent turning in-memory state into bytes and back?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 25,
+    "prerequisites": [
+      "struct-layout-alignment"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-501-fixed-binary-serialization"
+  },
+  {
+    "id": "memory-mapped-files",
+    "title": "Memory-Mapped Files and Page Faults",
+    "category": "io-systems",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 2,
+    "focusQuestion": "When does mmap remove copying, and when do page faults turn latency into a lottery?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "fixed-binary-serialization"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-502-memory-mapped-files"
+  },
+  {
+    "id": "shared-memory-ipc",
+    "title": "Shared-Memory IPC",
+    "category": "io-systems",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 3,
+    "focusQuestion": "How can two processes exchange fixed messages without sockets or payload copies?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "memory-mapped-files"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-503-shared-memory-ipc"
+  },
+  {
+    "id": "udp-ingest-batching",
+    "title": "UDP Ingest, Batching and Packet Loss",
+    "category": "io-systems",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 4,
+    "focusQuestion": "What throughput and tail-latency trade-offs emerge when ingesting datagrams directly into a bounded processing path?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "shared-memory-ipc"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-504-udp-ingest-batching"
+  },
+  {
+    "id": "syscall-amortization-scatter-gather",
+    "title": "Syscall Amortization and Scatter/Gather I/O",
+    "category": "io-systems",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 5,
+    "focusQuestion": "How much does per-message kernel crossing cost, and when do gathering writes or batching pay off?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "udp-ingest-batching"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-505-syscall-amortization-scatter-gather"
+  },
+  {
+    "id": "java-rust-ffm-interop",
+    "title": "Java-Rust Interop with FFM Downcalls and Upcalls",
+    "category": "io-systems",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 6,
+    "focusQuestion": "What is the real cost and safety boundary of calling Rust from Java and Java callbacks from Rust?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "ffm-memory-segments"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-506-java-rust-ffm-interop"
+  },
+  {
+    "id": "virtual-platform-event-loop",
+    "title": "Virtual Threads vs Platform Threads vs Event Loops",
+    "category": "systems-capstone",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 1,
+    "focusQuestion": "Which concurrency model fits blocking I/O, CPU-bound work and strict tail-latency paths?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "thread-per-core-sharding"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-601-virtual-platform-event-loop"
+  },
+  {
+    "id": "backpressure-bounded-pipelines",
+    "title": "Backpressure and Bounded Pipelines",
+    "category": "systems-capstone",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 2,
+    "focusQuestion": "How should a low-latency system behave when producers are faster than consumers?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "virtual-platform-event-loop"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-602-backpressure-bounded-pipelines"
+  },
+  {
+    "id": "cpu-affinity-numa-irq",
+    "title": "CPU Affinity, NUMA and IRQ Placement",
+    "category": "systems-capstone",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 3,
+    "focusQuestion": "How much variance comes from where threads, memory and interrupts run rather than from application code?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "backpressure-bounded-pipelines"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-603-cpu-affinity-numa-irq"
+  },
+  {
+    "id": "observability-overhead",
+    "title": "Logging, Metrics and Profiling Overhead",
+    "category": "systems-capstone",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 4,
+    "focusQuestion": "How much latency and allocation does observability add to the path it is supposed to explain?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "backpressure-bounded-pipelines"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-604-observability-overhead"
+  },
+  {
+    "id": "coordinated-omission-load-generation",
+    "title": "Coordinated Omission and Load Generation",
+    "category": "systems-capstone",
+    "curriculumMember": true,
+    "path": "advanced",
+    "level": 5,
+    "focusQuestion": "Why can a saturated system appear healthy when the load generator waits for each response before sending the next request?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 30,
+    "prerequisites": [
+      "observability-overhead"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-605-coordinated-omission-load-generation"
+  },
+  {
+    "id": "deterministic-low-latency-pipeline",
+    "title": "Deterministic Low-Latency Pipeline Capstone",
+    "category": "systems-capstone",
+    "curriculumMember": true,
+    "path": "capstone",
+    "level": 6,
+    "focusQuestion": "Can the techniques from the curriculum combine into a small, reproducible, bounded end-to-end runtime?",
+    "curriculumStatus": "planned",
+    "evidenceMaturity": null,
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "durationMinutes": 45,
+    "prerequisites": [
+      "cpu-affinity-numa-irq",
+      "coordinated-omission-load-generation",
+      "syscall-amortization-scatter-gather"
+    ],
+    "route": null,
+    "sourceChange": null,
+    "plannedChange": "plab-606-deterministic-low-latency-pipeline"
+  }
+]
