@@ -1,0 +1,18 @@
+{
+  "format": "hdrhistogram",
+  "count": 100000,
+  "min": 12,
+  "max": 48213,
+  "mean": 412.7,
+  "unit": "us",
+  "significantDigits": 3,
+  "percentiles": {
+    "p50": 380,
+    "p90": 610,
+    "p99": 2100,
+    "p999": 15600,
+    "p9999": 39800
+  },
+  "overflow": { "saturated": false, "saturatedCount": 0 },
+  "coordinatedOmission": { "corrected": true, "method": "linear-interpolation" }
+}

@@ -39,3 +39,10 @@ prior to this change.
   labs, because there is nothing to attach as a raw artifact. It produces
   `legacy-unprovenanced` records instead — an honest label, not a synthesized
   raw file.
+
+This remains true after the 2026-07-14 remediation pass: every importer's
+capability ceiling (`docs/benchmark-results-importers.md`) is registered
+`"fixture-only"`, meaning no record imported by any of them — real fixture
+data or otherwise — can reach `"verified"` today regardless of any other
+evidence supplied (`docs/evidence-maturity.md`). Nothing in this inventory
+changed; only the guarantees enforced around it did.

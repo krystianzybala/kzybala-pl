@@ -1,64 +1,88 @@
-// Evidence-maturity workflow (plab-003 task 7).
-// design.md's "Review workflow": "A run moves draft -> reproduced ->
-// profiled -> verified. Site badges reflect actual state and may regress if
-// provenance is invalidated." `legacy-unprovenanced` (schema.js) sits
-// outside this forward progression entirely — it is not a stage a new run
-// passes through, it is a permanent label for pre-plab-003 data
-// (docs/benchmark-results-migration.md) that can only ever be *replaced* by
-// a real draft run, never promoted in place.
-import { EVIDENCE_MATURITY } from "./schema.js";
+// Evidence maturity (plab-003 task 7; rewritten in the 2026-07-14
+// remediation pass). The v1 version stored `evidenceMaturity` as a bare
+// string a caller could set directly, with a legality table
+// (`ALLOWED_TRANSITIONS`) that was never actually consulted by the content
+// gate — the audit constructed a schema-valid, provenance-shape-valid
+// record with `evidenceMaturity: "verified"` and a fabricated
+// rawArtifactPath/sourceRevision/environmentRef and watched it pass both
+// validators. There is no stored maturity field anymore: `deriveMaturity`
+// recomputes a badge from the record's independent evidence dimensions
+// (schema.js's `evidence` object) and its actual, hash-verified provenance
+// chain, every time it is called. A record cannot be "verified" by writing
+// the word "verified" anywhere in it.
+import { verifyProvenanceChain } from "./provenance.js";
 
-const FORWARD_ORDER = ["draft", "reproduced", "profiled", "verified"];
+const MATURITY_LEVELS = ["draft", "reproduced", "profiled", "verified", "legacy-unprovenanced"];
 
-// Explicit transition table rather than a simple "is the next index higher"
-// check: profiled and reproduced are siblings a run can visit in either
-// order before verification (a profiler capture doesn't require a second
-// independent re-run first), but nothing may skip past verified without
-// going through at least one of them, and anything may regress to "draft"
-// if its provenance is invalidated (design.md: "may regress if provenance is
-// invalidated").
-const ALLOWED_TRANSITIONS = {
-  draft: ["reproduced", "profiled"],
-  reproduced: ["profiled", "verified", "draft"],
-  profiled: ["reproduced", "verified", "draft"],
-  verified: ["draft"],
-  "legacy-unprovenanced": [],
-};
-
-function canTransition(from, to) {
-  if (!EVIDENCE_MATURITY.includes(from) || !EVIDENCE_MATURITY.includes(to)) {
-    return false;
-  }
-  return (ALLOWED_TRANSITIONS[from] ?? []).includes(to);
-}
-
-// Applies a transition, returning the new maturity. Throws on an
-// illegal/unknown transition — a workflow bug that silently accepted an
-// invalid state change would be exactly the kind of unearned "verified"
-// badge design.md's review workflow exists to prevent.
-function transition(current, next) {
-  if (!canTransition(current, next)) {
-    throw new Error(`illegal evidence-maturity transition: "${current}" -> "${next}"`);
-  }
-  return next;
-}
-
-// Human-facing badge label + whether that badge should render as a
-// "verified" (trustworthy for a benchmark.md table) claim.
 const BADGE_LABELS = {
   draft: { label: "Draft — informal, not for a benchmark.md table", isPublishable: false },
-  reproduced: { label: "Reproduced — re-run once with a compatible result", isPublishable: true },
+  reproduced: { label: "Reproduced — re-run independently with a compatible result", isPublishable: true },
   profiled: { label: "Profiled — reproduced, with profiler evidence attached", isPublishable: true },
   verified: { label: "Verified — reviewed and accepted", isPublishable: true },
-  "legacy-unprovenanced": { label: "Legacy — pre-plab-003, no raw artifact retained", isPublishable: true },
+  "legacy-unprovenanced": { label: "Legacy — pre-plab-003, no raw artifact retained, cannot be a regression baseline or contribute to a verified/Java-vs-Rust conclusion", isPublishable: true },
 };
 
-function badgeFor(maturity) {
-  const badge = BADGE_LABELS[maturity];
-  if (!badge) {
-    throw new Error(`no badge defined for evidence maturity "${maturity}"`);
-  }
+function badgeFor(level) {
+  const badge = BADGE_LABELS[level];
+  if (!badge) throw new Error(`no badge defined for evidence-maturity level "${level}"`);
   return badge;
 }
 
-export { FORWARD_ORDER, ALLOWED_TRANSITIONS, canTransition, transition, badgeFor };
+// `verified` requires ALL of (audit section 6 / remediation requirement 6):
+//   - complete, hash-verified provenance (every required chain link resolves and matches),
+//   - evidence.correctness === "passed",
+//   - evidence.environment === "native-controlled" (rejects container/vm/emulated/unknown/native-uncontrolled),
+//   - independent reproduction: reproduction.completed >= reproduction.required >= 1,
+//   - evidence.profiling === "present",
+//   - evidence.comparability === "validated" (or "not-applicable" for a single-language record with no cross-language claim),
+//   - a recorded reviewer identity + timestamp,
+//   - evidence.importerCapability === "live-publication-validated" (fixture-only/live-smoke-validated can never satisfy this),
+//   - no unresolved evidence.warnings,
+//   - evidence.legacy === false.
+// legacy-unprovenanced is checked FIRST and is an unconditional, terminal
+// short-circuit: nothing else in `evidence` or `provenance` can override it,
+// by construction (schema.js additionally rejects a legacy record that
+// tries to carry non-baseline evidence/provenance values at all).
+function deriveMaturity(record, opts = {}) {
+  if (record.evidence.legacy === true) {
+    return { level: "legacy-unprovenanced", isPublishable: true, isVerified: false, reasons: [], checks: null };
+  }
+
+  const chain = verifyProvenanceChain(record, opts);
+
+  const checks = {
+    provenanceComplete: chain.complete,
+    correctness: record.evidence.correctness === "passed",
+    environment: record.evidence.environment === "native-controlled",
+    reproduction: record.evidence.reproduction.required >= 1 && record.evidence.reproduction.completed >= record.evidence.reproduction.required,
+    profiling: record.evidence.profiling === "present",
+    comparability: record.evidence.comparability === "validated" || record.evidence.comparability === "not-applicable",
+    reviewer: record.evidence.reviewer !== null,
+    importerCapability: record.evidence.importerCapability === "live-publication-validated",
+    noWarnings: record.evidence.warnings.length === 0,
+  };
+
+  const unmet = Object.entries(checks)
+    .filter(([, ok]) => !ok)
+    .map(([name]) => name);
+  const verified = unmet.length === 0;
+
+  let level;
+  if (verified) {
+    level = "verified";
+  } else if (checks.provenanceComplete && checks.reproduction && checks.profiling) {
+    level = "profiled";
+  } else if (checks.provenanceComplete && checks.reproduction) {
+    level = "reproduced";
+  } else {
+    level = "draft";
+  }
+
+  const reasons = verified
+    ? []
+    : [`unmet condition(s) for "verified": ${unmet.join(", ")}`, ...chain.reasons.map((r) => `provenance: ${r}`)];
+
+  return { level, isPublishable: level !== "draft", isVerified: level === "verified", reasons, checks };
+}
+
+export { MATURITY_LEVELS, BADGE_LABELS, badgeFor, deriveMaturity };

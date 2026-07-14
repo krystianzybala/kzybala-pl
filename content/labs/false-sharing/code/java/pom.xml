@@ -39,6 +39,12 @@
       <version>${jmh.version}</version>
       <scope>provided</scope>
     </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -82,6 +88,16 @@
               <version>${jmh.version}</version>
             </path>
           </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <!-- Same export the main sources need for @Contended; harmless for
+               the tests that don't touch it. -->
+          <argLine>--add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED</argLine>
         </configuration>
       </plugin>
       <plugin>

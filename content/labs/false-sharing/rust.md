@@ -76,6 +76,45 @@ microarchitecture (some ARM parts use 128-byte lines, some embedded targets
   other state, you need `Acquire`/`Release`, not `Relaxed` — that is an
   orthogonal decision from the alignment fix in this lab.
 
+## Per-thread shards + reduction (removing the problem instead of padding it)
+
+```rust
+pub struct ShardedCounters {
+    shards: Vec<CacheLineAligned<AtomicU64>>,
+}
+
+impl ShardedCounters {
+    /// Owner-only increment — each shard has exactly one writer thread, so
+    /// no atomic read-modify-write is needed: a plain load plus a Release
+    /// store is sufficient, and it is only correct because the
+    /// single-writer invariant holds.
+    pub fn add(&self, shard: usize, delta: u64) {
+        let cell = &self.shards[shard].0;
+        let current = cell.load(Ordering::Relaxed);
+        cell.store(current + delta, Ordering::Release);
+    }
+
+    /// Reduction over all shards. Exact only after the owners are joined.
+    pub fn total(&self) -> u64 {
+        self.shards.iter().map(|s| s.0.load(Ordering::Acquire)).sum()
+    }
+}
+```
+
+Each shard is its own `CacheLineAligned` slot, so adjacent shards sit on
+different lines (same 64-byte assumption as `PaddedCounters`). Padding
+treats the symptom; sharding removes the shared line entirely — the cost is
+a reduction on read and `shard_count × 64` bytes of memory.
+
+**A measured surprise worth knowing before you assume sharding is always
+fastest:** on weakly-ordered hardware (e.g. Apple Silicon), the `Release`
+store this variant uses (`stlr` on ARM64) can cost more per operation than
+the single `LDADD` instruction behind `fetch_add(Relaxed)` on an
+uncontended padded line. Layout decides whether cores fight over a line;
+memory-order strength decides the per-operation floor once they don't. The
+benchmark table in `benchmark.md` shows this directly — the mechanism, not
+a "sharding is fastest" rule, is what transfers across machines.
+
 ## Criterion benchmark
 
 ```rust

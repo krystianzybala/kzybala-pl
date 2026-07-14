@@ -1,5 +1,24 @@
 # Cache hierarchy — theory
 
+## Performance question and hypothesis
+
+**Question:** why does the same access pattern get dramatically slower as
+data moves from L1 to L2, L3 and DRAM?
+
+**Hypothesis:** the work performed per element is constant — what changes
+is which level of the memory hierarchy serves the accesses. When the
+working set outgrows a cache level's capacity, or the access pattern
+defeats spatial locality and prefetching, average access latency steps up
+to the next level's, and time-per-element steps up with it.
+
+**What would disprove it:** if time-per-element stayed flat as the working
+set crossed the L1, L2 and L3 capacity boundaries, or if sequential and
+random traversals of the same DRAM-sized working set cost the same per
+element, the hierarchy-and-locality explanation would be wrong — the cost
+would have to live in the instructions themselves rather than in where the
+data is served from. The benchmark sweeps working-set size and access
+pattern independently so both claims are separately falsifiable.
+
 ## Learning objective
 
 Explain why the same amount of work can run orders of magnitude slower

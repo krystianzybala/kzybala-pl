@@ -1,7 +1,8 @@
 # False sharing — Java
 
-Three variants of the same benchmark: two counters, each incremented in a
-tight loop by its own dedicated thread. Only the memory layout changes.
+Four variants of the same benchmark: counters incremented in a tight loop,
+each by its own dedicated thread. Only the memory layout and ownership
+structure change — visibility guarantees stay constant across variants.
 
 ## Shared counters (the bug)
 
@@ -72,6 +73,52 @@ trade-offs section), not the value you write in source. Use it when you
 control the deployment JVM flags; use manual padding when you need it to
 compile and run unmodified across arbitrary JVMs.
 
+## Per-thread shards + reduction (removing the problem instead of padding it)
+
+```java
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+
+public final class ShardedCounters {
+    static final int STRIDE = 8; // 8 longs = 64 bytes per shard (documented assumption)
+    private static final VarHandle SHARDS =
+        MethodHandles.arrayElementVarHandle(long[].class);
+
+    private final long[] shards;
+
+    public ShardedCounters(int shardCount) {
+        // +2: leading/trailing pad regions so shard 0 / shard N-1 don't
+        // share a line with the array header or a neighboring allocation.
+        this.shards = new long[(shardCount + 2) * STRIDE];
+    }
+
+    /** Owner-only: each shard has exactly one writer thread. */
+    public void add(int shard, long delta) {
+        int i = (shard + 1) * STRIDE;
+        long current = (long) SHARDS.get(shards, i);      // plain read: we are the only writer
+        SHARDS.setRelease(shards, i, current + delta);    // release write: publishes to reducers
+    }
+
+    /** Exact only after the owner threads have been joined. */
+    public long total() { /* acquire-read every shard and sum — see code/java */ }
+}
+```
+
+Padding treats the symptom — the counters still logically belong to "one
+object two threads write." Sharding removes the disease: each thread writes
+only memory it exclusively owns, so no cache line is ever written from two
+cores and there is nothing left to pad against. The price is a reduction
+step on read and `shardCount × 64` bytes of memory.
+
+This variant also demonstrates **VarHandles** as the modern replacement for
+both `volatile` field access and `Unsafe`-based tricks: because each shard
+has exactly one writer, the owner needs no atomic read-modify-write at all —
+a plain read plus a `setRelease` write is sufficient, and the reducer pairs
+it with `getAcquire`. That is a *weaker, cheaper* contract than a `volatile`
+increment, and it is only correct because the single-writer invariant holds.
+The correctness test (`CounterCorrectnessTest`) asserts exactly that
+invariant's observable result against the shared fixture.
+
 ## JMH benchmark
 
 ```java
@@ -104,6 +151,9 @@ public class FalseSharingBenchmark {
     @Benchmark
     @Group("padded")
     public void writeB_padded() { padded.counterB++; }
+
+    // ... "contended" and "sharded" groups follow the same two-writer
+    // pattern — see code/java/ for the complete runnable class.
 }
 ```
 

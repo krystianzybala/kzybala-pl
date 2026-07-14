@@ -1,6 +1,7 @@
 [
   {
-    "schemaVersion": 1,
+    "schemaId": "pl.kzybala.benchmark-results",
+    "schemaVersion": 2,
     "labId": "false-sharing",
     "variant": "shared",
     "language": "java",
@@ -8,34 +9,111 @@
     "metricKind": "scalar",
     "unit": "ops/ms",
     "direction": "higherIsBetter",
+    "mode": "thrpt",
+    "parameters": {},
     "statistic": {
-      "pointEstimate": 68869,
-      "error": 4506,
-      "errorKind": "ci99.9",
-      "statisticName": "mean",
-      "sampleCount": null
+      "primary": "mean",
+      "estimates": {
+        "mean": {
+          "pointEstimate": {
+            "value": "68869",
+            "numericType": "integer"
+          },
+          "error": {
+            "value": "4506",
+            "numericType": "integer"
+          },
+          "errorKind": "confidence-interval",
+          "confidenceLevel": {
+            "value": "0.999",
+            "numericType": "decimal"
+          }
+        },
+        "median": null,
+        "slope": null
+      },
+      "sampleCount": null,
+      "percentiles": null,
+      "rawSamples": null,
+      "outliers": null,
+      "secondaryMetrics": null,
+      "derivedFrom": null
     },
     "provenance": {
-      "rawArtifactPath": null,
-      "sourceRevision": "unversioned",
+      "rawArtifact": null,
+      "canonicalResultHash": "46e6d5d306d340067e171862183fe222eb4dcada4713c58580708d9ea40f83c3",
+      "sourceCommit": {
+        "revision": "unversioned",
+        "dirty": null,
+        "diffHash": null
+      },
+      "dataset": {
+        "ref": null,
+        "hash": null
+      },
+      "semanticFixture": {
+        "ref": null,
+        "hash": null
+      },
+      "environmentManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "toolchainManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "benchmarkProfile": {
+        "ref": null,
+        "hash": null
+      },
+      "correctnessGate": {
+        "ref": null,
+        "hash": null
+      },
+      "profilingArtifact": {
+        "ref": null,
+        "hash": null
+      },
+      "renderedArtifact": {
+        "ref": null,
+        "hash": null
+      },
       "command": null,
-      "environmentRef": null,
-      "importerVersion": "legacy-migration@1",
-      "capturedAt": null
+      "capturedAt": null,
+      "importerVersion": "legacy-migration@2"
+    },
+    "evidence": {
+      "legacy": true,
+      "correctness": "not-run",
+      "environment": "unknown",
+      "reproduction": {
+        "required": 0,
+        "completed": 0
+      },
+      "profiling": "absent",
+      "comparability": "not-applicable",
+      "reviewer": null,
+      "importerCapability": "fixture-only",
+      "warnings": []
     },
     "comparability": {
       "buildMode": "release",
+      "threads": null,
+      "forks": null,
+      "warmup": null,
+      "measurement": null,
       "datasetId": null,
       "semanticsFixtureHash": null,
       "architecture": "arm64"
     },
-    "evidenceMaturity": "legacy-unprovenanced",
     "notes": [
       "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
     ]
   },
   {
-    "schemaVersion": 1,
+    "schemaId": "pl.kzybala.benchmark-results",
+    "schemaVersion": 2,
     "labId": "false-sharing",
     "variant": "padded-manual",
     "language": "java",
@@ -43,34 +121,111 @@
     "metricKind": "scalar",
     "unit": "ops/ms",
     "direction": "higherIsBetter",
+    "mode": "thrpt",
+    "parameters": {},
     "statistic": {
-      "pointEstimate": 255796,
-      "error": 32251,
-      "errorKind": "ci99.9",
-      "statisticName": "mean",
-      "sampleCount": null
+      "primary": "mean",
+      "estimates": {
+        "mean": {
+          "pointEstimate": {
+            "value": "255796",
+            "numericType": "integer"
+          },
+          "error": {
+            "value": "32251",
+            "numericType": "integer"
+          },
+          "errorKind": "confidence-interval",
+          "confidenceLevel": {
+            "value": "0.999",
+            "numericType": "decimal"
+          }
+        },
+        "median": null,
+        "slope": null
+      },
+      "sampleCount": null,
+      "percentiles": null,
+      "rawSamples": null,
+      "outliers": null,
+      "secondaryMetrics": null,
+      "derivedFrom": null
     },
     "provenance": {
-      "rawArtifactPath": null,
-      "sourceRevision": "unversioned",
+      "rawArtifact": null,
+      "canonicalResultHash": "766b1788174ecf7db575a91502b3fa0bcd71d99b3c57864161379e994a48022d",
+      "sourceCommit": {
+        "revision": "unversioned",
+        "dirty": null,
+        "diffHash": null
+      },
+      "dataset": {
+        "ref": null,
+        "hash": null
+      },
+      "semanticFixture": {
+        "ref": null,
+        "hash": null
+      },
+      "environmentManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "toolchainManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "benchmarkProfile": {
+        "ref": null,
+        "hash": null
+      },
+      "correctnessGate": {
+        "ref": null,
+        "hash": null
+      },
+      "profilingArtifact": {
+        "ref": null,
+        "hash": null
+      },
+      "renderedArtifact": {
+        "ref": null,
+        "hash": null
+      },
       "command": null,
-      "environmentRef": null,
-      "importerVersion": "legacy-migration@1",
-      "capturedAt": null
+      "capturedAt": null,
+      "importerVersion": "legacy-migration@2"
+    },
+    "evidence": {
+      "legacy": true,
+      "correctness": "not-run",
+      "environment": "unknown",
+      "reproduction": {
+        "required": 0,
+        "completed": 0
+      },
+      "profiling": "absent",
+      "comparability": "not-applicable",
+      "reviewer": null,
+      "importerCapability": "fixture-only",
+      "warnings": []
     },
     "comparability": {
       "buildMode": "release",
+      "threads": null,
+      "forks": null,
+      "warmup": null,
+      "measurement": null,
       "datasetId": null,
       "semanticsFixtureHash": null,
       "architecture": "arm64"
     },
-    "evidenceMaturity": "legacy-unprovenanced",
     "notes": [
       "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
     ]
   },
   {
-    "schemaVersion": 1,
+    "schemaId": "pl.kzybala.benchmark-results",
+    "schemaVersion": 2,
     "labId": "false-sharing",
     "variant": "contended",
     "language": "java",
@@ -78,34 +233,111 @@
     "metricKind": "scalar",
     "unit": "ops/ms",
     "direction": "higherIsBetter",
+    "mode": "thrpt",
+    "parameters": {},
     "statistic": {
-      "pointEstimate": 325893,
-      "error": 7616,
-      "errorKind": "ci99.9",
-      "statisticName": "mean",
-      "sampleCount": null
+      "primary": "mean",
+      "estimates": {
+        "mean": {
+          "pointEstimate": {
+            "value": "325893",
+            "numericType": "integer"
+          },
+          "error": {
+            "value": "7616",
+            "numericType": "integer"
+          },
+          "errorKind": "confidence-interval",
+          "confidenceLevel": {
+            "value": "0.999",
+            "numericType": "decimal"
+          }
+        },
+        "median": null,
+        "slope": null
+      },
+      "sampleCount": null,
+      "percentiles": null,
+      "rawSamples": null,
+      "outliers": null,
+      "secondaryMetrics": null,
+      "derivedFrom": null
     },
     "provenance": {
-      "rawArtifactPath": null,
-      "sourceRevision": "unversioned",
+      "rawArtifact": null,
+      "canonicalResultHash": "58289e88b0fee9994ee80af8519ed38b91770a7941f7d6759acf44dbd74865db",
+      "sourceCommit": {
+        "revision": "unversioned",
+        "dirty": null,
+        "diffHash": null
+      },
+      "dataset": {
+        "ref": null,
+        "hash": null
+      },
+      "semanticFixture": {
+        "ref": null,
+        "hash": null
+      },
+      "environmentManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "toolchainManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "benchmarkProfile": {
+        "ref": null,
+        "hash": null
+      },
+      "correctnessGate": {
+        "ref": null,
+        "hash": null
+      },
+      "profilingArtifact": {
+        "ref": null,
+        "hash": null
+      },
+      "renderedArtifact": {
+        "ref": null,
+        "hash": null
+      },
       "command": null,
-      "environmentRef": null,
-      "importerVersion": "legacy-migration@1",
-      "capturedAt": null
+      "capturedAt": null,
+      "importerVersion": "legacy-migration@2"
+    },
+    "evidence": {
+      "legacy": true,
+      "correctness": "not-run",
+      "environment": "unknown",
+      "reproduction": {
+        "required": 0,
+        "completed": 0
+      },
+      "profiling": "absent",
+      "comparability": "not-applicable",
+      "reviewer": null,
+      "importerCapability": "fixture-only",
+      "warnings": []
     },
     "comparability": {
       "buildMode": "release",
+      "threads": null,
+      "forks": null,
+      "warmup": null,
+      "measurement": null,
       "datasetId": null,
       "semanticsFixtureHash": null,
       "architecture": "arm64"
     },
-    "evidenceMaturity": "legacy-unprovenanced",
     "notes": [
       "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
     ]
   },
   {
-    "schemaVersion": 1,
+    "schemaId": "pl.kzybala.benchmark-results",
+    "schemaVersion": 2,
     "labId": "false-sharing",
     "variant": "shared",
     "language": "rust",
@@ -113,34 +345,108 @@
     "metricKind": "scalar",
     "unit": "ms",
     "direction": "lowerIsBetter",
+    "mode": null,
+    "parameters": {},
     "statistic": {
-      "pointEstimate": 1.0017,
-      "error": 0.01899999999999996,
-      "errorKind": "minmax",
-      "statisticName": "median",
-      "sampleCount": null
+      "primary": "median",
+      "estimates": {
+        "mean": null,
+        "median": {
+          "pointEstimate": {
+            "value": "1.0017",
+            "numericType": "decimal"
+          },
+          "error": {
+            "value": "0.01899999999999996",
+            "numericType": "decimal"
+          },
+          "errorKind": "minmax",
+          "confidenceLevel": null
+        },
+        "slope": null
+      },
+      "sampleCount": null,
+      "percentiles": null,
+      "rawSamples": null,
+      "outliers": null,
+      "secondaryMetrics": null,
+      "derivedFrom": null
     },
     "provenance": {
-      "rawArtifactPath": null,
-      "sourceRevision": "unversioned",
+      "rawArtifact": null,
+      "canonicalResultHash": "2346da8e67085417b5a72da2af864ea3a735d12ebf7b7854c437070dfc95f325",
+      "sourceCommit": {
+        "revision": "unversioned",
+        "dirty": null,
+        "diffHash": null
+      },
+      "dataset": {
+        "ref": null,
+        "hash": null
+      },
+      "semanticFixture": {
+        "ref": null,
+        "hash": null
+      },
+      "environmentManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "toolchainManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "benchmarkProfile": {
+        "ref": null,
+        "hash": null
+      },
+      "correctnessGate": {
+        "ref": null,
+        "hash": null
+      },
+      "profilingArtifact": {
+        "ref": null,
+        "hash": null
+      },
+      "renderedArtifact": {
+        "ref": null,
+        "hash": null
+      },
       "command": null,
-      "environmentRef": null,
-      "importerVersion": "legacy-migration@1",
-      "capturedAt": null
+      "capturedAt": null,
+      "importerVersion": "legacy-migration@2"
+    },
+    "evidence": {
+      "legacy": true,
+      "correctness": "not-run",
+      "environment": "unknown",
+      "reproduction": {
+        "required": 0,
+        "completed": 0
+      },
+      "profiling": "absent",
+      "comparability": "not-applicable",
+      "reviewer": null,
+      "importerCapability": "fixture-only",
+      "warnings": []
     },
     "comparability": {
       "buildMode": "release",
+      "threads": null,
+      "forks": null,
+      "warmup": null,
+      "measurement": null,
       "datasetId": null,
       "semanticsFixtureHash": null,
       "architecture": "arm64"
     },
-    "evidenceMaturity": "legacy-unprovenanced",
     "notes": [
       "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
     ]
   },
   {
-    "schemaVersion": 1,
+    "schemaId": "pl.kzybala.benchmark-results",
+    "schemaVersion": 2,
     "labId": "false-sharing",
     "variant": "padded-align64",
     "language": "rust",
@@ -148,28 +454,101 @@
     "metricKind": "scalar",
     "unit": "µs",
     "direction": "lowerIsBetter",
+    "mode": null,
+    "parameters": {},
     "statistic": {
-      "pointEstimate": 263.44,
-      "error": 1.4300000000000068,
-      "errorKind": "minmax",
-      "statisticName": "median",
-      "sampleCount": null
+      "primary": "median",
+      "estimates": {
+        "mean": null,
+        "median": {
+          "pointEstimate": {
+            "value": "263.44",
+            "numericType": "decimal"
+          },
+          "error": {
+            "value": "1.4300000000000068",
+            "numericType": "decimal"
+          },
+          "errorKind": "minmax",
+          "confidenceLevel": null
+        },
+        "slope": null
+      },
+      "sampleCount": null,
+      "percentiles": null,
+      "rawSamples": null,
+      "outliers": null,
+      "secondaryMetrics": null,
+      "derivedFrom": null
     },
     "provenance": {
-      "rawArtifactPath": null,
-      "sourceRevision": "unversioned",
+      "rawArtifact": null,
+      "canonicalResultHash": "6b515f1c97678d4277892c00a4aedcde85f75d287957b0fd80106342390220f3",
+      "sourceCommit": {
+        "revision": "unversioned",
+        "dirty": null,
+        "diffHash": null
+      },
+      "dataset": {
+        "ref": null,
+        "hash": null
+      },
+      "semanticFixture": {
+        "ref": null,
+        "hash": null
+      },
+      "environmentManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "toolchainManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "benchmarkProfile": {
+        "ref": null,
+        "hash": null
+      },
+      "correctnessGate": {
+        "ref": null,
+        "hash": null
+      },
+      "profilingArtifact": {
+        "ref": null,
+        "hash": null
+      },
+      "renderedArtifact": {
+        "ref": null,
+        "hash": null
+      },
       "command": null,
-      "environmentRef": null,
-      "importerVersion": "legacy-migration@1",
-      "capturedAt": null
+      "capturedAt": null,
+      "importerVersion": "legacy-migration@2"
+    },
+    "evidence": {
+      "legacy": true,
+      "correctness": "not-run",
+      "environment": "unknown",
+      "reproduction": {
+        "required": 0,
+        "completed": 0
+      },
+      "profiling": "absent",
+      "comparability": "not-applicable",
+      "reviewer": null,
+      "importerCapability": "fixture-only",
+      "warnings": []
     },
     "comparability": {
       "buildMode": "release",
+      "threads": null,
+      "forks": null,
+      "warmup": null,
+      "measurement": null,
       "datasetId": null,
       "semanticsFixtureHash": null,
       "architecture": "arm64"
     },
-    "evidenceMaturity": "legacy-unprovenanced",
     "notes": [
       "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
     ]

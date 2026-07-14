@@ -1,0 +1,1 @@
+inside a subdirectory, used by nested-traversal tests

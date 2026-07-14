@@ -3,7 +3,7 @@
 //! benchmark.md (in the lab content directory) for environment disclosure.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use false_sharing_lab::{PaddedCounters, SharedCounters};
+use false_sharing_lab::{PaddedCounters, ShardedCounters, SharedCounters};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
@@ -37,8 +37,12 @@ fn bench_shared(c: &mut Criterion) {
             let c2 = counters.clone();
             run_concurrent_increments(
                 ITERS_PER_ITERATION,
-                move || { c1.counter_a.fetch_add(1, Ordering::Relaxed); },
-                move || { c2.counter_b.fetch_add(1, Ordering::Relaxed); },
+                move || {
+                    c1.counter_a.fetch_add(1, Ordering::Relaxed);
+                },
+                move || {
+                    c2.counter_b.fetch_add(1, Ordering::Relaxed);
+                },
             );
         });
     });
@@ -52,12 +56,35 @@ fn bench_padded(c: &mut Criterion) {
             let c2 = counters.clone();
             run_concurrent_increments(
                 ITERS_PER_ITERATION,
-                move || { c1.counter_a.0.fetch_add(1, Ordering::Relaxed); },
-                move || { c2.counter_b.0.fetch_add(1, Ordering::Relaxed); },
+                move || {
+                    c1.counter_a.0.fetch_add(1, Ordering::Relaxed);
+                },
+                move || {
+                    c2.counter_b.0.fetch_add(1, Ordering::Relaxed);
+                },
             );
         });
     });
 }
 
-criterion_group!(benches, bench_shared, bench_padded);
+fn bench_sharded(c: &mut Criterion) {
+    c.bench_function("sharded_counters", |b| {
+        b.iter(|| {
+            let counters = Arc::new(ShardedCounters::new(2));
+            let c1 = counters.clone();
+            let c2 = counters.clone();
+            run_concurrent_increments(
+                ITERS_PER_ITERATION,
+                move || {
+                    c1.add(0, 1);
+                },
+                move || {
+                    c2.add(1, 1);
+                },
+            );
+        });
+    });
+}
+
+criterion_group!(benches, bench_shared, bench_padded, bench_sharded);
 criterion_main!(benches);

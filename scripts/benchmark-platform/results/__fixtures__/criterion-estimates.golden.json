@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaId": "pl.kzybala.benchmark-results",
+  "schemaVersion": 2,
   "labId": "false-sharing",
   "variant": "shared",
   "language": "rust",
@@ -7,34 +8,121 @@
   "metricKind": "scalar",
   "unit": "ns",
   "direction": "lowerIsBetter",
+  "mode": null,
+  "parameters": {},
   "statistic": {
-    "pointEstimate": 1001700,
-    "error": 12160,
-    "errorKind": "ci0.95",
-    "statisticName": "median",
-    "sampleCount": null
+    "primary": "median",
+    "estimates": {
+      "mean": {
+        "pointEstimate": {
+          "value": "1001800",
+          "numericType": "integer"
+        },
+        "error": {
+          "value": "3600",
+          "numericType": "integer"
+        },
+        "errorKind": "confidence-interval",
+        "confidenceLevel": {
+          "value": "0.95",
+          "numericType": "decimal"
+        }
+      },
+      "median": {
+        "pointEstimate": {
+          "value": "1001700",
+          "numericType": "integer"
+        },
+        "error": {
+          "value": "12160",
+          "numericType": "integer"
+        },
+        "errorKind": "confidence-interval",
+        "confidenceLevel": {
+          "value": "0.95",
+          "numericType": "decimal"
+        }
+      },
+      "slope": null
+    },
+    "sampleCount": null,
+    "percentiles": null,
+    "rawSamples": null,
+    "outliers": null,
+    "secondaryMetrics": null,
+    "derivedFrom": null
   },
   "provenance": {
-    "rawArtifactPath": null,
-    "sourceRevision": "abc1234",
+    "rawArtifact": null,
+    "canonicalResultHash": "1cd431464f1e485578ba4e0648b2763e2d93da7034e29f6a145055d6f5fc20fe",
+    "sourceCommit": {
+      "revision": "abc1234",
+      "dirty": null,
+      "diffHash": null
+    },
+    "dataset": {
+      "ref": null,
+      "hash": null
+    },
+    "semanticFixture": {
+      "ref": null,
+      "hash": null
+    },
+    "environmentManifest": {
+      "ref": null,
+      "hash": null
+    },
+    "toolchainManifest": {
+      "ref": null,
+      "hash": null
+    },
+    "benchmarkProfile": {
+      "ref": null,
+      "hash": null
+    },
+    "correctnessGate": {
+      "ref": null,
+      "hash": null
+    },
+    "profilingArtifact": {
+      "ref": null,
+      "hash": null
+    },
+    "renderedArtifact": {
+      "ref": null,
+      "hash": null
+    },
     "command": "java -jar target/benchmarks.jar",
-    "environmentRef": "env-fixture-1",
-    "importerVersion": "criterion-importer@1",
-    "capturedAt": "2026-01-01T00:00:00.000Z"
+    "capturedAt": "2026-01-01T00:00:00.000Z",
+    "importerVersion": "criterion-importer@1"
+  },
+  "evidence": {
+    "legacy": false,
+    "correctness": "not-run",
+    "environment": "unknown",
+    "reproduction": {
+      "required": 0,
+      "completed": 0
+    },
+    "profiling": "absent",
+    "comparability": "not-applicable",
+    "reviewer": null,
+    "importerCapability": "fixture-only",
+    "warnings": []
+  },
+  "toolchain": {
+    "criterionVersion": null,
+    "rustcVersion": null,
+    "targetTriple": null
   },
   "comparability": {
     "buildMode": "release",
     "threads": null,
     "forks": null,
     "warmup": null,
+    "measurement": null,
     "datasetId": null,
     "semanticsFixtureHash": null,
     "architecture": null
-  },
-  "evidenceMaturity": "draft",
-  "toolchain": {
-    "criterionVersion": null,
-    "rustcVersion": null,
-    "targetTriple": null
   }
 }

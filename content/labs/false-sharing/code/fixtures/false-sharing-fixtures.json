@@ -1,0 +1,24 @@
+{
+  "labId": "false-sharing",
+  "description": "Shared correctness fixtures for the Java and Rust false-sharing variants (docs/benchmark-correctness-fixtures.md). Both languages' correctness tests hard-code exactly these named cases so they assert against one canonical expectation, not two independently invented ones. If you change a value here, change CounterCorrectnessTest.java and the Rust #[test] block in src/lib.rs in the same commit.",
+  "cases": [
+    {
+      "name": "two-writers-dedicated-counters",
+      "appliesTo": ["shared", "padded", "contended"],
+      "notes": "contended is Java-only (@Contended); Rust covers shared and padded with this case.",
+      "threads": 2,
+      "incrementsPerThread": 100000,
+      "expectedCounterA": 100000,
+      "expectedCounterB": 100000,
+      "expectedTotal": 200000
+    },
+    {
+      "name": "four-owners-sharded-reduction",
+      "appliesTo": ["sharded"],
+      "threads": 4,
+      "incrementsPerThread": 25000,
+      "expectedPerShard": 25000,
+      "expectedTotal": 100000
+    }
+  ]
+}

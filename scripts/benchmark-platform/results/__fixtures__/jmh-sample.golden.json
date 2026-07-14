@@ -1,6 +1,7 @@
 [
   {
-    "schemaVersion": 1,
+    "schemaId": "pl.kzybala.benchmark-results",
+    "schemaVersion": 2,
     "labId": "false-sharing",
     "variant": "sharedCounters",
     "language": "java",
@@ -8,20 +9,141 @@
     "metricKind": "scalar",
     "unit": "ops/ms",
     "direction": "higherIsBetter",
+    "mode": "thrpt",
+    "parameters": {},
     "statistic": {
-      "pointEstimate": 68869.123,
-      "error": 4506.789,
-      "errorKind": "ci99.9",
-      "statisticName": "mean",
-      "sampleCount": 5
+      "primary": "mean",
+      "estimates": {
+        "mean": {
+          "pointEstimate": {
+            "value": "68869.123",
+            "numericType": "decimal"
+          },
+          "error": {
+            "value": "4506.789",
+            "numericType": "decimal"
+          },
+          "errorKind": "confidence-interval",
+          "confidenceLevel": {
+            "value": "0.999",
+            "numericType": "decimal"
+          }
+        },
+        "median": null,
+        "slope": null
+      },
+      "sampleCount": {
+        "value": "5",
+        "numericType": "integer"
+      },
+      "percentiles": {
+        "p0.0": {
+          "value": "60000",
+          "numericType": "integer"
+        },
+        "p50.0": {
+          "value": "68900",
+          "numericType": "integer"
+        },
+        "p100.0": {
+          "value": "75000",
+          "numericType": "integer"
+        }
+      },
+      "rawSamples": [
+        {
+          "value": "68500.1",
+          "numericType": "decimal"
+        },
+        {
+          "value": "69000.2",
+          "numericType": "decimal"
+        },
+        {
+          "value": "68900.3",
+          "numericType": "decimal"
+        },
+        {
+          "value": "68800.4",
+          "numericType": "decimal"
+        },
+        {
+          "value": "69100.5",
+          "numericType": "decimal"
+        }
+      ],
+      "outliers": null,
+      "secondaryMetrics": null,
+      "derivedFrom": null
     },
     "provenance": {
-      "rawArtifactPath": null,
-      "sourceRevision": "abc1234",
+      "rawArtifact": null,
+      "canonicalResultHash": "0cdeec482de94f2a518600886bfdd571d66574b4632e3f9599e1fa92dc24b5ed",
+      "sourceCommit": {
+        "revision": "abc1234",
+        "dirty": null,
+        "diffHash": null
+      },
+      "dataset": {
+        "ref": null,
+        "hash": null
+      },
+      "semanticFixture": {
+        "ref": null,
+        "hash": null
+      },
+      "environmentManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "toolchainManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "benchmarkProfile": {
+        "ref": null,
+        "hash": null
+      },
+      "correctnessGate": {
+        "ref": null,
+        "hash": null
+      },
+      "profilingArtifact": {
+        "ref": null,
+        "hash": null
+      },
+      "renderedArtifact": {
+        "ref": null,
+        "hash": null
+      },
       "command": "java -jar target/benchmarks.jar",
-      "environmentRef": "env-fixture-1",
-      "importerVersion": "jmh-importer@1",
-      "capturedAt": "2026-01-01T00:00:00.000Z"
+      "capturedAt": "2026-01-01T00:00:00.000Z",
+      "importerVersion": "jmh-importer@1"
+    },
+    "evidence": {
+      "legacy": false,
+      "correctness": "not-run",
+      "environment": "unknown",
+      "reproduction": {
+        "required": 0,
+        "completed": 0
+      },
+      "profiling": "absent",
+      "comparability": "not-applicable",
+      "reviewer": null,
+      "importerCapability": "fixture-only",
+      "warnings": []
+    },
+    "toolchain": {
+      "jmhVersion": "1.37",
+      "jvmExecutable": "/usr/lib/jvm/temurin-21/bin/java",
+      "jdkVersion": "21.0.2",
+      "vmName": "OpenJDK 64-Bit Server VM",
+      "vmVersion": "21.0.2+13-58",
+      "jvmArgs": [
+        "--add-exports",
+        "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"
+      ]
     },
     "comparability": {
       "buildMode": "release",
@@ -31,24 +153,18 @@
         "iterations": 3,
         "time": "1 s"
       },
+      "measurement": {
+        "iterations": 5,
+        "time": "1 s"
+      },
       "datasetId": null,
       "semanticsFixtureHash": null,
       "architecture": null
-    },
-    "evidenceMaturity": "draft",
-    "toolchain": {
-      "jmhVersion": "1.37",
-      "jdkVersion": "21.0.2",
-      "vmName": "OpenJDK 64-Bit Server VM",
-      "vmVersion": "21.0.2+13-58",
-      "jvmArgs": [
-        "--add-exports",
-        "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"
-      ]
     }
   },
   {
-    "schemaVersion": 1,
+    "schemaId": "pl.kzybala.benchmark-results",
+    "schemaVersion": 2,
     "labId": "false-sharing",
     "variant": "paddedCounters",
     "language": "java",
@@ -56,20 +172,141 @@
     "metricKind": "scalar",
     "unit": "ops/ms",
     "direction": "higherIsBetter",
+    "mode": "thrpt",
+    "parameters": {},
     "statistic": {
-      "pointEstimate": 255796.456,
-      "error": 32251.001,
-      "errorKind": "ci99.9",
-      "statisticName": "mean",
-      "sampleCount": 5
+      "primary": "mean",
+      "estimates": {
+        "mean": {
+          "pointEstimate": {
+            "value": "255796.456",
+            "numericType": "decimal"
+          },
+          "error": {
+            "value": "32251.001",
+            "numericType": "decimal"
+          },
+          "errorKind": "confidence-interval",
+          "confidenceLevel": {
+            "value": "0.999",
+            "numericType": "decimal"
+          }
+        },
+        "median": null,
+        "slope": null
+      },
+      "sampleCount": {
+        "value": "5",
+        "numericType": "integer"
+      },
+      "percentiles": {
+        "p0.0": {
+          "value": "200000",
+          "numericType": "integer"
+        },
+        "p50.0": {
+          "value": "255000",
+          "numericType": "integer"
+        },
+        "p100.0": {
+          "value": "300000",
+          "numericType": "integer"
+        }
+      },
+      "rawSamples": [
+        {
+          "value": "254000.1",
+          "numericType": "decimal"
+        },
+        {
+          "value": "256000.2",
+          "numericType": "decimal"
+        },
+        {
+          "value": "255500.3",
+          "numericType": "decimal"
+        },
+        {
+          "value": "257000.4",
+          "numericType": "decimal"
+        },
+        {
+          "value": "256500.5",
+          "numericType": "decimal"
+        }
+      ],
+      "outliers": null,
+      "secondaryMetrics": null,
+      "derivedFrom": null
     },
     "provenance": {
-      "rawArtifactPath": null,
-      "sourceRevision": "abc1234",
+      "rawArtifact": null,
+      "canonicalResultHash": "b05a542dc3c064a4e3bf18f36bda3c228da3aa6e4cdff6b372d1419c299fa2be",
+      "sourceCommit": {
+        "revision": "abc1234",
+        "dirty": null,
+        "diffHash": null
+      },
+      "dataset": {
+        "ref": null,
+        "hash": null
+      },
+      "semanticFixture": {
+        "ref": null,
+        "hash": null
+      },
+      "environmentManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "toolchainManifest": {
+        "ref": null,
+        "hash": null
+      },
+      "benchmarkProfile": {
+        "ref": null,
+        "hash": null
+      },
+      "correctnessGate": {
+        "ref": null,
+        "hash": null
+      },
+      "profilingArtifact": {
+        "ref": null,
+        "hash": null
+      },
+      "renderedArtifact": {
+        "ref": null,
+        "hash": null
+      },
       "command": "java -jar target/benchmarks.jar",
-      "environmentRef": "env-fixture-1",
-      "importerVersion": "jmh-importer@1",
-      "capturedAt": "2026-01-01T00:00:00.000Z"
+      "capturedAt": "2026-01-01T00:00:00.000Z",
+      "importerVersion": "jmh-importer@1"
+    },
+    "evidence": {
+      "legacy": false,
+      "correctness": "not-run",
+      "environment": "unknown",
+      "reproduction": {
+        "required": 0,
+        "completed": 0
+      },
+      "profiling": "absent",
+      "comparability": "not-applicable",
+      "reviewer": null,
+      "importerCapability": "fixture-only",
+      "warnings": []
+    },
+    "toolchain": {
+      "jmhVersion": "1.37",
+      "jvmExecutable": "/usr/lib/jvm/temurin-21/bin/java",
+      "jdkVersion": "21.0.2",
+      "vmName": "OpenJDK 64-Bit Server VM",
+      "vmVersion": "21.0.2+13-58",
+      "jvmArgs": [
+        "--add-exports",
+        "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"
+      ]
     },
     "comparability": {
       "buildMode": "release",
@@ -79,20 +316,13 @@
         "iterations": 3,
         "time": "1 s"
       },
+      "measurement": {
+        "iterations": 5,
+        "time": "1 s"
+      },
       "datasetId": null,
       "semanticsFixtureHash": null,
       "architecture": null
-    },
-    "evidenceMaturity": "draft",
-    "toolchain": {
-      "jmhVersion": "1.37",
-      "jdkVersion": "21.0.2",
-      "vmName": "OpenJDK 64-Bit Server VM",
-      "vmVersion": "21.0.2+13-58",
-      "jvmArgs": [
-        "--add-exports",
-        "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"
-      ]
     }
   }
 ]

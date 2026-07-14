@@ -4,7 +4,7 @@
 // detection, and required content files (spec.md "Standard learning
 // sequence": theory, language write-ups, benchmark and sources must
 // actually exist, not just be implied by lab.json flags).
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadLabs, LABS_DIR } from "./lib/labs.js";
 
@@ -172,6 +172,56 @@ for (const [dir, lab] of validLabs) {
   for (const file of required) {
     if (!existsSync(join(LABS_DIR, dir, file))) {
       fail(dir, `missing required content file "${file}" (standard learning sequence)`);
+    }
+  }
+}
+
+// --- 6. Unified-framework content contract (plab-011-unified-lab-framework) ---
+// Every lab must state its performance question and falsifiable hypothesis
+// before results, ship diagnosis + implementation exercises with success
+// criteria and collapsed hints/solutions, and (when it publishes benchmark
+// data) show runnable reproduction commands and a raw-data section. A lab
+// missing these fails the gate rather than silently rendering placeholders.
+// Contract details: docs/lab-framework.md.
+const read = (dir, file) => {
+  const path = join(LABS_DIR, dir, file);
+  return existsSync(path) ? readFileSync(path, "utf8") : null;
+};
+
+for (const [dir, lab] of validLabs) {
+  const theory = read(dir, "theory.md");
+  if (theory !== null) {
+    if (!theory.includes("## Performance question and hypothesis")) {
+      fail(dir, 'theory.md must open with a "## Performance question and hypothesis" section (unified framework contract)');
+    } else {
+      if (!/hypothesis/i.test(theory)) fail(dir, "theory.md must state a hypothesis");
+      if (!/disprove|falsif/i.test(theory)) {
+        fail(dir, "theory.md hypothesis must state what would disprove it (falsifiable conditions)");
+      }
+    }
+  }
+
+  const exercises = read(dir, "exercises.md");
+  if (exercises === null) {
+    fail(dir, 'missing required content file "exercises.md" (unified framework contract)');
+  } else {
+    if (!/#+ .*diagnosis/i.test(exercises)) fail(dir, "exercises.md must contain a diagnosis exercise");
+    if (!/#+ .*implementation/i.test(exercises)) fail(dir, "exercises.md must contain an implementation exercise");
+    if (!/success criteria/i.test(exercises)) fail(dir, "exercises.md exercises must state success criteria");
+    if (!exercises.includes("<details>")) {
+      fail(dir, "exercises.md must keep hints/solutions in collapsed <details> blocks, separate from the exercise statement");
+    }
+  }
+
+  if (lab.json.benchmark) {
+    const benchmark = read(dir, "benchmark.md");
+    if (benchmark !== null) {
+      if (!benchmark.includes("## Raw data and reproduction")) {
+        fail(dir, 'benchmark.md must contain a "## Raw data and reproduction" section (raw evidence contract)');
+      }
+      if (!/```[\s\S]*?(mvn |cargo |java -jar|node scripts\/)[\s\S]*?```/.test(benchmark)) {
+        fail(dir, "benchmark.md must show runnable reproduction commands in a fenced code block");
+      }
     }
   }
 }

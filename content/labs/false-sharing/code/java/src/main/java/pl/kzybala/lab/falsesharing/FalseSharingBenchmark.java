@@ -26,6 +26,7 @@ public class FalseSharingBenchmark {
     private final SharedCounters shared = new SharedCounters();
     private final PaddedCounters padded = new PaddedCounters();
     private final ContendedCounters contended = new ContendedCounters();
+    private final ShardedCounters sharded = new ShardedCounters(2);
 
     @Benchmark
     @Group("shared")
@@ -50,4 +51,16 @@ public class FalseSharingBenchmark {
     @Benchmark
     @Group("contended")
     public void writeB_contended() { contended.counterB++; }
+
+    // Per-thread shard + reduction: each group thread owns one shard, so no
+    // cache line is ever written from two cores. JMH assigns one thread per
+    // @Group method, and the thread-to-method binding is stable for the
+    // lifetime of the group, which is what makes the "owner" contract hold.
+    @Benchmark
+    @Group("sharded")
+    public void writeA_sharded() { sharded.add(0, 1); }
+
+    @Benchmark
+    @Group("sharded")
+    public void writeB_sharded() { sharded.add(1, 1); }
 }

@@ -4,6 +4,17 @@ Companion code for the [False sharing](https://kzybala.pl/lab/false-sharing/)
 Performance Lab. Not part of this site's own build or CI — a standalone
 Maven project you clone/copy out and run on your own machine.
 
+## Test (correctness gate — run before trusting any benchmark number)
+
+```sh
+mvn test
+```
+
+Runs `CounterCorrectnessTest`: every variant (shared, padded, `@Contended`,
+sharded) must produce exact counts under concurrent writers, asserted
+against the shared fixture `../fixtures/false-sharing-fixtures.json` (the
+Rust tests assert the same cases).
+
 ## Build
 
 ```sh

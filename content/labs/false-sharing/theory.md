@@ -1,5 +1,23 @@
 # False sharing — theory
 
+## Performance question and hypothesis
+
+**Question:** Why can independent counters destroy throughput when they
+occupy the same cache line?
+
+**Hypothesis:** Coherence traffic — not logical sharing — causes the
+collapse; padding or ownership partitioning restores scalability.
+
+**What would disprove it:** If the throughput gap between adjacent and
+padded counters persisted with both threads pinned to the same core (no
+cross-core coherence traffic possible), or if separating the counters onto
+different cache lines did *not* restore throughput while everything else
+stayed fixed, the coherence-traffic explanation would be wrong — the cost
+would have to come from something else (the atomic operations themselves,
+memory-ordering guarantees, or scheduler effects). The benchmark matrix in
+`benchmark.md` is designed so each of those alternatives is separable from
+the layout variable.
+
 ## Learning objective
 
 Explain why two threads writing to **independent, unrelated variables** can
@@ -13,6 +31,25 @@ memory cost and when it isn't.
 - Basic idea of what a CPU cache is (a fast copy of main memory kept close to
   a core). You do not need prior knowledge of coherence protocols — this lab
   builds that from scratch.
+
+### Pre-lab diagnostic
+
+Before reading further, answer this in one sentence: *two threads each
+increment their own separate counter — no shared variable, no lock, no data
+race. Can they still slow each other down, and if so, through what shared
+resource?* If your answer names the cache line (or "the memory system"),
+you can skim the next section. If your answer is "no, they're independent,"
+that intuition is exactly what this lab corrects.
+
+## Terminology
+
+| Term | Meaning in this lab |
+|---|---|
+| Cache line | The fixed-size block (commonly 64 bytes) that caches transfer and track ownership of — never a single variable. |
+| Coherence protocol | The hardware mechanism (MESI-like) that keeps all cores' cached copies of a line consistent. |
+| Invalidation | A core's write forcing every other core's copy of that line to become stale. |
+| Cache-to-cache transfer | A line moving directly between two cores' caches because one core needs what the other just wrote — the physical signature of false sharing (`perf c2c` measures it). |
+| Ownership partitioning (sharding) | Restructuring so each thread writes only memory it exclusively owns, and readers reduce across shards — removing the shared line instead of padding around it. |
 
 ## Cache-line theory
 
@@ -95,7 +132,40 @@ can itself be a false-sharing victim if it shares a line with hot,
 independently-written data), but eliminating one does not eliminate the
 other.
 
-## Common mistakes
+## Common mistakes and benchmark traps
+
+Four traps this lab is explicitly designed to avoid — check for each of
+them before trusting any false-sharing measurement, including this lab's:
+
+- **Using thread count without topology.** "Two threads" says nothing about
+  *where* those threads run. Two SMT siblings of one physical core share an
+  L1/L2 and never generate cross-core coherence traffic; two threads on
+  different sockets pay far more per transfer than two cores of one die.
+  A result that doesn't state (or control) thread placement is not
+  reproducible — see the placement matrix in `benchmark.md`, including
+  which placements this lab's host cannot express.
+- **Padding local objects that are not adjacent.** Padding only does
+  anything when the two hot variables would otherwise share a line. Padding
+  a thread-local object, or two objects the allocator already placed far
+  apart, changes nothing except memory footprint — and "the padded version
+  measured the same" then gets misread as "false sharing doesn't matter."
+  Verify adjacency (layout inspection, or the alignment assertions in this
+  lab's tests) before crediting padding for anything.
+- **Claiming `volatile` itself is the cause.** The counters in this lab are
+  `volatile`/atomic in *every* variant — shared, padded, and sharded alike —
+  and the collapse appears only in the shared-line layout. `volatile`
+  ensures visibility ordering; it does not create the line ping-pong.
+  Dropping `volatile` "to fix false sharing" trades a performance bug for a
+  correctness bug and leaves the layout problem in place.
+- **Using different memory-order guarantees across compared variants.** A
+  Java `volatile` increment (sequentially consistent store) and a Rust
+  `fetch_add(Relaxed)` are different contracts with different costs on weak
+  memory architectures. Comparing them head-to-head measures ordering
+  semantics as much as layout. This lab keeps ordering constant *within*
+  each language's variant set and documents the cross-language difference in
+  the equivalence contract (`benchmark.md`) instead of pretending it away.
+
+Further mistakes worth knowing:
 
 - **Padding by declaration order alone**, without `@Contended` or an explicit
   alignment attribute, and trusting it survives optimization or field
@@ -141,9 +211,9 @@ other.
 ## Investigation task
 
 Using the Java or Rust project in `code/`, and a profiler or hardware
-counter tool available to you (e.g. `perf stat -e cache-misses,
-Console messages from `perf c2c` on Linux, or JMH's own `-prof
-perfnorm`/`-prof perfasm` on Linux):
+counter tool available to you (e.g. `perf stat -e cache-misses` or
+`perf c2c` on Linux, or JMH's own `-prof perfnorm`/`-prof perfasm` on
+Linux):
 
 1. Run the shared-counters benchmark and the padded-counters benchmark and
    record throughput for both.
