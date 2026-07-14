@@ -1,0 +1,177 @@
+[
+  {
+    "schemaVersion": 1,
+    "labId": "false-sharing",
+    "variant": "shared",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 68869,
+      "error": 4506,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "false-sharing",
+    "variant": "padded-manual",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 255796,
+      "error": 32251,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "false-sharing",
+    "variant": "contended",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 325893,
+      "error": 7616,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "false-sharing",
+    "variant": "shared",
+    "language": "rust",
+    "harness": "criterion",
+    "metricKind": "scalar",
+    "unit": "ms",
+    "direction": "lowerIsBetter",
+    "statistic": {
+      "pointEstimate": 1.0017,
+      "error": 0.01899999999999996,
+      "errorKind": "minmax",
+      "statisticName": "median",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "false-sharing",
+    "variant": "padded-align64",
+    "language": "rust",
+    "harness": "criterion",
+    "metricKind": "scalar",
+    "unit": "µs",
+    "direction": "lowerIsBetter",
+    "statistic": {
+      "pointEstimate": 263.44,
+      "error": 1.4300000000000068,
+      "errorKind": "minmax",
+      "statisticName": "median",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  }
+]

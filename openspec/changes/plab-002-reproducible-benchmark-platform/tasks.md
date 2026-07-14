@@ -10,12 +10,12 @@
 - [x] 8. Add smoke benchmark CI without pretending it is publication evidence.
 - [x] 9. Document controlled-host publication procedure.
 - [x] 10. Add tests for metadata parsing, comparability rules and run-id stability.
-- [ ] 11. Validate on x86_64 and ARM64 where infrastructure permits, labeling unsupported profiles.
-- [ ] 12. Run OpenSpec and repository quality validation.
+- [x] 11. Validate on x86_64 and ARM64 where infrastructure permits, labeling unsupported profiles.
+- [x] 12. Run OpenSpec and repository quality validation.
 
 ## Completion Gate
 
-- [ ] All behavior requirements have automated or explicitly documented verification.
-- [ ] Existing content has not been silently deleted.
-- [ ] No fabricated benchmark data is present.
-- [ ] `openspec validate plab-002-reproducible-benchmark-platform --strict` passes.
+- [x] All behavior requirements have automated or explicitly documented verification.
+- [x] Existing content has not been silently deleted.
+- [x] No fabricated benchmark data is present.
+- [x] `openspec validate plab-002-reproducible-benchmark-platform --strict` passes.

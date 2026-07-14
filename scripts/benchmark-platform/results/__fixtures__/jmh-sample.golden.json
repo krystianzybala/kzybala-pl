@@ -1,0 +1,98 @@
+[
+  {
+    "schemaVersion": 1,
+    "labId": "false-sharing",
+    "variant": "sharedCounters",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 68869.123,
+      "error": 4506.789,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": 5
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "abc1234",
+      "command": "java -jar target/benchmarks.jar",
+      "environmentRef": "env-fixture-1",
+      "importerVersion": "jmh-importer@1",
+      "capturedAt": "2026-01-01T00:00:00.000Z"
+    },
+    "comparability": {
+      "buildMode": "release",
+      "threads": 2,
+      "forks": 1,
+      "warmup": {
+        "iterations": 3,
+        "time": "1 s"
+      },
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": null
+    },
+    "evidenceMaturity": "draft",
+    "toolchain": {
+      "jmhVersion": "1.37",
+      "jdkVersion": "21.0.2",
+      "vmName": "OpenJDK 64-Bit Server VM",
+      "vmVersion": "21.0.2+13-58",
+      "jvmArgs": [
+        "--add-exports",
+        "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"
+      ]
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "false-sharing",
+    "variant": "paddedCounters",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 255796.456,
+      "error": 32251.001,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": 5
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "abc1234",
+      "command": "java -jar target/benchmarks.jar",
+      "environmentRef": "env-fixture-1",
+      "importerVersion": "jmh-importer@1",
+      "capturedAt": "2026-01-01T00:00:00.000Z"
+    },
+    "comparability": {
+      "buildMode": "release",
+      "threads": 2,
+      "forks": 1,
+      "warmup": {
+        "iterations": 3,
+        "time": "1 s"
+      },
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": null
+    },
+    "evidenceMaturity": "draft",
+    "toolchain": {
+      "jmhVersion": "1.37",
+      "jdkVersion": "21.0.2",
+      "vmName": "OpenJDK 64-Bit Server VM",
+      "vmVersion": "21.0.2+13-58",
+      "jvmArgs": [
+        "--add-exports",
+        "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"
+      ]
+    }
+  }
+]

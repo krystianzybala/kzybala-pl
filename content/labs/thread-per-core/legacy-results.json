@@ -1,0 +1,144 @@
+[
+  {
+    "schemaVersion": 1,
+    "labId": "thread-per-core",
+    "variant": "sharedPoolIncrement",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 48783.53,
+      "error": 3934.041,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "thread-per-core",
+    "variant": "ownedPartitionIncrement",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 1861211.873,
+      "error": 9726.822,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "thread-per-core",
+    "variant": "shared_pool_increment_4_threads",
+    "language": "rust",
+    "harness": "criterion",
+    "metricKind": "scalar",
+    "unit": "ms",
+    "direction": "lowerIsBetter",
+    "statistic": {
+      "pointEstimate": 2.3671,
+      "error": null,
+      "errorKind": null,
+      "statisticName": "median",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Derived ops/ms ≈33,798 (80,000 increments / 2.3671 ms).",
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "thread-per-core",
+    "variant": "owned_partition_increment_4_threads",
+    "language": "rust",
+    "harness": "criterion",
+    "metricKind": "scalar",
+    "unit": "µs",
+    "direction": "lowerIsBetter",
+    "statistic": {
+      "pointEstimate": 65.375,
+      "error": null,
+      "errorKind": null,
+      "statisticName": "median",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Derived ops/ms ≈1,223,982 (80,000 increments / 65.375 µs).",
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  }
+]

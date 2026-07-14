@@ -19,3 +19,16 @@
 - [ ] Existing content has not been silently deleted.
 - [ ] No fabricated benchmark data is present.
 - [ ] `openspec validate plab-003-results-provenance-publication --strict` passes.
+
+<!--
+2026-07-14 remediation note (do not remove until archival): an
+archival-readiness audit found that every task above had been checked
+despite critical gaps in the enforced code path (non-finite numbers passing
+schema validation, no cryptographic hash covering measured values,
+legacy-unprovenanced reachable to "verified" through the actual gate, raw
+artifact path traversal, importer field loss, decorative evidence-maturity
+state machine, etc — see the audit transcript for the full finding list).
+Checkboxes above were reset to false and must only be re-checked once their
+acceptance criteria are demonstrated by passing adversarial tests, not
+merely by the existence of files or golden-path tests.
+-->

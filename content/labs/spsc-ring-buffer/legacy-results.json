@@ -1,0 +1,143 @@
+[
+  {
+    "schemaVersion": 1,
+    "labId": "spsc-ring-buffer",
+    "variant": "spsc-combined",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 24850.079,
+      "error": 412.206,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "spsc-ring-buffer",
+    "variant": "spsc-produce",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 12424.844,
+      "error": 206.229,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "spsc-ring-buffer",
+    "variant": "spsc-consume",
+    "language": "java",
+    "harness": "jmh",
+    "metricKind": "scalar",
+    "unit": "ops/ms",
+    "direction": "higherIsBetter",
+    "statistic": {
+      "pointEstimate": 12425.235,
+      "error": 205.978,
+      "errorKind": "ci99.9",
+      "statisticName": "mean",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "labId": "spsc-ring-buffer",
+    "variant": "pipeline",
+    "language": "rust",
+    "harness": "criterion",
+    "metricKind": "scalar",
+    "unit": "µs",
+    "direction": "lowerIsBetter",
+    "statistic": {
+      "pointEstimate": 907.47,
+      "error": 45.81,
+      "errorKind": "minmax",
+      "statisticName": "median",
+      "sampleCount": null
+    },
+    "provenance": {
+      "rawArtifactPath": null,
+      "sourceRevision": "unversioned",
+      "command": null,
+      "environmentRef": null,
+      "importerVersion": "legacy-migration@1",
+      "capturedAt": null
+    },
+    "comparability": {
+      "buildMode": "release",
+      "datasetId": null,
+      "semanticsFixtureHash": null,
+      "architecture": "arm64"
+    },
+    "evidenceMaturity": "legacy-unprovenanced",
+    "notes": [
+      "Includes thread spawn/join overhead per 100-sample batch of 200,000 items — not directly comparable to the Java @Group number (see benchmark.md Method).",
+      "Host: Apple M1 Max, macOS, arm64. Single developer machine, not a dedicated thermally-stable rig, no CPU affinity pinning — see the lab's own benchmark.md disclosure for the exact caveats."
+    ]
+  }
+]

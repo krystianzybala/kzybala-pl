@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "labId": "false-sharing",
+  "variant": "shared",
+  "language": "rust",
+  "harness": "criterion",
+  "metricKind": "scalar",
+  "unit": "ns",
+  "direction": "lowerIsBetter",
+  "statistic": {
+    "pointEstimate": 1001700,
+    "error": 12160,
+    "errorKind": "ci0.95",
+    "statisticName": "median",
+    "sampleCount": null
+  },
+  "provenance": {
+    "rawArtifactPath": null,
+    "sourceRevision": "abc1234",
+    "command": "java -jar target/benchmarks.jar",
+    "environmentRef": "env-fixture-1",
+    "importerVersion": "criterion-importer@1",
+    "capturedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "comparability": {
+    "buildMode": "release",
+    "threads": null,
+    "forks": null,
+    "warmup": null,
+    "datasetId": null,
+    "semanticsFixtureHash": null,
+    "architecture": null
+  },
+  "evidenceMaturity": "draft",
+  "toolchain": {
+    "criterionVersion": null,
+    "rustcVersion": null,
+    "targetTriple": null
+  }
+}

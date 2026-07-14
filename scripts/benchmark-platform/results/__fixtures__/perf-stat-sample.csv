@@ -1,0 +1,5 @@
+# started on Thu Jan  1 00:00:00 2026
+12345678,,cache-misses,1000000000,100.00,,
+987654321,,cache-references,1000000000,100.00,,
+2345678901,,instructions,1000000000,100.00,1.23,insn per cycle
+<not counted>,,branch-misses,,,,

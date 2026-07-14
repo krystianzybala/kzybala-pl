@@ -78,3 +78,39 @@ passed."
 This document is the plab-002 analogue of `docs/performance-lab-inventory.md`
 (plab-001's baseline) — read that one for routes/content/curriculum state,
 this one for the benchmark toolchain/tooling state it builds on.
+
+## Cross-architecture validation (task 11)
+
+The disclosed `benchmark.md` rig and this document's own capture were done
+on arm64 (Apple M1 Max, macOS) — real hardware, not emulated. To validate
+the platform tooling's Linux/x86_64 code paths without owning a second
+physical machine, the same tooling was run under real x86_64 emulation
+(Docker Desktop's QEMU backend, `--platform linux/amd64`) against the
+`false-sharing` pilot lab:
+
+- `node scripts/benchmark-platform/capture-env.js` inside `node:22-bookworm`
+  (linux/x64) correctly exercised the Linux-only branches that never run on
+  this arm64/darwin machine: `captureCoreTopology`'s `lscpu-raw` path (arm64
+  reports `apple-silicon-perflevels` instead) and `captureGovernor`'s
+  `"unavailable"` result (the emulated container has no `cpufreq` driver —
+  correctly reported as unavailable, not fabricated as a real governor
+  value; darwin instead reports `"not-applicable"` — the two capability
+  states this module is designed to distinguish).
+- `node scripts/benchmark-platform/run-correctness-gate.js false-sharing`,
+  run for real inside the same x86_64 container with a `rustup`-installed
+  Rust 1.88.0, produced the identical result shape as the arm64 run: Rust
+  `"passed"` (2 tests), Java `"missing"` (documented gap), overall `"gap"`.
+- `cargo bench --bench false_sharing -- --quick --noplot` (the `smoke`
+  profile) completed successfully under emulation inside `rust:1.88`
+  (linux/x64) — several times slower in wall-clock terms than the native
+  arm64 run, exactly as expected for QEMU-emulated instructions, and exactly
+  why `smoke` numbers carry zero statistical value regardless of host.
+
+Real x86_64 hardware evidence — as opposed to QEMU emulation — comes from
+the `benchmark-smoke` CI job (`.github/workflows/ci.yml`), which runs on
+GitHub's actual x86_64 `ubuntu-latest` runners on every push/PR.
+
+No profile is unsupported on either architecture today; nothing in this
+platform's tooling makes an architecture-specific assumption beyond the two
+explicitly capability-detected ones above (core topology, power
+management).

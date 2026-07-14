@@ -21,6 +21,10 @@ jobs:
         run: node scripts/validate-curriculum.js
       - name: Build labs index
         run: node scripts/generate-labs-index.js
+      - name: Build legacy benchmark results
+        run: node scripts/generate-legacy-results.js
+      - name: Benchmark results content gate
+        run: node scripts/validate-benchmark-results.js
       - name: Check asset-size budgets
         run: node scripts/check-asset-sizes.js
       - name: Validate HTML and links
@@ -35,6 +39,8 @@ jobs:
         run: node --test scripts/test-curriculum.js
       - name: Benchmark platform unit tests
         run: node --test scripts/test-benchmark-platform.js
+      - name: Benchmark results pipeline unit tests
+        run: node --test scripts/test-benchmark-results.js
       - name: Keyboard/tablist unit tests
         run: node --test scripts/test-keyboard.js
       - name: Structural snapshot tests

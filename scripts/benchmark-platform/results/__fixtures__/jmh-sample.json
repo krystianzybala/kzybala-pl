@@ -1,0 +1,52 @@
+[
+  {
+    "jmhVersion": "1.37",
+    "benchmark": "pl.kzybala.lab.FalseSharingBenchmark.sharedCounters",
+    "mode": "thrpt",
+    "threads": 2,
+    "forks": 1,
+    "jvm": "/usr/lib/jvm/temurin-21/bin/java",
+    "jvmArgs": ["--add-exports", "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"],
+    "jdkVersion": "21.0.2",
+    "vmName": "OpenJDK 64-Bit Server VM",
+    "vmVersion": "21.0.2+13-58",
+    "warmupIterations": 3,
+    "warmupTime": "1 s",
+    "measurementIterations": 5,
+    "measurementTime": "1 s",
+    "primaryMetric": {
+      "score": 68869.123,
+      "scoreError": 4506.789,
+      "scoreConfidence": [64362.334, 73375.912],
+      "scorePercentiles": { "0.0": 60000.0, "50.0": 68900.0, "100.0": 75000.0 },
+      "scoreUnit": "ops/ms",
+      "rawData": [[68500.1, 69000.2, 68900.3, 68800.4, 69100.5]]
+    },
+    "secondaryMetrics": {}
+  },
+  {
+    "jmhVersion": "1.37",
+    "benchmark": "pl.kzybala.lab.FalseSharingBenchmark.paddedCounters",
+    "mode": "thrpt",
+    "threads": 2,
+    "forks": 1,
+    "jvm": "/usr/lib/jvm/temurin-21/bin/java",
+    "jvmArgs": ["--add-exports", "java.base/jdk.internal.vm.annotation=ALL-UNNAMED"],
+    "jdkVersion": "21.0.2",
+    "vmName": "OpenJDK 64-Bit Server VM",
+    "vmVersion": "21.0.2+13-58",
+    "warmupIterations": 3,
+    "warmupTime": "1 s",
+    "measurementIterations": 5,
+    "measurementTime": "1 s",
+    "primaryMetric": {
+      "score": 255796.456,
+      "scoreError": 32251.001,
+      "scoreConfidence": [223545.455, 288047.457],
+      "scorePercentiles": { "0.0": 200000.0, "50.0": 255000.0, "100.0": 300000.0 },
+      "scoreUnit": "ops/ms",
+      "rawData": [[254000.1, 256000.2, 255500.3, 257000.4, 256500.5]]
+    },
+    "secondaryMetrics": {}
+  }
+]
