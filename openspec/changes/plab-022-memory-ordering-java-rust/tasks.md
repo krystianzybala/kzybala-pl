@@ -1,29 +1,29 @@
 # Tasks
 
-- [ ] Write memory-ordering theory.
-- [ ] Write Java Memory Model caveats.
-- [ ] Write Rust memory-model caveats.
-- [ ] Define metadata and prerequisites.
-- [ ] Implement broken-publication scenario.
-- [ ] Implement release/acquire publication scenario.
-- [ ] Implement store-buffering scenario.
-- [ ] Implement happens-before graph.
-- [ ] Implement store-buffer visual model.
-- [ ] Implement ordering selector.
-- [ ] Add Java VarHandle examples.
-- [ ] Add Rust atomic examples.
-- [ ] Add build scripts.
-- [ ] Add methodology and limitations.
-- [ ] Add myths section.
-- [ ] Add common mistakes.
-- [ ] Add quiz.
-- [ ] Add investigation task.
-- [ ] Add sources.
-- [ ] Add reducer tests.
-- [ ] Add keyboard tests.
-- [ ] Add reduced-motion tests.
-- [ ] Add no-JS fallback.
-- [ ] Add browser smoke test.
-- [ ] Run npm run verify.
-- [ ] Run openspec validate --all --strict.
+- [x] Write memory-ordering theory.
+- [x] Write Java Memory Model caveats.
+- [x] Write Rust memory-model caveats.
+- [x] Define metadata and prerequisites.
+- [x] Implement broken-publication scenario.
+- [x] Implement release/acquire publication scenario.
+- [x] Implement store-buffering scenario.
+- [x] Implement happens-before graph.
+- [x] Implement store-buffer visual model.
+- [x] Implement ordering selector.
+- [x] Add Java VarHandle examples.
+- [x] Add Rust atomic examples.
+- [x] Add build scripts.
+- [x] Add methodology and limitations.
+- [x] Add myths section.
+- [x] Add common mistakes.
+- [x] Add quiz.
+- [x] Add investigation task.
+- [x] Add sources.
+- [x] Add reducer tests.
+- [x] Add keyboard tests.
+- [x] Add reduced-motion tests.
+- [x] Add no-JS fallback.
+- [x] Add browser smoke test.
+- [x] Run npm run verify.
+- [x] Run openspec validate --all --strict.
 - [ ] Validate live GitHub Pages deployment.

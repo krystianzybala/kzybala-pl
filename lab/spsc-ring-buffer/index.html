@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-6EBB8HVM2T"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-6EBB8HVM2T');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SPSC Ring Buffer | Performance Lab | Krystian Zybała</title>
+  <meta name="description" content="An interactive reference lab on bounded single-producer/single-consumer ring buffers: reservation vs. publication, wrap-around, full/empty backpressure, the cached-cursor optimisation, batch publication, two concrete correctness bugs, Java and Rust examples, and JMH/Criterion benchmarks.">
+  <link rel="canonical" href="https://kzybala.pl/lab/spsc-ring-buffer/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="SPSC Ring Buffer | Performance Lab | Krystian Zybała">
+  <meta property="og:description" content="An interactive reference lab on bounded single-producer/single-consumer ring buffers: reservation vs. publication, wrap-around, full/empty backpressure, the cached-cursor optimisation, batch publication, two concrete correctness bugs, Java and Rust examples, and JMH/Criterion benchmarks.">
+  <meta property="og:url" content="https://kzybala.pl/lab/spsc-ring-buffer/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/labs/spsc-ring-buffer-lab.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/about/">About</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<article data-lab-id="spsc-ring-buffer">
+  <header class="lab-header prose section">
+    <p class="eyebrow">Lock-free structures · <a href="/lab/">Performance Lab</a></p>
+    <h1>SPSC Ring Buffer</h1>
+    <p class="lead">A bounded single-producer/single-consumer queue needs ownership discipline more than a heroic number of atomics — separate reservation from publication, payload read from acknowledgement, and correctness follows.</p>
+  </header>
+
+  <section class="prose section">
+    <h2>Learning objective</h2>
+    <p>Explain a bounded SPSC ring buffer as an ownership-discipline problem: show why separating reservation from publication, and payload read from consumption acknowledgement, is what makes the structure correct, work through wrap-around, full, and empty detection, show the cached-cursor optimisation, contrast per-item publication with batching, and demonstrate two concrete correctness bugs a naive implementation can introduce.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>The <a href="/lab/cas-contention/">CAS Contention and Backoff</a> lab — this lab contrasts a ring buffer's single-owner cursors against a CAS retry loop's contended updates.</li>
+      <li>The <a href="/lab/memory-ordering/">Memory Ordering in Java and Rust</a> lab — publication below depends on the release/acquire discipline that lab establishes.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Theory</h2>
+
+    <h3>Why single-producer/single-consumer is a distinct case</h3>
+    <p>An MPMC ring buffer needs contended, CAS-based cursor updates — the exact contention the <a href="/lab/cas-contention/">CAS Contention and Backoff</a> lab describes. An SPSC ring buffer sidesteps that entirely: <strong>the producer is the only thread that ever writes the head cursor, and the consumer is the only thread that ever writes the tail cursor.</strong> Neither cursor is ever contended. The remaining work isn't avoiding contention — there isn't any — it's correctly <em>publishing</em> what one thread wrote so the other observes it correctly, and correctly detecting full and empty without a lock.</p>
+
+    <h3>Five separate phases, not two</h3>
+    <p>Collapsing "produce" and "consume" into single monolithic operations is exactly where the bugs below come from. A correct implementation separates:</p>
+    <ol>
+      <li><strong>Reservation</strong> (producer) — claim the next slot index. Doesn't touch the slot's memory yet.</li>
+      <li><strong>Payload write</strong> (producer) — write the value into the reserved slot. Not yet visible to the consumer.</li>
+      <li><strong>Publication</strong> (producer) — advance the head cursor. This is the release-store: the write in step 2 must be ordered strictly before this, or the consumer can observe a "ready" slot that isn't (see "Bug: publish before write" below).</li>
+      <li><strong>Payload read</strong> (consumer) — read the value out of a published slot.</li>
+      <li><strong>Consumption acknowledgement</strong> (consumer) — advance the tail cursor. Only after this may the producer legally overwrite that slot.</li>
+    </ol>
+
+    <h3>Wrap-around</h3>
+    <p>Cursors (<code>head</code>, <code>tail</code>) are monotonically increasing counters, not values bounded to <code>[0, N)</code> — the actual slot is <code>cursor % N</code> (or <code>cursor &amp; mask</code> for a power-of-two capacity). "Wrap-around" is just this arithmetic taking a cursor from index <code>N-1</code> back to <code>0</code> — normal, correct behaviour, not an edge case. The only invariant: the producer never reserves a slot the consumer hasn't freed, and the consumer never reads a slot the producer hasn't published — both phrased in terms of the <em>count</em> of outstanding items (<code>head - tail</code>), never the wrapped index directly.</p>
+
+    <h3>Full and empty detection</h3>
+    <p><strong>Full</strong>: the producer must not reserve when <code>head - tail == capacity</code> — doing so anyway is the overwrite bug below. This lab's model rejects and counts the rejection (backpressure) as the simplest honest choice. <strong>Empty</strong>: the consumer must not read when <code>head == tail</code> — nothing published yet.</p>
+
+    <h3>The cached-cursor optimisation</h3>
+    <p>Checking "is there room?" naively means reading the consumer's tail on every reservation — a cross-core coherence round trip. Since the producer only needs the tail to be accurate when its optimistic view says "maybe full," it can keep a <strong>cached copy</strong> of the consumer's tail (and symmetrically, the consumer caches the producer's head), refreshing only when the cache pessimistically suggests no room (or no data) is left. When the cache is already known sufficient, no cross-core read happens at all. This is the same idea behind cursor-caching in the LMAX Disruptor and comparable SPSC/MPSC queues.</p>
+
+    <h3>Batch publication</h3>
+    <p>Publishing one slot at a time costs one release-store per item. If the producer has reserved several contiguous slots, it can write all their payloads and then publish <strong>all of them with a single head update</strong> — the same idea as the consumer acknowledging several reads with one tail update. This amortises publication/acknowledgement cost across a batch without changing ordering within it, and without batching the payload read itself.</p>
+
+    <h3>Bug: publish before write</h3>
+    <p>If a producer advances the head cursor <em>before</em> finishing the payload write, the consumer can observe the slot as "published" and read it before the real payload exists. It doesn't crash: it silently returns whatever was previously there — stale data from an earlier cycle. This is why publication is its own explicit step, strictly after the write.</p>
+
+    <h3>Bug: overwrite before consumption</h3>
+    <p>If a producer's reservation step doesn't correctly check <code>head - tail</code> against capacity — or, as this lab's buggy scenario models, skips the check entirely — the producer will eventually overwrite a slot the consumer hasn't read. The old value is destroyed with no error and no signal. This is strictly worse than a crash: the program keeps running as if nothing went wrong.</p>
+
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>The interactive model below fixes a small capacity (2 or 4 slots) and a hand-authored turn order so each mechanism is reachable in a handful of steps — a real buffer's capacity is chosen for the actual workload's burst size. "Cache hit"/"cache refresh" counts are exact for one scripted sequence, not a measurement of real coherence-traffic savings — see "Benchmark methodology" for real, disclosed timing data.</p>
+    </div>
+  </section>
+
+  <section data-lab-stage class="section">
+    <p class="eyebrow">Try it</p>
+    <h2>Interactive ring-buffer model</h2>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>A deterministic, hand-scripted turn order through one producer and one consumer sharing a small ring buffer — not a scheduler or timing simulation. See "Limitations of this model" in the theory above for what this leaves out.</p>
+    </div>
+
+    <nav data-lab-scenario-nav aria-label="Scenario"></nav>
+    <p data-scenario-description>Two full produce/consume cycles: reserve, write, publish, then read, acknowledge. The baseline correct flow every other scenario is compared against.</p>
+
+    <h3>Producer and consumer</h3>
+    <div class="cpu-grid" data-lab-actors></div>
+
+    <h3>Slots</h3>
+    <div class="cpu-grid" data-lab-grid></div>
+
+    <dl data-lab-inspector>
+      <dt>Scenario</dt><dd>Normal flow</dd>
+      <dt>Step</dt><dd>0 of 10</dd>
+      <dt>Occupancy (head − tail)</dt><dd>0</dd>
+      <dt>Reserved / Published / Read / Acknowledged</dt><dd>0 / 0 / 0 / 0</dd>
+      <dt>Rejected reservations (full)</dt><dd>0</dd>
+      <dt>Starved reads (empty)</dt><dd>0</dd>
+      <dt>Batch publishes / acks</dt><dd>0 / 0</dd>
+      <dt>Overwrite bugs (data lost)</dt><dd>0</dd>
+      <dt>Incorrect reads (stale data)</dt><dd>0</dd>
+    </dl>
+
+    <div class="control-row" data-lab-controls>
+      <button class="control" type="button" disabled>Previous</button>
+      <button class="control" type="button">Next</button>
+      <button class="control" type="button">Reset</button>
+    </div>
+
+    <h3>Event log</h3>
+    <ol data-lab-event-log>
+      <li>Initial state — buffer empty, nothing produced or consumed yet.</li>
+    </ol>
+
+    <p class="sr-only" role="status" aria-live="polite" data-lab-announcer></p>
+  </section>
+
+  <section class="prose section" data-lab-code-tabs>
+    <h2>Java and Rust</h2>
+    <div role="tablist" aria-label="Language">
+      <button role="tab" id="tab-java" aria-controls="panel-java" aria-selected="true" tabindex="0">Java</button>
+      <button role="tab" id="tab-rust" aria-controls="panel-rust" aria-selected="false" tabindex="-1">Rust</button>
+    </div>
+
+    <div role="tabpanel" id="panel-java" aria-labelledby="tab-java">
+      <h3>Zero-allocation ring buffer</h3>
+      <pre><code>public final class SpscRingBuffer {
+    private static final VarHandle HEAD;
+    private static final VarHandle TAIL;
+    static {
+        try {
+            HEAD = MethodHandles.lookup().findVarHandle(SpscRingBuffer.class, "head", long.class);
+            TAIL = MethodHandles.lookup().findVarHandle(SpscRingBuffer.class, "tail", long.class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    private final long[] slots;
+    private final int mask;
+    private volatile long head = 0; // published cursor
+    private volatile long tail = 0; // acknowledged cursor
+    private long cachedTail = 0, reserveIndex = 0; // producer-only
+    private long cachedHead = 0, readIndex = 0;    // consumer-only
+
+    public SpscRingBuffer(int capacity) {
+        if (Integer.bitCount(capacity) != 1) throw new IllegalArgumentException("capacity must be a power of two");
+        this.slots = new long[capacity];
+        this.mask = capacity - 1;
+    }
+
+    public boolean tryProduce(long value) {
+        int capacity = slots.length;
+        if (reserveIndex - cachedTail == capacity) {
+            cachedTail = (long) TAIL.getAcquire(this);
+            if (reserveIndex - cachedTail == capacity) return false; // genuinely full
+        }
+        slots[(int) (reserveIndex &amp; mask)] = value; // payload write — not yet visible
+        reserveIndex++;
+        HEAD.setRelease(this, reserveIndex); // publication
+        return true;
+    }
+
+    public boolean tryConsume(long[] out) {
+        if (readIndex == cachedHead) {
+            cachedHead = (long) HEAD.getAcquire(this);
+            if (readIndex == cachedHead) return false; // genuinely empty
+        }
+        out[0] = slots[(int) (readIndex &amp; mask)]; // payload read
+        readIndex++;
+        TAIL.setRelease(this, readIndex); // consumption acknowledgement
+        return true;
+    }
+}</code></pre>
+      <p>No boxing, no allocation, on either call — <code>out</code> is caller-allocated once and reused. <code>HEAD</code>/<code>TAIL</code> use <code>VarHandle.setRelease</code>/<code>getAcquire</code> because that's the only synchronization actually required; <code>cachedTail</code>/<code>cachedHead</code> are plain fields, touched only by their owning thread.</p>
+
+      <h3>JMH benchmark</h3>
+      <pre><code>@State(Scope.Group)
+@BenchmarkMode(Mode.Throughput)
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@Fork(1)
+@Warmup(iterations = 5, time = 1)
+@Measurement(iterations = 10, time = 1)
+public class SpscRingBufferBenchmark {
+    private final SpscRingBuffer buffer = new SpscRingBuffer(1024);
+    private final long[] out = new long[1];
+
+    @Benchmark @Group("spsc") @GroupThreads(1)
+    public void produce() {
+        while (!buffer.tryProduce(1)) Thread.onSpinWait();
+    }
+
+    @Benchmark @Group("spsc") @GroupThreads(1)
+    public void consume() {
+        while (!buffer.tryConsume(out)) Thread.onSpinWait();
+    }
+}</code></pre>
+      <p>The runnable Maven/JMH project (with correctness tests) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/spsc-ring-buffer/code/java" rel="noopener"><code>content/labs/spsc-ring-buffer/code/java/</code></a> in this site's repository.</p>
+    </div>
+
+    <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
+      <h3>Zero-allocation ring buffer</h3>
+      <pre><code>use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+struct Shared {
+    slots: Box&lt;[UnsafeCell&lt;u64&gt;]&gt;,
+    mask: u64,
+    head: AtomicU64, // published cursor
+    tail: AtomicU64, // acknowledged cursor
+}
+unsafe impl Sync for Shared {}
+
+pub fn ring_buffer(capacity: usize) -&gt; (Producer, Consumer) {
+    assert!(capacity.is_power_of_two(), "capacity must be a power of two");
+    let slots = (0..capacity).map(|_| UnsafeCell::new(0)).collect();
+    let shared = Arc::new(Shared { slots, mask: (capacity - 1) as u64, head: AtomicU64::new(0), tail: AtomicU64::new(0) });
+    (
+        Producer { shared: Arc::clone(&amp;shared), reserve_index: 0, cached_tail: 0 },
+        Consumer { shared, read_index: 0, cached_head: 0 },
+    )
+}
+
+pub struct Producer { shared: Arc&lt;Shared&gt;, reserve_index: u64, cached_tail: u64 }
+
+impl Producer {
+    pub fn try_produce(&amp;mut self, value: u64) -&gt; bool {
+        let capacity = self.shared.slots.len() as u64;
+        if self.reserve_index - self.cached_tail == capacity {
+            self.cached_tail = self.shared.tail.load(Ordering::Acquire);
+            if self.reserve_index - self.cached_tail == capacity {
+                return false; // genuinely full
+            }
+        }
+        let idx = (self.reserve_index &amp; self.shared.mask) as usize;
+        unsafe { *self.shared.slots[idx].get() = value; } // payload write — not yet visible
+        self.reserve_index += 1;
+        self.shared.head.store(self.reserve_index, Ordering::Release); // publication
+        true
+    }
+}
+unsafe impl Send for Producer {}
+
+pub struct Consumer { shared: Arc&lt;Shared&gt;, read_index: u64, cached_head: u64 }
+
+impl Consumer {
+    pub fn try_consume(&amp;mut self) -&gt; Option&lt;u64&gt; {
+        if self.read_index == self.cached_head {
+            self.cached_head = self.shared.head.load(Ordering::Acquire);
+            if self.read_index == self.cached_head {
+                return None; // genuinely empty
+            }
+        }
+        let idx = (self.read_index &amp; self.shared.mask) as usize;
+        let value = unsafe { *self.shared.slots[idx].get() }; // payload read
+        self.read_index += 1;
+        self.shared.tail.store(self.read_index, Ordering::Release); // consumption acknowledgement
+        Some(value)
+    }
+}
+unsafe impl Send for Consumer {}</code></pre>
+      <p>Safe Rust cannot express "two handles alias one buffer but only ever touch disjoint slots, proven by a runtime protocol" — so slot storage uses <code>UnsafeCell&lt;u64&gt;</code>, same as real crates like <code>ringbuf</code> do internally. A slot is only written once the capacity check confirms the consumer already freed it, and only read once the head check confirms the producer already published it.</p>
+
+      <h3>Criterion benchmark</h3>
+      <pre><code>fn run_pipeline() {
+    let (mut producer, mut consumer) = ring_buffer(1024);
+    let producer_handle = thread::spawn(move || {
+        for i in 0..ITEMS {
+            while !producer.try_produce(i) { std::hint::spin_loop(); }
+        }
+    });
+    let consumer_handle = thread::spawn(move || {
+        let mut received = 0u64;
+        while received &lt; ITEMS {
+            if consumer.try_consume().is_some() { received += 1; } else { std::hint::spin_loop(); }
+        }
+    });
+    producer_handle.join().unwrap();
+    consumer_handle.join().unwrap();
+}</code></pre>
+      <p><strong>This benchmark's timed region includes spawning and joining both threads on every sample</strong> — a materially different methodology from the Java benchmark's persistent-thread <code>@Group</code>, so the two numbers below are not directly comparable. See "Benchmark methodology" for why.</p>
+      <p>The runnable Cargo/Criterion project (with correctness tests) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/spsc-ring-buffer/code/rust" rel="noopener"><code>content/labs/spsc-ring-buffer/code/rust/</code></a> in this site's repository.</p>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Benchmark methodology</h2>
+    <div class="disclosure measured">
+      <p class="disclosure-kind">Measured</p>
+      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations of 1 second each, <code>Mode.Throughput</code>, <code>@Group</code> with one producer thread and one consumer thread pinned to a 1024-slot buffer for the whole run. Rust: default Criterion sampling (100 samples), each sample spawning a fresh producer/consumer thread pair moving 200,000 items, then joining both. Single developer machine with ordinary desktop load running alongside — not a dedicated, thermally-stable rig.</p>
+    </div>
+    <p><strong>Both languages benchmark the same shape but measure different things — the numbers must not be compared directly.</strong> JMH's <code>@Group</code> keeps both threads alive for the entire measurement window, reporting steady-state throughput. Criterion's <code>b.iter(...)</code> re-runs the whole closure — including <code>thread::spawn</code>/<code>.join()</code> for a fresh pair — every sample, so its time necessarily includes thread creation/teardown overhead the Java number excludes.</p>
+    <p><strong>Java (JMH, <code>@Group("spsc")</code>, ops/ms per side, higher is better):</strong></p>
+    <table>
+      <thead><tr><th>Benchmark</th><th>Throughput</th><th>99.9% CI</th></tr></thead>
+      <tbody>
+        <tr><td><code>spsc</code> (combined)</td><td>24,850.079 ops/ms</td><td>±412.206</td></tr>
+        <tr><td><code>spsc:produce</code></td><td>12,424.844 ops/ms</td><td>±206.229</td></tr>
+        <tr><td><code>spsc:consume</code></td><td>12,425.235 ops/ms</td><td>±205.978</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Rust (Criterion, full pipeline including thread spawn/join, 200,000 items per sample):</strong></p>
+    <table>
+      <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Median pipeline time</td><td>907.47 µs</td></tr>
+        <tr><td>Min–max (100 samples)</td><td>864.16 µs – 955.78 µs</td></tr>
+        <tr><td>Derived items/ms (from median)</td><td>≈220,392</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Producer and consumer throughput match almost exactly in the Java run</strong> (12,424.844 vs. 12,425.235 ops/ms) — expected for a correctly balanced SPSC pipeline where both sides do symmetric, equally-cheap work. <strong>The Rust number cannot be read as "faster than Java" here</strong> — its derived ~220,392 items/ms includes real thread spawn/join overhead the Java methodology deliberately excludes; a persistent-thread harness would very likely change it substantially. <strong>Neither number is a "real-world" figure</strong> — both run the tightest possible spin-loop with no actual payload processing, isolating the ring buffer's own mechanics from any application work.</p>
+    <p>Re-run the projects in <code>code/</code> on your own hardware before treating any of this as authoritative for a design decision.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Common mistakes</h2>
+    <ul>
+      <li>Publishing (advancing head) before finishing the payload write — the consumer can observe and read stale data with no error at all (see "Bug: publish before write").</li>
+      <li>Getting the full-buffer check wrong, or skipping it — the producer silently overwrites unconsumed data (see "Bug: overwrite before consumption").</li>
+      <li>Checking wrapped slot indices directly for "full"/"empty" instead of comparing raw cursor counts (<code>head - tail</code>) — this breaks the instant a cursor wraps.</li>
+      <li>Choosing a non-power-of-two capacity when using a bitmask for the slot index — <code>index &amp; mask</code> is only equivalent to <code>index % capacity</code> when capacity is a power of two.</li>
+      <li>Reading the other side's real cursor on every single operation when a cached, refresh-on-demand copy would avoid nearly all of that cross-core traffic.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>When an SPSC ring buffer is the right structure</h2>
+    <div class="trade-offs">
+      <div class="use">
+        <h4>Use an SPSC ring buffer when</h4>
+        <ul>
+          <li>There is genuinely exactly one producer thread and exactly one consumer thread — the single-writer guarantee is what removes all contention.</li>
+          <li>The workload is bursty enough that batching several items per publish/acknowledge is worth the added bookkeeping.</li>
+          <li>Bounded memory and explicit backpressure (reject/block on full) are acceptable, rather than an unbounded queue.</li>
+        </ul>
+      </div>
+      <div class="avoid">
+        <h4>Don't reach for it when</h4>
+        <ul>
+          <li>More than one thread needs to produce or consume — that's an MPSC/MPMC problem with real contention to manage (see <a href="/lab/cas-contention/">CAS Contention and Backoff</a>), not this lab's non-goal.</li>
+          <li>An unbounded queue is actually what the workload needs — a fixed capacity forces an explicit backpressure policy decision up front.</li>
+          <li>The payload per item is large enough that the fixed-size slot array's memory footprint, not the synchronization discipline, becomes the actual constraint.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Investigation task</h2>
+    <p>Using the Java or Rust project in <code>code/</code>:</p>
+    <ol>
+      <li>Run the benchmark and record the reported throughput or pipeline time on your own hardware.</li>
+      <li>Change the buffer capacity (a power of two) and re-run — observe whether throughput changes, and form a hypothesis for why or why not.</li>
+      <li>In the Java benchmark, temporarily change <code>tryProduce</code>/<code>tryConsume</code> to always re-read the real <code>tail</code>/<code>head</code> (remove the cached-cursor short-circuit) and re-run — measure the throughput cost of the cache being absent.</li>
+      <li>Reproduce the "publish before write" bug in your own copy of the code by moving the <code>HEAD.setRelease</code> call before the payload write, and write a test that demonstrates the consumer can observe incorrect data (it will not do so on every run — note how often it reproduces on your hardware, and why that non-determinism doesn't make the bug any less real).</li>
+      <li>Write down your CPU model and core count, your measured numbers, and explain any difference from the disclosed numbers above.</li>
+    </ol>
+  </section>
+
+  <section class="prose section">
+    <h2>Accessibility notes</h2>
+    <ul>
+      <li>The interactive model is fully keyboard operable: the scenario selector and the Java/Rust code tabs are roving-tabindex tablists (arrow keys, Home/End); every step/reset control is a native <code>&lt;button&gt;</code>.</li>
+      <li>Every state change is announced to screen readers via an <code>aria-live="polite"</code> region, in addition to the visible slot/actor status badges and the state inspector table — state is never colour-only.</li>
+      <li>This page has no auto-playing or looping animation; step transitions resolve instantly, so there is nothing beyond the site-wide CSS rule to gate on <code>prefers-reduced-motion</code>.</li>
+      <li>With JavaScript disabled, this page's theory, Java and Rust code, benchmark methodology, trade-offs and sources remain fully readable — only the interactive model and the graded quiz require script.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Review questions</h2>
+    <p>Self-check before or after the graded quiz below:</p>
+    <ol>
+      <li>Why must publication be a separate, later step from the payload write, rather than the same operation?</li>
+      <li>What specifically does the cached-cursor optimisation avoid, and when is it forced to give up and re-read the real cursor?</li>
+      <li>Why is "wrap-around" not an error condition, and what invariant must hold regardless of whether a cursor has wrapped?</li>
+      <li>What's the difference between how this lab's "full" scenario and its "overwrite" bug scenario each handle a full buffer?</li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <h2>Quiz</h2>
+    <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><cite>Disruptor: High Performance Alternative to Bounded Queues for Exchanging Data Between Concurrent Threads</cite> — Thompson, Fox, Barker, LMAX Technical Paper — <a href="https://lmax-exchange.github.io/disruptor/files/Disruptor-1.0.pdf" rel="noopener">lmax-exchange.github.io/disruptor</a></li>
+      <li><cite>The Art of Multiprocessor Programming</cite> — Herlihy &amp; Shavit, Morgan Kaufmann, 2020.</li>
+      <li><cite>Java Concurrency in Practice</cite> — Goetz et al., Addison-Wesley, 2006.</li>
+      <li><cite>java.lang.invoke.VarHandle — Java SE documentation</cite> — <a href="https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/invoke/VarHandle.html" rel="noopener">docs.oracle.com</a></li>
+      <li><cite>The Rustonomicon — Working with Unsafe</cite> — <a href="https://doc.rust-lang.org/nomicon/" rel="noopener">doc.rust-lang.org/nomicon</a></li>
+      <li><cite>ringbuf crate documentation</cite> — <a href="https://docs.rs/ringbuf/" rel="noopener">docs.rs/ringbuf</a></li>
+      <li><cite>JMH: Java Microbenchmark Harness</cite> — <a href="https://openjdk.org/projects/code-tools/jmh/" rel="noopener">openjdk.org/projects/code-tools/jmh</a></li>
+      <li><cite>Criterion.rs User Guide</cite> — <a href="https://bheisler.github.io/criterion.rs/book/" rel="noopener">bheisler.github.io/criterion.rs</a></li>
+    </ul>
+  </section>
+</article>
+</main>
+
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+    <a href="/about/">About</a>
+  </div>
+</footer>
+
+</body>
+</html>

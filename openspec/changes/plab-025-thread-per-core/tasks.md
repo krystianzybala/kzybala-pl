@@ -1,31 +1,31 @@
 # Tasks
 
-- [ ] Write thread-per-core theory.
-- [ ] Write ownership and partitioning theory.
-- [ ] Write affinity and scheduler caveats.
-- [ ] Write NUMA caveats.
-- [ ] Define metadata and prerequisites.
-- [ ] Implement worker-pool scenario.
-- [ ] Implement owned-state scenario.
-- [ ] Implement cross-core handoff.
-- [ ] Implement hot-partition scenario.
-- [ ] Implement scheduler-migration scenario.
-- [ ] Implement backpressure scenario.
-- [ ] Implement state inspector and event log.
-- [ ] Add Java example.
-- [ ] Add Rust example.
-- [ ] Add benchmark methodology.
-- [ ] Add common mistakes.
-- [ ] Add when-to-use guidance.
-- [ ] Add when-not-to-use guidance.
-- [ ] Add quiz.
-- [ ] Add investigation task.
-- [ ] Add sources.
-- [ ] Add reducer tests.
-- [ ] Add keyboard tests.
-- [ ] Add reduced-motion support.
-- [ ] Add no-JS fallback.
-- [ ] Add browser smoke test.
-- [ ] Run npm run verify.
-- [ ] Run openspec validate --all --strict.
+- [x] Write thread-per-core theory.
+- [x] Write ownership and partitioning theory.
+- [x] Write affinity and scheduler caveats.
+- [x] Write NUMA caveats.
+- [x] Define metadata and prerequisites.
+- [x] Implement worker-pool scenario.
+- [x] Implement owned-state scenario.
+- [x] Implement cross-core handoff.
+- [x] Implement hot-partition scenario.
+- [x] Implement scheduler-migration scenario.
+- [x] Implement backpressure scenario.
+- [x] Implement state inspector and event log.
+- [x] Add Java example.
+- [x] Add Rust example.
+- [x] Add benchmark methodology.
+- [x] Add common mistakes.
+- [x] Add when-to-use guidance.
+- [x] Add when-not-to-use guidance.
+- [x] Add quiz.
+- [x] Add investigation task.
+- [x] Add sources.
+- [x] Add reducer tests.
+- [x] Add keyboard tests.
+- [x] Add reduced-motion support.
+- [x] Add no-JS fallback.
+- [x] Add browser smoke test.
+- [x] Run npm run verify.
+- [x] Run openspec validate --all --strict.
 - [ ] Validate live GitHub Pages deployment.

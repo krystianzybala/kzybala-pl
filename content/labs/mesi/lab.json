@@ -7,7 +7,7 @@
   "durationMinutes": 25,
   "topics": ["cpu-cache", "coherence", "concurrency"],
   "prerequisites": [],
-  "unlocks": [],
+  "unlocks": ["memory-ordering"],
   "languages": ["java", "rust"],
   "interactive": true,
   "benchmark": false,

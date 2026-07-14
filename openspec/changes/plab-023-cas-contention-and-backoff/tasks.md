@@ -1,28 +1,28 @@
 # Tasks
 
-- [ ] Write CAS theory.
-- [ ] Write contention and cache-traffic theory.
-- [ ] Write backoff theory.
-- [ ] Define metadata and prerequisites.
-- [ ] Implement single-thread scenario.
-- [ ] Implement multi-contender scenario.
-- [ ] Implement fixed backoff.
-- [ ] Implement exponential backoff.
-- [ ] Implement jitter.
-- [ ] Implement single-writer comparison.
-- [ ] Implement counters and event log.
-- [ ] Add Java example and JMH benchmark.
-- [ ] Add Rust example and Criterion benchmark.
-- [ ] Add benchmark disclosure.
-- [ ] Add ABA overview.
-- [ ] Add fairness and starvation caveats.
-- [ ] Add quiz.
-- [ ] Add investigation task.
-- [ ] Add sources.
-- [ ] Add reducer tests.
-- [ ] Add keyboard tests.
-- [ ] Add reduced-motion support.
-- [ ] Add no-JS fallback.
-- [ ] Run npm run verify.
-- [ ] Run openspec validate --all --strict.
+- [x] Write CAS theory.
+- [x] Write contention and cache-traffic theory.
+- [x] Write backoff theory.
+- [x] Define metadata and prerequisites.
+- [x] Implement single-thread scenario.
+- [x] Implement multi-contender scenario.
+- [x] Implement fixed backoff.
+- [x] Implement exponential backoff.
+- [x] Implement jitter.
+- [x] Implement single-writer comparison.
+- [x] Implement counters and event log.
+- [x] Add Java example and JMH benchmark.
+- [x] Add Rust example and Criterion benchmark.
+- [x] Add benchmark disclosure.
+- [x] Add ABA overview.
+- [x] Add fairness and starvation caveats.
+- [x] Add quiz.
+- [x] Add investigation task.
+- [x] Add sources.
+- [x] Add reducer tests.
+- [x] Add keyboard tests.
+- [x] Add reduced-motion support.
+- [x] Add no-JS fallback.
+- [x] Run npm run verify.
+- [x] Run openspec validate --all --strict.
 - [ ] Validate live GitHub Pages deployment.

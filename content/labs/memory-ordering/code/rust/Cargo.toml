@@ -1,0 +1,10 @@
+[package]
+name = "memory-ordering-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Memory ordering in Java and Rust\" lab (kzybala.pl/lab/memory-ordering/)."
+publish = false
+
+[lib]
+name = "memory_ordering_lab"
+path = "src/lib.rs"

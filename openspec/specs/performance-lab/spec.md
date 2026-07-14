@@ -578,3 +578,179 @@ The mesi lab MUST include common mistakes, usage guidance, an investigation task
 #### Scenario: Sources
 - **WHEN** a user reads the lab
 - **THEN** a sources list using the shared `.sources` component cites authoritative references covering hardware and language-level claims
+
+### Requirement: Memory-ordering mechanism explained
+The memory-ordering lab MUST explain why source order does not guarantee cross-thread observation order, distinguishing visibility, atomicity, and ordering as separate guarantees.
+
+#### Scenario: Program order vs. observed order
+- **WHEN** a user reads the lab's theory section
+- **THEN** it explains that compiler and CPU reordering can legally separate program order from another thread's observed order
+
+#### Scenario: Visibility, atomicity, ordering distinguished
+- **WHEN** a user reads the lab's theory section
+- **THEN** it explains visibility, atomicity, and ordering as three independent guarantees, with an example operation for each combination
+
+#### Scenario: happens-before and data races explained
+- **WHEN** a user reads the lab's theory section
+- **THEN** it defines happens-before and defines a data race in terms of it
+
+### Requirement: Interactive litmus-test model
+The memory-ordering lab's interactive model MUST expose deterministic, steppable scenarios for message-passing publication and store buffering.
+
+#### Scenario: Broken and fixed publication both steppable
+- **WHEN** a user steps through the "Broken publication" and "Release/acquire message passing" scenarios
+- **THEN** each thread's buffered writes, the shared memory values, and the observed reads are shown as text at every step
+
+#### Scenario: Store-buffering outcome togglable by ordering
+- **WHEN** a user toggles the ordering selector between Relaxed and SeqCst on the "Store buffering" scenario
+- **THEN** the scenario re-derives and shows the resulting outcome for the selected ordering, including whether the classic both-see-0 result occurred
+
+#### Scenario: happens-before edges shown
+- **WHEN** an acquire (or SeqCst) read observes a value published by a release (or SeqCst) write
+- **THEN** a synchronizes-with / happens-before edge is added to a visible happens-before list
+
+#### Scenario: Reset exact
+- **WHEN** the Reset control is activated
+- **THEN** the model returns to the exact same initial state for the current scenario and ordering
+
+#### Scenario: Keyboard accessible
+- **WHEN** a user operates the model without a pointing device
+- **THEN** every control (scenario tabs, ordering toggle, step controls) is reachable and operable by keyboard
+
+### Requirement: Java VarHandle coverage
+The memory-ordering lab MUST cover plain, opaque, acquire/release, and volatile VarHandle access modes with buildable examples.
+
+#### Scenario: Buildable Java examples
+- **WHEN** the Java example project is built
+- **THEN** it compiles and its tests pass
+
+#### Scenario: Correct publication example
+- **WHEN** the Java example is inspected
+- **THEN** it includes both a plain-access publication example showing the broken outcome is possible and a release/acquire example that is reliably correct
+
+#### Scenario: No claim that weaker modes are always faster
+- **WHEN** a user reads the trade-offs section
+- **THEN** it states concrete conditions favoring weaker vs. stronger orderings, not a blanket performance claim
+
+### Requirement: Rust atomic coverage
+The memory-ordering lab MUST cover Relaxed, Acquire, Release, AcqRel, and SeqCst Rust atomic orderings with buildable examples.
+
+#### Scenario: Buildable Rust examples
+- **WHEN** the Rust example project is built
+- **THEN** it compiles and its tests pass
+
+#### Scenario: Ordering choices documented
+- **WHEN** the Rust example is inspected
+- **THEN** it documents why each chosen ordering is sufficient for the operation it's applied to
+
+#### Scenario: No undefined-behaviour example presented as valid
+- **WHEN** the Rust example is inspected
+- **THEN** every example given as correct is free of undefined behaviour under the documented ordering choice
+
+### Requirement: Litmus scenario honesty
+The memory-ordering lab MUST label its litmus scenarios as conceptual and avoid claiming to reproduce a specific CPU.
+
+#### Scenario: Scenarios labelled conceptual
+- **WHEN** the interactive model is shown
+- **THEN** it carries a `.disclosure.conceptual` block stating it fixes one illustrative interleaving per scenario, not a cycle-accurate simulation
+
+#### Scenario: Allowed and forbidden outcomes explained
+- **WHEN** a user reads the store-buffering scenario's description
+- **THEN** it explains which outcome is allowed under Relaxed and which is forbidden under SeqCst
+
+### Requirement: Memory-ordering myth correction
+The memory-ordering lab MUST explicitly reject common myths about acquire/release, volatile, atomics, and SeqCst.
+
+#### Scenario: Cache-flush myth rejected
+- **WHEN** a user reads the myths section
+- **THEN** it states that acquire/release does not "flush the cache" and explains what it actually guarantees
+
+#### Scenario: Volatile-instantaneous myth rejected
+- **WHEN** a user reads the myths section
+- **THEN** it states that volatile provides ordering via happens-before, not global instantaneity
+
+#### Scenario: Atomics-imply-correct-compound-algorithm myth rejected
+- **WHEN** a user reads the myths section
+- **THEN** it states that a compound operation built from separate atomic steps is not itself atomic, with a concrete counter-example
+
+#### Scenario: SeqCst-required-everywhere myth rejected
+- **WHEN** a user reads the myths section
+- **THEN** it states concrete cases where a weaker ordering is sufficient and cheaper
+
+### Requirement: CAS mechanism explained
+The cas-contention lab MUST explain compare-and-set as a conditional atomic update, distinct from a plain store.
+
+#### Scenario: CAS semantics explained
+- **WHEN** a user reads the lab's theory section
+- **THEN** it explains that CAS atomically replaces a value only if it matches an expected value, and reports success or failure
+
+#### Scenario: Retry loop explained
+- **WHEN** a user reads the lab's theory section
+- **THEN** it shows the standard read-compute-CAS-or-retry loop shape that every CAS-based algorithm is built around
+
+### Requirement: Contention model
+The cas-contention lab's interactive model MUST show how retry loops amplify coherence traffic and latency under contention.
+
+#### Scenario: Contention collapse demonstrated
+- **WHEN** a user compares the "Two contenders" and "Many contenders" scenarios
+- **THEN** the state inspector shows a higher failure/retry rate for more contenders, and the theory section names this "contention collapse"
+
+#### Scenario: Ownership transfers counted
+- **WHEN** a successful CAS changes which contender most recently succeeded
+- **THEN** an ownership-transfer counter increments, tying the effect to cache-line ping-pong
+
+#### Scenario: Keyboard accessible
+- **WHEN** a user operates the model without a pointing device
+- **THEN** every control (scenario tabs, step controls) is reachable and operable by keyboard
+
+### Requirement: Backoff comparison
+The cas-contention lab MUST compare no backoff, fixed backoff, exponential backoff, and jitter.
+
+#### Scenario: Fixed and exponential backoff both reduce wasted retries
+- **WHEN** a user compares "Fixed backoff" and "Exponential backoff" against "Many contenders" (no backoff)
+- **THEN** both backoff scenarios show fewer failed CAS attempts than the no-backoff baseline at the same contender count
+
+#### Scenario: Jitter explained
+- **WHEN** a user reads the backoff section
+- **THEN** it explains jitter's purpose (preventing contenders who failed together from retrying in lockstep again) using a reproducible, non-random mechanism
+
+### Requirement: Single-writer alternative
+The cas-contention lab MUST compare CAS contention with a single-writer ownership model.
+
+#### Scenario: Single-writer scenario has zero contention
+- **WHEN** a user selects the "Single-writer comparison" scenario
+- **THEN** every attempt succeeds immediately, with zero failures and zero ownership transfers
+
+#### Scenario: Not presented as universally better
+- **WHEN** a user reads the single-writer section
+- **THEN** it states the trade-off a single-writer design makes, not just its throughput advantage
+
+### Requirement: CAS Java and Rust coverage
+The cas-contention lab MUST include buildable Java and Rust examples and comparable benchmark methodology.
+
+#### Scenario: Buildable examples
+- **WHEN** the Java and Rust example projects are built
+- **THEN** each compiles and its tests pass
+
+#### Scenario: JMH and Criterion benchmarks disclosed
+- **WHEN** a user reads the benchmark methodology section
+- **THEN** it discloses hardware, OS, runtime/toolchain versions, and measurement configuration for both languages, per the shared `.disclosure.measured` component
+
+#### Scenario: Contention collapse shown as measured data
+- **WHEN** a user reads the benchmark table
+- **THEN** it shows throughput at multiple contender counts in both languages, with the trend (not a cross-language absolute comparison) as the stated takeaway
+
+### Requirement: CAS caveats
+The cas-contention lab MUST explain fairness, starvation risk, ABA at a conceptual level, and workload sensitivity.
+
+#### Scenario: ABA explained conceptually
+- **WHEN** a user reads the ABA section
+- **THEN** it explains that a successful CAS proves the value currently matches, not that nothing changed in between, without presenting a complete ABA solution
+
+#### Scenario: Fairness and starvation risk stated
+- **WHEN** a user reads the fairness section
+- **THEN** it states that a CAS retry loop makes no fairness promise and starvation is possible in principle
+
+#### Scenario: No universal backoff claim
+- **WHEN** a user reads the trade-offs section
+- **THEN** it states concrete conditions under which backoff does not help or actively hurts

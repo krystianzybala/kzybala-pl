@@ -1,0 +1,15 @@
+{
+  "id": "thread-per-core",
+  "title": "Thread-per-Core Architecture",
+  "status": "stable",
+  "level": 5,
+  "difficulty": "advanced",
+  "durationMinutes": 35,
+  "topics": ["concurrency", "architecture", "scheduling"],
+  "prerequisites": ["spsc-ring-buffer"],
+  "unlocks": [],
+  "languages": ["java", "rust"],
+  "interactive": true,
+  "benchmark": true,
+  "conceptualModel": true
+}

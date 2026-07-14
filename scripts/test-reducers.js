@@ -29,6 +29,39 @@ import {
   mesiEventLabel,
   announceMesi,
 } from "../assets/js/labs/mesi-scenarios.js";
+import {
+  createMemoryOrderingState,
+  memoryOrderingScenarios,
+  memoryOrderingScenarioMaxSteps,
+  memoryOrderingReducer,
+  memoryOrderingEventLabel,
+  memoryOrderingOutcome,
+  announceMemoryOrdering,
+} from "../assets/js/labs/memory-ordering-scenarios.js";
+import {
+  createCasState,
+  casScenarios,
+  casScenarioMaxSteps,
+  casReducer,
+  casEventLabel,
+  announceCas,
+} from "../assets/js/labs/cas-contention-scenarios.js";
+import {
+  createSpscRingBufferState,
+  spscRingBufferScenarios,
+  spscRingBufferScenarioMaxSteps,
+  spscRingBufferReducer,
+  spscRingBufferEventLabel,
+  announceSpscRingBuffer,
+} from "../assets/js/labs/spsc-ring-buffer-scenarios.js";
+import {
+  createThreadPerCoreState,
+  threadPerCoreScenarios,
+  threadPerCoreScenarioMaxSteps,
+  threadPerCoreReducer,
+  threadPerCoreEventLabel,
+  announceThreadPerCore,
+} from "../assets/js/labs/thread-per-core-scenarios.js";
 
 test("false-sharing: COHERENCE_STEP flips writeSide", () => {
   const s1 = falseSharingReducer(falseSharingInitialState, { type: "COHERENCE_STEP" });
@@ -524,4 +557,552 @@ test("mesi lab: announce describes CPU states and counters after an op, and rese
   assert.equal(announceMesi(state, { type: "RESET" }), "Reset. Both lines Invalid, no invalidations, transfers, or write-backs.");
   assert.match(announceMesi(state, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
   assert.equal(announceMesi(state, { type: "NOPE" }), null);
+});
+
+// --- memory-ordering lab (interactive store-buffer/happens-before model) ---
+
+function runToEnd(scenario, ordering) {
+  let state = createMemoryOrderingState(scenario, ordering);
+  const max = memoryOrderingScenarioMaxSteps(scenario, ordering);
+  for (let i = 0; i < max; i++) state = memoryOrderingReducer(state, { type: "NEXT_STEP" });
+  return state;
+}
+
+test("memory-ordering lab: initial state is empty with no observations, edges, or memory", () => {
+  const state = createMemoryOrderingState("broken-publication");
+  assert.deepEqual(state.thread0, { pc: 0, buffer: [] });
+  assert.deepEqual(state.thread1, { pc: 0, buffer: [] });
+  assert.deepEqual(state.memory, {});
+  assert.deepEqual(state.observations, []);
+  assert.deepEqual(state.edges, []);
+  assert.equal(state.step, 0);
+});
+
+test("memory-ordering lab: every scenario id is a valid initial-state scenario", () => {
+  for (const scenario of memoryOrderingScenarios) {
+    const state = createMemoryOrderingState(scenario.id);
+    assert.equal(state.scenario, scenario.id);
+  }
+});
+
+test("memory-ordering lab (broken-publication): plain access lets T1 observe flag=1 but data=0", () => {
+  const state = runToEnd("broken-publication", "relaxed");
+  const flag = state.observations.find(o => o.thread === 1 && o.var === "flag").value;
+  const data = state.observations.find(o => o.thread === 1 && o.var === "data").value;
+  assert.equal(flag, 1);
+  assert.equal(data, 0);
+  assert.deepEqual(state.edges, []);
+  assert.match(memoryOrderingOutcome(state), /broken publication/);
+});
+
+test("memory-ordering lab (release-acquire): T1 observes flag=1 and therefore data=1, with a happens-before edge", () => {
+  const state = runToEnd("release-acquire", "relaxed");
+  const flag = state.observations.find(o => o.thread === 1 && o.var === "flag").value;
+  const data = state.observations.find(o => o.thread === 1 && o.var === "data").value;
+  assert.equal(flag, 1);
+  assert.equal(data, 1);
+  assert.equal(state.edges.length, 1);
+  assert.match(memoryOrderingOutcome(state), /guarantees this/);
+});
+
+test("memory-ordering lab (relaxed-counter): relaxed RMW is always correct regardless of interleaving", () => {
+  const state = runToEnd("relaxed-counter", "relaxed");
+  assert.equal(state.memory.counter, 4);
+  assert.match(memoryOrderingOutcome(state), /Final counter = 4/);
+});
+
+test("memory-ordering lab (store-buffering, relaxed): both threads can observe 0 for the other's write", () => {
+  const state = runToEnd("store-buffering", "relaxed");
+  const sawY = state.observations.find(o => o.thread === 0 && o.var === "y").value;
+  const sawX = state.observations.find(o => o.thread === 1 && o.var === "x").value;
+  assert.equal(sawY, 0);
+  assert.equal(sawX, 0);
+  assert.match(memoryOrderingOutcome(state), /store-buffering outcome/);
+});
+
+test("memory-ordering lab (store-buffering, seqcst): both-see-0 is forbidden", () => {
+  const state = runToEnd("store-buffering", "seqcst");
+  const sawY = state.observations.find(o => o.thread === 0 && o.var === "y").value;
+  const sawX = state.observations.find(o => o.thread === 1 && o.var === "x").value;
+  assert.ok(sawY === 1 || sawX === 1, "at least one thread must observe the other's write under SeqCst");
+  assert.match(memoryOrderingOutcome(state), /SeqCst-consistent/);
+});
+
+test("memory-ordering lab: memoryOrderingOutcome is null before the scenario's script completes", () => {
+  let state = createMemoryOrderingState("relaxed-counter");
+  state = memoryOrderingReducer(state, { type: "NEXT_STEP" });
+  assert.equal(memoryOrderingOutcome(state), null);
+});
+
+test("memory-ordering lab: SELECT_ORDERING only applies to store-buffering, no-op elsewhere", () => {
+  const relaxedCounter = createMemoryOrderingState("relaxed-counter", "relaxed");
+  assert.equal(memoryOrderingReducer(relaxedCounter, { type: "SELECT_ORDERING", ordering: "seqcst" }), relaxedCounter);
+
+  const storeBuffering = createMemoryOrderingState("store-buffering", "relaxed");
+  const switched = memoryOrderingReducer(storeBuffering, { type: "SELECT_ORDERING", ordering: "seqcst" });
+  assert.equal(switched.ordering, "seqcst");
+  assert.deepEqual(switched, createMemoryOrderingState("store-buffering", "seqcst"));
+});
+
+test("memory-ordering lab: SELECT_ORDERING with the current ordering is a no-op (same reference)", () => {
+  const state = createMemoryOrderingState("store-buffering", "relaxed");
+  assert.equal(memoryOrderingReducer(state, { type: "SELECT_ORDERING", ordering: "relaxed" }), state);
+});
+
+test("memory-ordering lab: PREVIOUS_STEP exactly restores the prior derived state", () => {
+  let state = createMemoryOrderingState("broken-publication");
+  state = memoryOrderingReducer(state, { type: "NEXT_STEP" });
+  const afterStep1 = state;
+  state = memoryOrderingReducer(state, { type: "NEXT_STEP" });
+  state = memoryOrderingReducer(state, { type: "PREVIOUS_STEP" });
+  assert.deepEqual(state, afterStep1);
+});
+
+test("memory-ordering lab: NEXT_STEP/PREVIOUS_STEP are no-ops at the ends of the script (same reference)", () => {
+  const initial = createMemoryOrderingState("relaxed-counter");
+  assert.equal(memoryOrderingReducer(initial, { type: "PREVIOUS_STEP" }), initial);
+  const atMax = runToEnd("relaxed-counter", "relaxed");
+  assert.equal(memoryOrderingReducer(atMax, { type: "NEXT_STEP" }), atMax);
+});
+
+test("memory-ordering lab: RESET returns the exact initial state for the current scenario and ordering", () => {
+  let state = createMemoryOrderingState("store-buffering", "seqcst");
+  state = memoryOrderingReducer(state, { type: "NEXT_STEP" });
+  state = memoryOrderingReducer(state, { type: "RESET" });
+  assert.deepEqual(state, createMemoryOrderingState("store-buffering", "seqcst"));
+});
+
+test("memory-ordering lab: SELECT_SCENARIO switches scenario and resets progress", () => {
+  let state = createMemoryOrderingState("broken-publication");
+  state = memoryOrderingReducer(state, { type: "NEXT_STEP" });
+  state = memoryOrderingReducer(state, { type: "SELECT_SCENARIO", scenario: "relaxed-counter" });
+  assert.deepEqual(state, createMemoryOrderingState("relaxed-counter", state.ordering));
+});
+
+test("memory-ordering lab: SELECT_SCENARIO with the current scenario is a no-op (same reference)", () => {
+  const state = createMemoryOrderingState("broken-publication");
+  assert.equal(memoryOrderingReducer(state, { type: "SELECT_SCENARIO", scenario: "broken-publication" }), state);
+});
+
+test("memory-ordering lab: unknown event is a no-op (same reference)", () => {
+  const state = createMemoryOrderingState("broken-publication");
+  assert.equal(memoryOrderingReducer(state, { type: "NOPE" }), state);
+});
+
+test("memory-ordering lab: event label includes the step number and description", () => {
+  const state = memoryOrderingReducer(createMemoryOrderingState("relaxed-counter"), { type: "NEXT_STEP" });
+  assert.equal(memoryOrderingEventLabel(state.log[0]), `Step 1: ${state.log[0].text}`);
+});
+
+test("memory-ordering lab: announce reports the outcome, reset, scenario change, ordering change, and unknown", () => {
+  const state = runToEnd("relaxed-counter", "relaxed");
+  assert.match(announceMemoryOrdering(state, { type: "NEXT_STEP" }), /Final counter = 4/);
+  assert.equal(announceMemoryOrdering(state, { type: "RESET" }), "Reset. No instructions executed, memory empty.");
+  assert.match(announceMemoryOrdering(state, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
+  assert.match(announceMemoryOrdering(state, { type: "SELECT_ORDERING" }), /Ordering changed to/);
+  assert.equal(announceMemoryOrdering(state, { type: "NOPE" }), null);
+});
+
+// --- cas-contention lab (interactive CAS-retry contention model) ---
+
+function runCasToEnd(scenario) {
+  let state = createCasState(scenario);
+  const max = casScenarioMaxSteps(scenario);
+  for (let i = 0; i < max; i++) state = casReducer(state, { type: "NEXT_STEP" });
+  return state;
+}
+
+test("cas-contention lab: initial state has one contender per scenario config, zero counters", () => {
+  const state = createCasState("many-contenders");
+  assert.equal(state.contenders.length, 4);
+  assert.ok(state.contenders.every(c => c.known === 0 && c.successes === 0 && !c.done));
+  assert.equal(state.value, 0);
+  assert.equal(state.attempts, 0);
+  assert.equal(state.successfulCas, 0);
+  assert.equal(state.failedCas, 0);
+  assert.equal(state.retries, 0);
+  assert.equal(state.ownershipTransfers, 0);
+  assert.equal(state.completionStep, null);
+  assert.equal(state.step, 0);
+});
+
+test("cas-contention lab: every scenario id is a valid initial-state scenario", () => {
+  for (const scenario of casScenarios) {
+    const state = createCasState(scenario.id);
+    assert.equal(state.scenario, scenario.id);
+  }
+});
+
+test("cas-contention lab (single thread): no contention, every attempt succeeds", () => {
+  const state = runCasToEnd("single-thread");
+  assert.equal(state.value, 3);
+  assert.equal(state.successfulCas, 3);
+  assert.equal(state.failedCas, 0);
+  assert.equal(state.ownershipTransfers, 0);
+  assert.ok(state.contenders[0].done);
+});
+
+test("cas-contention lab (two contenders): contention produces at least one failure and one ownership transfer", () => {
+  const state = runCasToEnd("two-contenders");
+  assert.equal(state.value, 4);
+  assert.equal(state.successfulCas, 4);
+  assert.equal(state.failedCas, 2);
+  assert.equal(state.retries, 2);
+  assert.equal(state.ownershipTransfers, 1);
+  assert.ok(state.contenders.every(c => c.done));
+});
+
+test("cas-contention lab: many-contenders has a higher failure rate than two-contenders (contention collapse)", () => {
+  const two = runCasToEnd("two-contenders");
+  const many = runCasToEnd("many-contenders");
+  const twoFailureRate = two.failedCas / (two.successfulCas + two.failedCas);
+  const manyFailureRate = many.failedCas / (many.successfulCas + many.failedCas);
+  assert.ok(manyFailureRate > twoFailureRate, `expected many-contenders' failure rate (${manyFailureRate}) to exceed two-contenders' (${twoFailureRate})`);
+});
+
+test("cas-contention lab: fixed and exponential backoff both reduce failures below many-contenders' no-backoff baseline", () => {
+  const noBackoff = runCasToEnd("many-contenders");
+  const fixed = runCasToEnd("fixed-backoff");
+  const exponential = runCasToEnd("exponential-backoff");
+  assert.ok(fixed.failedCas < noBackoff.failedCas, "fixed backoff should reduce failures vs. no backoff");
+  assert.ok(exponential.failedCas < noBackoff.failedCas, "exponential backoff should reduce failures vs. no backoff");
+  assert.equal(fixed.successfulCas, noBackoff.successfulCas);
+  assert.equal(exponential.successfulCas, noBackoff.successfulCas);
+});
+
+test("cas-contention lab (single-writer comparison): zero contention, zero failures, zero ownership transfers", () => {
+  const state = runCasToEnd("single-writer");
+  assert.equal(state.value, 8);
+  assert.equal(state.successfulCas, 8);
+  assert.equal(state.failedCas, 0);
+  assert.equal(state.ownershipTransfers, 0);
+  assert.equal(state.completionStep, 8);
+});
+
+test("cas-contention lab: PREVIOUS_STEP exactly restores the prior derived state", () => {
+  let state = createCasState("two-contenders");
+  state = casReducer(state, { type: "NEXT_STEP" });
+  const afterStep1 = state;
+  state = casReducer(state, { type: "NEXT_STEP" });
+  state = casReducer(state, { type: "PREVIOUS_STEP" });
+  assert.deepEqual(state, afterStep1);
+});
+
+test("cas-contention lab: NEXT_STEP/PREVIOUS_STEP are no-ops at the ends of the run (same reference)", () => {
+  const initial = createCasState("single-thread");
+  assert.equal(casReducer(initial, { type: "PREVIOUS_STEP" }), initial);
+  const atMax = runCasToEnd("single-thread");
+  assert.equal(casReducer(atMax, { type: "NEXT_STEP" }), atMax);
+});
+
+test("cas-contention lab: RESET returns the exact initial state for the current scenario", () => {
+  let state = createCasState("many-contenders");
+  state = casReducer(state, { type: "NEXT_STEP" });
+  state = casReducer(state, { type: "RESET" });
+  assert.deepEqual(state, createCasState("many-contenders"));
+});
+
+test("cas-contention lab: SELECT_SCENARIO switches scenario and resets progress", () => {
+  let state = createCasState("single-thread");
+  state = casReducer(state, { type: "NEXT_STEP" });
+  state = casReducer(state, { type: "SELECT_SCENARIO", scenario: "many-contenders" });
+  assert.deepEqual(state, createCasState("many-contenders"));
+});
+
+test("cas-contention lab: SELECT_SCENARIO with the current scenario is a no-op (same reference)", () => {
+  const state = createCasState("single-thread");
+  assert.equal(casReducer(state, { type: "SELECT_SCENARIO", scenario: "single-thread" }), state);
+});
+
+test("cas-contention lab: unknown event is a no-op (same reference)", () => {
+  const state = createCasState("single-thread");
+  assert.equal(casReducer(state, { type: "NOPE" }), state);
+});
+
+test("cas-contention lab: event label includes the step number and description", () => {
+  const state = casReducer(createCasState("single-thread"), { type: "NEXT_STEP" });
+  assert.equal(casEventLabel(state.log[0]), `Step 1: ${state.log[0].text}`);
+});
+
+test("cas-contention lab: announce reports value/counters after a step, and reset/scenario-change/unknown", () => {
+  const state = casReducer(createCasState("single-thread"), { type: "NEXT_STEP" });
+  assert.match(announceCas(state, { type: "NEXT_STEP" }), /Value: 1\. Successful: 1/);
+  assert.equal(announceCas(state, { type: "RESET" }), "Reset. No attempts, value 0, no contenders have completed.");
+  assert.match(announceCas(state, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
+  assert.equal(announceCas(state, { type: "NOPE" }), null);
+});
+
+// --- spsc-ring-buffer lab (interactive SPSC ring-buffer model) ---
+
+function runRingBufferToEnd(scenario) {
+  let state = createSpscRingBufferState(scenario);
+  const max = spscRingBufferScenarioMaxSteps(scenario);
+  for (let i = 0; i < max; i++) state = spscRingBufferReducer(state, { type: "NEXT_STEP" });
+  return state;
+}
+
+test("spsc-ring-buffer lab: initial state is empty with all cursors at zero", () => {
+  const state = createSpscRingBufferState("normal");
+  assert.equal(state.reserveIndex, 0);
+  assert.equal(state.head, 0);
+  assert.equal(state.readIndex, 0);
+  assert.equal(state.tail, 0);
+  assert.equal(state.step, 0);
+  assert.equal(state.log.length, 0);
+  assert.ok(state.slots.every(s => s.value === null && s.published === false));
+});
+
+test("spsc-ring-buffer lab: every scenario id is a valid initial-state scenario", () => {
+  for (const scenario of spscRingBufferScenarios) {
+    const state = createSpscRingBufferState(scenario.id);
+    assert.equal(state.scenario, scenario.id);
+  }
+});
+
+test("spsc-ring-buffer lab (normal): two full cycles complete with no rejections or starves", () => {
+  const state = runRingBufferToEnd("normal");
+  assert.equal(state.reserveIndex, 2);
+  assert.equal(state.head, 2);
+  assert.equal(state.readIndex, 2);
+  assert.equal(state.tail, 2);
+  assert.equal(state.rejectedReservations, 0);
+  assert.equal(state.starvedReads, 0);
+  assert.equal(state.overwrites, 0);
+  assert.equal(state.incorrectReads, 0);
+});
+
+test("spsc-ring-buffer lab (wrap-around): the final produce reuses slot 0 after it was freed", () => {
+  const state = runRingBufferToEnd("wrap-around");
+  assert.equal(state.reserveIndex, 3);
+  assert.equal(state.tail, 2);
+  assert.equal(state.slots[0].value, 2, "slot 0 should hold the third produced value after wrapping");
+  assert.equal(state.slots[0].published, true);
+  assert.equal(state.overwrites, 0, "reusing a freed slot must not count as an overwrite bug");
+});
+
+test("spsc-ring-buffer lab (full): the third reservation on a 2-slot buffer is rejected", () => {
+  const state = runRingBufferToEnd("full");
+  assert.equal(state.rejectedReservations, 1);
+  assert.equal(state.head, 2);
+  assert.equal(state.tail, 0);
+});
+
+test("spsc-ring-buffer lab (empty): the first read on an empty buffer is starved", () => {
+  const state = runRingBufferToEnd("empty");
+  assert.equal(state.starvedReads, 1);
+  assert.equal(state.head, 1);
+  assert.equal(state.tail, 1);
+});
+
+test("spsc-ring-buffer lab (cached-cursor): the 5th reservation forces a producer cache refresh", () => {
+  const state = runRingBufferToEnd("cached-cursor");
+  assert.equal(state.producerCacheHits, 4);
+  assert.equal(state.producerCacheRefreshes, 1);
+  assert.equal(state.consumerCacheHits, 1);
+  assert.equal(state.consumerCacheRefreshes, 1);
+  assert.equal(state.rejectedReservations, 0);
+});
+
+test("spsc-ring-buffer lab (batch): one batch publish and one batch ack replace three individual ones", () => {
+  const state = runRingBufferToEnd("batch");
+  assert.equal(state.batchPublishes, 1);
+  assert.equal(state.batchAcks, 1);
+  assert.equal(state.singlePublishes, 0);
+  assert.equal(state.singleAcks, 0);
+  assert.equal(state.head, 3);
+  assert.equal(state.tail, 3);
+});
+
+test("spsc-ring-buffer lab (bug: publish before write): consumer reads stale pre-seeded data", () => {
+  const state = runRingBufferToEnd("bug-ordering");
+  assert.equal(state.incorrectReads, 1);
+  const readEntry = state.log.find(e => e.kind === "read");
+  assert.match(readEntry.text, /BUG: this is stale leftover data/);
+});
+
+test("spsc-ring-buffer lab (bug: overwrite unconsumed): the 3rd write on a full 2-slot buffer overwrites slot 0", () => {
+  const state = runRingBufferToEnd("bug-overwrite");
+  assert.equal(state.overwrites, 1);
+  const overwriteEntry = state.log.find(e => e.overwrite === true);
+  assert.match(overwriteEntry.text, /OVERWRITE BUG/);
+});
+
+test("spsc-ring-buffer lab: PREVIOUS_STEP exactly restores the prior derived state", () => {
+  let state = createSpscRingBufferState("normal");
+  state = spscRingBufferReducer(state, { type: "NEXT_STEP" });
+  const afterStep1 = state;
+  state = spscRingBufferReducer(state, { type: "NEXT_STEP" });
+  state = spscRingBufferReducer(state, { type: "PREVIOUS_STEP" });
+  assert.deepEqual(state, afterStep1);
+});
+
+test("spsc-ring-buffer lab: NEXT_STEP/PREVIOUS_STEP are no-ops at the ends of the run (same reference)", () => {
+  const initial = createSpscRingBufferState("normal");
+  assert.equal(spscRingBufferReducer(initial, { type: "PREVIOUS_STEP" }), initial);
+  const atMax = runRingBufferToEnd("normal");
+  assert.equal(spscRingBufferReducer(atMax, { type: "NEXT_STEP" }), atMax);
+});
+
+test("spsc-ring-buffer lab: RESET returns the exact initial state for the current scenario", () => {
+  let state = createSpscRingBufferState("full");
+  state = spscRingBufferReducer(state, { type: "NEXT_STEP" });
+  state = spscRingBufferReducer(state, { type: "RESET" });
+  assert.deepEqual(state, createSpscRingBufferState("full"));
+});
+
+test("spsc-ring-buffer lab: SELECT_SCENARIO switches scenario and resets progress", () => {
+  let state = createSpscRingBufferState("normal");
+  state = spscRingBufferReducer(state, { type: "NEXT_STEP" });
+  state = spscRingBufferReducer(state, { type: "SELECT_SCENARIO", scenario: "full" });
+  assert.deepEqual(state, createSpscRingBufferState("full"));
+});
+
+test("spsc-ring-buffer lab: SELECT_SCENARIO with the current scenario is a no-op (same reference)", () => {
+  const state = createSpscRingBufferState("normal");
+  assert.equal(spscRingBufferReducer(state, { type: "SELECT_SCENARIO", scenario: "normal" }), state);
+});
+
+test("spsc-ring-buffer lab: unknown event is a no-op (same reference)", () => {
+  const state = createSpscRingBufferState("normal");
+  assert.equal(spscRingBufferReducer(state, { type: "NOPE" }), state);
+});
+
+test("spsc-ring-buffer lab: event label includes the step number and description", () => {
+  const state = spscRingBufferReducer(createSpscRingBufferState("normal"), { type: "NEXT_STEP" });
+  assert.equal(spscRingBufferEventLabel(state.log[0]), `Step 1: ${state.log[0].text}`);
+});
+
+test("spsc-ring-buffer lab: announce reports occupancy/counters after a step, and reset/scenario-change/unknown", () => {
+  const state = spscRingBufferReducer(createSpscRingBufferState("normal"), { type: "NEXT_STEP" });
+  assert.match(announceSpscRingBuffer(state, { type: "NEXT_STEP" }), /Occupancy: 0\. Rejected: 0\. Starved: 0\./);
+  assert.equal(announceSpscRingBuffer(state, { type: "RESET" }), "Reset. Buffer empty, all cursors at zero.");
+  assert.match(announceSpscRingBuffer(state, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
+  assert.equal(announceSpscRingBuffer(state, { type: "NOPE" }), null);
+});
+
+// --- thread-per-core lab (interactive worker-pool vs. owned-partition model) ---
+
+function runThreadPerCoreToEnd(scenario) {
+  let state = createThreadPerCoreState(scenario);
+  const max = threadPerCoreScenarioMaxSteps(scenario);
+  for (let i = 0; i < max; i++) state = threadPerCoreReducer(state, { type: "NEXT_STEP" });
+  return state;
+}
+
+test("thread-per-core lab: initial state has 4 idle cores and zero counters", () => {
+  const state = createThreadPerCoreState("worker-pool");
+  assert.equal(state.cores.length, 4);
+  assert.ok(state.cores.every(c => c.processed === 0 && c.queue.length === 0 && !c.migrated));
+  assert.equal(state.totalRequests, 0);
+  assert.equal(state.lockAcquisitions, 0);
+  assert.equal(state.handoffs, 0);
+  assert.equal(state.rejectedRequests, 0);
+  assert.equal(state.migrationEvents, 0);
+});
+
+test("thread-per-core lab: every scenario id is a valid initial-state scenario", () => {
+  for (const scenario of threadPerCoreScenarios) {
+    const state = createThreadPerCoreState(scenario.id);
+    assert.equal(state.scenario, scenario.id);
+  }
+});
+
+test("thread-per-core lab (worker-pool): 4 requests take 4 turns, one lock acquisition each, no handoffs", () => {
+  const state = runThreadPerCoreToEnd("worker-pool");
+  assert.equal(state.totalRequests, 4);
+  assert.equal(state.lockAcquisitions, 4);
+  assert.equal(state.handoffs, 0);
+  assert.equal(state.rejectedRequests, 0);
+  assert.equal(state.cores.reduce((sum, c) => sum + c.processed, 0), 4);
+});
+
+test("thread-per-core lab (owned-state): the same 4 requests finish in a single turn with zero lock acquisitions", () => {
+  const state = runThreadPerCoreToEnd("owned-state");
+  assert.equal(threadPerCoreScenarioMaxSteps("owned-state"), 1);
+  assert.equal(state.totalRequests, 4);
+  assert.equal(state.lockAcquisitions, 0);
+  assert.equal(state.handoffs, 0);
+  assert.ok(state.cores.every(c => c.processed === 1), "every core should have processed exactly its own direct request");
+});
+
+test("thread-per-core lab (cross-core-handoff): 4 handoffs cost one extra turn versus owned-state", () => {
+  const state = runThreadPerCoreToEnd("cross-core-handoff");
+  assert.equal(threadPerCoreScenarioMaxSteps("cross-core-handoff"), 2, "handoff should take one more turn than direct dispatch");
+  assert.equal(state.handoffs, 4);
+  assert.equal(state.totalRequests, 4);
+  assert.ok(state.cores.every(c => c.processed === 1));
+});
+
+test("thread-per-core lab (hot-partition): core 1 is overloaded and rejects while other cores stay idle", () => {
+  const state = runThreadPerCoreToEnd("hot-partition");
+  assert.equal(state.rejectedRequests, 2);
+  assert.equal(state.cores[1].processed, 4);
+  assert.ok(state.cores.filter(c => c.id !== 1).every(c => c.processed === 0), "cores 0, 2, and 3 should never process anything in this scenario");
+});
+
+test("thread-per-core lab (scheduler-migration): requests are still processed correctly across a migration event", () => {
+  const state = runThreadPerCoreToEnd("scheduler-migration");
+  assert.equal(state.migrationEvents, 1);
+  assert.equal(state.cores[2].migrated, true);
+  assert.equal(state.cores[2].currentCpu, 5);
+  assert.ok(state.cores.every(c => c.processed === 2), "every core should have processed both its pre- and post-migration request");
+});
+
+test("thread-per-core lab (backpressure): a 5-request burst against a 3-slot inbox rejects exactly 2", () => {
+  const state = runThreadPerCoreToEnd("backpressure");
+  assert.equal(state.rejectedRequests, 2);
+  assert.equal(state.cores[0].processed, 3);
+});
+
+test("thread-per-core lab: PREVIOUS_STEP exactly restores the prior derived state", () => {
+  let state = createThreadPerCoreState("hot-partition");
+  state = threadPerCoreReducer(state, { type: "NEXT_STEP" });
+  const afterStep1 = state;
+  state = threadPerCoreReducer(state, { type: "NEXT_STEP" });
+  state = threadPerCoreReducer(state, { type: "PREVIOUS_STEP" });
+  assert.deepEqual(state, afterStep1);
+});
+
+test("thread-per-core lab: NEXT_STEP/PREVIOUS_STEP are no-ops at the ends of the run (same reference)", () => {
+  const initial = createThreadPerCoreState("worker-pool");
+  assert.equal(threadPerCoreReducer(initial, { type: "PREVIOUS_STEP" }), initial);
+  const atMax = runThreadPerCoreToEnd("worker-pool");
+  assert.equal(threadPerCoreReducer(atMax, { type: "NEXT_STEP" }), atMax);
+});
+
+test("thread-per-core lab: RESET returns the exact initial state for the current scenario", () => {
+  let state = createThreadPerCoreState("hot-partition");
+  state = threadPerCoreReducer(state, { type: "NEXT_STEP" });
+  state = threadPerCoreReducer(state, { type: "RESET" });
+  assert.deepEqual(state, createThreadPerCoreState("hot-partition"));
+});
+
+test("thread-per-core lab: SELECT_SCENARIO switches scenario and resets progress", () => {
+  let state = createThreadPerCoreState("worker-pool");
+  state = threadPerCoreReducer(state, { type: "NEXT_STEP" });
+  state = threadPerCoreReducer(state, { type: "SELECT_SCENARIO", scenario: "hot-partition" });
+  assert.deepEqual(state, createThreadPerCoreState("hot-partition"));
+});
+
+test("thread-per-core lab: SELECT_SCENARIO with the current scenario is a no-op (same reference)", () => {
+  const state = createThreadPerCoreState("worker-pool");
+  assert.equal(threadPerCoreReducer(state, { type: "SELECT_SCENARIO", scenario: "worker-pool" }), state);
+});
+
+test("thread-per-core lab: unknown event is a no-op (same reference)", () => {
+  const state = createThreadPerCoreState("worker-pool");
+  assert.equal(threadPerCoreReducer(state, { type: "NOPE" }), state);
+});
+
+test("thread-per-core lab: event label includes the step number and description", () => {
+  const state = threadPerCoreReducer(createThreadPerCoreState("worker-pool"), { type: "NEXT_STEP" });
+  assert.equal(threadPerCoreEventLabel(state.log[0]), `Step 1: ${state.log[0].text}`);
+});
+
+test("thread-per-core lab: announce reports handoffs/rejected/migrations after a step, and reset/scenario-change/unknown", () => {
+  const state = threadPerCoreReducer(createThreadPerCoreState("worker-pool"), { type: "NEXT_STEP" });
+  assert.match(announceThreadPerCore(state, { type: "NEXT_STEP" }), /Handoffs: 0\. Rejected: 0\. Migrations: 0\./);
+  assert.equal(announceThreadPerCore(state, { type: "RESET" }), "Reset. No requests, no handoffs, no migrations.");
+  assert.match(announceThreadPerCore(state, { type: "SELECT_SCENARIO" }), /Scenario changed to/);
+  assert.equal(announceThreadPerCore(state, { type: "NOPE" }), null);
 });

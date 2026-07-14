@@ -322,6 +322,9 @@ pre {
 @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } }
 
 .cpu-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 1rem; margin: 2rem 0; }
+/* CAS-contention lab — up to 4 contenders (assets/js/labs/cas-contention-lab.js) */
+.cpu-grid.many { grid-template-columns: repeat(4,1fr); }
+@media (max-width: 940px) { .cpu-grid.many { grid-template-columns: repeat(2,1fr); } }
 .cpu {
   position: relative; min-height: 160px; padding: 1rem;
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-solid);

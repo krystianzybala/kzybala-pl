@@ -1,0 +1,17 @@
+[package]
+name = "cas-contention-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"CAS contention and backoff\" lab (kzybala.pl/lab/cas-contention/)."
+publish = false
+
+[lib]
+name = "cas_contention_lab"
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "cas_contention"
+harness = false

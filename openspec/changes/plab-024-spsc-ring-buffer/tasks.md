@@ -1,32 +1,32 @@
 # Tasks
 
-- [ ] Write SPSC theory.
-- [ ] Define metadata and prerequisites.
-- [ ] Define deterministic state model.
-- [ ] Implement normal flow.
-- [ ] Implement wrap-around.
-- [ ] Implement full-buffer state.
-- [ ] Implement empty-buffer state.
-- [ ] Implement cached-cursor optimisation.
-- [ ] Implement batch scenario.
-- [ ] Implement incorrect-ordering scenario.
-- [ ] Implement overwrite-bug scenario.
-- [ ] Add Java implementation.
-- [ ] Add Java JMH benchmark.
-- [ ] Add Rust implementation.
-- [ ] Add Rust Criterion benchmark.
-- [ ] Add benchmark disclosure.
-- [ ] Add common mistakes.
-- [ ] Add when-to-use guidance.
-- [ ] Add when-not-to-use guidance.
-- [ ] Add quiz.
-- [ ] Add investigation task.
-- [ ] Add sources.
-- [ ] Add reducer tests.
-- [ ] Add keyboard tests.
-- [ ] Add reduced-motion support.
-- [ ] Add no-JS fallback.
-- [ ] Add browser smoke test.
-- [ ] Run npm run verify.
-- [ ] Run openspec validate --all --strict.
+- [x] Write SPSC theory.
+- [x] Define metadata and prerequisites.
+- [x] Define deterministic state model.
+- [x] Implement normal flow.
+- [x] Implement wrap-around.
+- [x] Implement full-buffer state.
+- [x] Implement empty-buffer state.
+- [x] Implement cached-cursor optimisation.
+- [x] Implement batch scenario.
+- [x] Implement incorrect-ordering scenario.
+- [x] Implement overwrite-bug scenario.
+- [x] Add Java implementation.
+- [x] Add Java JMH benchmark.
+- [x] Add Rust implementation.
+- [x] Add Rust Criterion benchmark.
+- [x] Add benchmark disclosure.
+- [x] Add common mistakes.
+- [x] Add when-to-use guidance.
+- [x] Add when-not-to-use guidance.
+- [x] Add quiz.
+- [x] Add investigation task.
+- [x] Add sources.
+- [x] Add reducer tests.
+- [x] Add keyboard tests.
+- [x] Add reduced-motion support.
+- [x] Add no-JS fallback.
+- [x] Add browser smoke test.
+- [x] Run npm run verify.
+- [x] Run openspec validate --all --strict.
 - [ ] Validate live GitHub Pages deployment.

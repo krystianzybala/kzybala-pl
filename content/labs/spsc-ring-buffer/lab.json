@@ -1,0 +1,15 @@
+{
+  "id": "spsc-ring-buffer",
+  "title": "SPSC Ring Buffer",
+  "status": "stable",
+  "level": 4,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "lock-free", "coherence"],
+  "prerequisites": ["cas-contention"],
+  "unlocks": ["thread-per-core"],
+  "languages": ["java", "rust"],
+  "interactive": true,
+  "benchmark": true,
+  "conceptualModel": true
+}

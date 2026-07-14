@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-6EBB8HVM2T"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-6EBB8HVM2T');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Memory Ordering in Java and Rust | Performance Lab | Krystian Zybała</title>
+  <meta name="description" content="An interactive reference lab on memory ordering: program order vs. observed order, happens-before, the message-passing and store-buffering litmus tests, Java VarHandle access modes, and Rust atomic orderings.">
+  <link rel="canonical" href="https://kzybala.pl/lab/memory-ordering/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Memory Ordering in Java and Rust | Performance Lab | Krystian Zybała">
+  <meta property="og:description" content="An interactive reference lab on memory ordering: program order vs. observed order, happens-before, the message-passing and store-buffering litmus tests, Java VarHandle access modes, and Rust atomic orderings.">
+  <meta property="og:url" content="https://kzybala.pl/lab/memory-ordering/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/labs/memory-ordering-lab.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/about/">About</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<article data-lab-id="memory-ordering">
+  <header class="lab-header prose section">
+    <p class="eyebrow">Concurrency · <a href="/lab/">Performance Lab</a></p>
+    <h1>Memory Ordering in Java and Rust</h1>
+    <p class="lead">Coherence guarantees every core agrees on one location's value. It says nothing about whether a write to a <em>different</em> location becomes visible before or after it. That gap is memory ordering — and it's where "it worked on my machine" concurrency bugs live.</p>
+  </header>
+
+  <section class="prose section">
+    <h2>Learning objective</h2>
+    <p>Explain why the order two threads observe each other's writes is not the same as the order those writes appear in source code, distinguish visibility from atomicity from ordering, explain acquire/release publication and why it works, and map Java's VarHandle access modes and Rust's atomic orderings without assuming a direct one-to-one equivalence.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>The <a href="/lab/mesi/">Cache Coherence and MESI</a> lab — this lab assumes you already know that coherence guarantees agreement on a single location's value. This lab is about what coherence does <strong>not</strong> give you: ordering across different locations.</li>
+      <li>Comfortable reading Java or Rust concurrent code (atomics, threads).</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Theory</h2>
+
+    <h3>Program order vs. observed order</h3>
+    <p><strong>Program order</strong> is the order your source code writes instructions in. <strong>Observed order</strong> is the order another thread actually sees those instructions' effects take place — and the two are not the same thing. A compiler is free to reorder independent accesses with no data dependency between them; a CPU core can hold its own stores in a local <strong>store buffer</strong> before they become visible to other cores, so a later independent load can complete before an earlier store has drained. Neither is a bug — both are legal, performance-motivated behaviour in the absence of a rule forbidding it. Memory-ordering annotations (<code>volatile</code>, <code>Acquire</code>/<code>Release</code>, fences) are that rule.</p>
+
+    <h3>Three different guarantees</h3>
+    <table>
+      <thead><tr><th>Guarantee</th><th>Question it answers</th></tr></thead>
+      <tbody>
+        <tr><td>Atomicity</td><td>Does this operation appear indivisible — never observed half-done?</td></tr>
+        <tr><td>Visibility</td><td>Once a write happens, when (if ever) does another thread observe it?</td></tr>
+        <tr><td>Ordering</td><td>If a thread observes write A, does it also observe every write that happened-before A?</td></tr>
+      </tbody>
+    </table>
+    <p>A <code>Relaxed</code> atomic in Rust is atomic but gives no ordering guarantee about other memory operations. A <code>volatile</code>/<code>SeqCst</code> access gives all three. Conflating these three is where most of the myths below come from.</p>
+
+    <h3>happens-before and data races</h3>
+    <p><strong>happens-before</strong> is a partial order the language memory model defines over a program's operations: if A happens-before B, every effect of A is guaranteed visible to B. Program order within one thread always contributes edges; synchronizing operations (a release paired with an acquire that observes it) contribute cross-thread edges. A <strong>data race</strong> is two accesses to the same location from different threads, no happens-before edge between them, at least one a write — something to eliminate, not reason carefully about.</p>
+
+    <h3>The message-passing litmus test: broken vs. fixed publication</h3>
+    <pre><code>Thread 0                      Thread 1
+data = 1                      while (!flag) {}
+flag = 1                      read data</code></pre>
+    <p>With <strong>plain</strong> access, this is legal but broken: nothing stops thread 1 from observing <code>flag == 1</code> and <code>data == 0</code> — seeing the "ready" signal without seeing the data it's meant to guard. The fix is a <strong>release store</strong> on the publishing side paired with an <strong>acquire load</strong> on the observing side: a release write makes every write before it in program order visible no later than itself, and an acquire read that observes it establishes happens-before from everything before the release to everything after the acquire.</p>
+
+    <h3>The store-buffering litmus test</h3>
+    <pre><code>Thread 0                      Thread 1
+x = 1                          y = 1
+read y                         read x</code></pre>
+    <p>Under relaxed ordering, <strong>both threads can observe 0</strong> for the other's write — each thread's own store can sit in its store buffer while its own independent-address load is satisfied directly from memory. This is exactly what sequential consistency (SeqCst) forbids: SeqCst adds a single total order every SeqCst operation agrees on, ruling out the both-see-0 outcome.</p>
+
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>The interactive model below fixes ONE legal, illustrative interleaving per scenario using an explicit "flush" step — not a simulation of every interleaving a real CPU's store buffer could produce, and not a claim that acquire/release "flushes caches." See "Limitations of this model" below.</p>
+    </div>
+  </section>
+
+  <section data-lab-stage class="section">
+    <p class="eyebrow">Try it</p>
+    <h2>Interactive store-buffer / happens-before model</h2>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>Two threads, a handful of shared variables, and a per-thread store buffer for un-synchronized writes — one fixed, illustrative interleaving per scenario, not a cycle-accurate CPU simulation. See "Limitations of this model" below for what this leaves out.</p>
+    </div>
+
+    <nav data-lab-scenario-nav aria-label="Scenario"></nav>
+    <p data-scenario-description>T0 writes data, then flag — both with plain access. Step through and watch the flag's write get flushed to memory before data's, letting T1 see flag=1 while data is still 0.</p>
+
+    <div class="control-row" data-ordering-controls hidden>
+      <button class="control" type="button" data-ordering-relaxed aria-pressed="true">Relaxed</button>
+      <button class="control" type="button" data-ordering-seqcst aria-pressed="false">SeqCst</button>
+    </div>
+
+    <div class="cpu-grid">
+      <div class="cpu" data-thread="0">
+        <p class="cpu-label">Thread 0</p>
+        <p class="counter" data-thread-buffer>Buffer: empty</p>
+      </div>
+      <div class="cpu" data-thread="1">
+        <p class="cpu-label">Thread 1</p>
+        <p class="counter" data-thread-buffer>Buffer: empty</p>
+      </div>
+    </div>
+
+    <p class="counter">Outcome: <span class="state-badge is-idle" data-lab-outcome>Step through to the end to see the outcome.</span></p>
+
+    <h3>Happens-before edges</h3>
+    <ul data-happens-before>
+      <li>No synchronizes-with edges yet.</li>
+    </ul>
+
+    <dl data-lab-inspector>
+      <dt>Scenario</dt><dd>Broken publication</dd>
+      <dt>Ordering</dt><dd>plain</dd>
+      <dt>Step</dt><dd>0 of 6</dd>
+    </dl>
+
+    <div class="control-row" data-lab-controls>
+      <button class="control" type="button" disabled>Previous</button>
+      <button class="control" type="button">Next</button>
+      <button class="control" type="button">Reset</button>
+    </div>
+
+    <h3>Event log</h3>
+    <ol data-lab-event-log>
+      <li>Initial state — no instructions executed.</li>
+    </ol>
+
+    <p class="sr-only" role="status" aria-live="polite" data-lab-announcer></p>
+  </section>
+
+  <section class="prose section" data-lab-code-tabs>
+    <h2>Java and Rust</h2>
+    <div role="tablist" aria-label="Language">
+      <button role="tab" id="tab-java" aria-controls="panel-java" aria-selected="true" tabindex="0">Java</button>
+      <button role="tab" id="tab-rust" aria-controls="panel-rust" aria-selected="false" tabindex="-1">Rust</button>
+    </div>
+
+    <div role="tabpanel" id="panel-java" aria-labelledby="tab-java">
+      <h3>Plain access (the bug)</h3>
+      <pre><code>public class PlainPublication {
+    private static final VarHandle DATA, FLAG;
+    static {
+        try {
+            var lookup = MethodHandles.lookup();
+            DATA = lookup.findVarHandle(PlainPublication.class, "data", int.class);
+            FLAG = lookup.findVarHandle(PlainPublication.class, "flag", int.class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    private int data;
+    private int flag;
+
+    public void publish() {
+        DATA.set(this, 42);
+        FLAG.set(this, 1);
+    }
+
+    // May legally read flag == 1 and data == 0.
+    public boolean tryConsume() {
+        if ((int) FLAG.get(this) == 1) {
+            int seen = (int) DATA.get(this);
+            return seen == 42; // NOT guaranteed, even after seeing flag == 1
+        }
+        return false;
+    }
+}</code></pre>
+      <p><code>VarHandle.set</code>/<code>get</code> are plain accesses: no ordering guarantee at all. This is the exact shape of the interactive model's "Broken publication" scenario.</p>
+
+      <h3>Release/acquire (the fix)</h3>
+      <pre><code>public void publish() {
+    DATA.set(this, 42);          // plain — ordering comes from the release below
+    FLAG.setRelease(this, 1);    // release: flushes everything before it in program order
+}
+
+public boolean tryConsume() {
+    if ((int) FLAG.getAcquire(this) == 1) {
+        int seen = (int) DATA.get(this);
+        return seen == 42; // guaranteed true
+    }
+    return false;
+}</code></pre>
+      <p><code>setRelease</code>/<code>getAcquire</code> is the JVM's direct expression of the release/acquire pair the "Release/acquire message passing" scenario demonstrates.</p>
+
+      <h3>Opaque access — atomicity without cross-variable ordering</h3>
+      <pre><code>public void increment() {
+    int current = (int) COUNTER.getOpaque(this);
+    COUNTER.setOpaque(this, current + 1); // NOT atomic as a read-modify-write!
+}</code></pre>
+      <p><strong>Careful: this is not the same as an atomic increment.</strong> <code>getOpaque</code>/<code>setOpaque</code> give per-location atomicity and a coherent total order for that one field — but the get-then-set pair above is still two separate operations; another thread's increment can interleave and lose an update. A genuine atomic increment needs <code>getAndAdd</code> or a compare-and-set loop, as below.</p>
+
+      <h3>Volatile — the strongest VarHandle mode</h3>
+      <pre><code>private volatile int counter;
+
+public void incrementAtomically() {
+    COUNTER.getAndAdd(this, 1); // a genuine atomic read-modify-write
+}</code></pre>
+      <p>This is the JVM analogue of the interactive model's relaxed-counter RMW step: the counter is always correct regardless of interleaving (atomicity), which says nothing about the ordering of any other, unrelated field.</p>
+      <p>The runnable Maven project (including a test demonstrating the broken and fixed publication paths) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/memory-ordering/code/java" rel="noopener"><code>content/labs/memory-ordering/code/java/</code></a> in this site's repository.</p>
+    </div>
+
+    <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
+      <h3>Relaxed (the bug)</h3>
+      <pre><code>use std::sync::atomic::{AtomicI32, Ordering};
+
+pub struct RelaxedPublication {
+    data: AtomicI32,
+    flag: AtomicI32,
+}
+
+impl RelaxedPublication {
+    pub fn publish(&self) {
+        self.data.store(42, Ordering::Relaxed);
+        self.flag.store(1, Ordering::Relaxed);
+    }
+
+    // May legally read flag == 1 and data == 0.
+    pub fn try_consume(&self) -&gt; bool {
+        if self.flag.load(Ordering::Relaxed) == 1 {
+            let seen = self.data.load(Ordering::Relaxed);
+            return seen == 42; // NOT guaranteed
+        }
+        false
+    }
+}</code></pre>
+      <p><code>Ordering::Relaxed</code> gives atomicity per operation and a total modification order per location — nothing about ordering relative to any other atomic.</p>
+
+      <h3>Release/Acquire (the fix)</h3>
+      <pre><code>pub fn publish(&amp;self) {
+    self.data.store(42, Ordering::Relaxed); // ordering comes from the release below
+    self.flag.store(1, Ordering::Release);
+}
+
+pub fn try_consume(&amp;self) -&gt; bool {
+    if self.flag.load(Ordering::Acquire) == 1 {
+        let seen = self.data.load(Ordering::Relaxed);
+        return seen == 42; // guaranteed true
+    }
+    false
+}</code></pre>
+      <p><code>Ordering::Release</code> paired with <code>Ordering::Acquire</code> is Rust's direct equivalent of Java's <code>setRelease</code>/<code>getAcquire</code> — and the "Release/acquire message passing" scenario.</p>
+
+      <h3>Why the store-buffering test needs SeqCst</h3>
+      <pre><code>pub fn run(self: &amp;Arc&lt;Self&gt;, ordering: Ordering) -&gt; (i32, i32) {
+    let a = Arc::clone(self);
+    let b = Arc::clone(self);
+    let t0 = thread::spawn(move || { a.x.store(1, ordering); a.y.load(ordering) });
+    let t1 = thread::spawn(move || { b.y.store(1, ordering); b.x.load(ordering) });
+    (t0.join().unwrap(), t1.join().unwrap())
+}</code></pre>
+      <p>The store-buffering test has no dependency between <code>x</code> and <code>y</code> for <code>Acquire</code>/<code>Release</code> to attach to — neither thread's operations synchronize with the other's in a way that rules out both loads observing 0. <code>SeqCst</code> adds a single total order every SeqCst operation across every thread agrees on, which is exactly the extra guarantee needed to forbid that outcome. <strong>Getting this wrong is undefined behaviour, not a slow-but-safe fallback</strong> — Rust's type system does not check that your chosen ordering actually provides what your algorithm depends on.</p>
+      <p>The runnable Cargo project (including tests reproducing both publication paths and the store-buffering outcome under both orderings) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/memory-ordering/code/rust" rel="noopener"><code>content/labs/memory-ordering/code/rust/</code></a> in this site's repository.</p>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Methodology and limitations</h2>
+    <p>This lab deliberately does not present a synthetic "memory ordering benchmark." Reordering effects are timing-dependent, hardware-dependent, and often simply don't reproduce reliably on a given developer machine even when the underlying bug is completely real — a benchmark number here would invite exactly the false confidence this lab argues against.</p>
+    <ul>
+      <li><strong>One fixed interleaving per scenario.</strong> The interactive model uses an explicit "flush" step to make store-buffer timing visible and steppable. Real store buffers drain asynchronously, on hardware-determined schedules this lab does not simulate.</li>
+      <li><strong>Two threads, a handful of variables.</strong> Real programs have far more complex happens-before graphs than this lab's four- to six-step scripts.</li>
+      <li><strong>The happens-before graph shown is the direct synchronizes-with edge</strong> for this scenario's specific release/acquire pair, not a full transitive closure over an arbitrary program.</li>
+      <li><strong>Java and Rust are not identical memory models.</strong> VarHandle access modes and Rust's atomic orderings are close cousins, not interchangeable one-to-one.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Myths this lab explicitly rejects</h2>
+    <ul>
+      <li><strong>"Acquire/release flushes the CPU cache."</strong> No language memory model talks about cache flushing. Coherence already guarantees agreement on a single location; acquire/release is about ordering across locations — a different guarantee, implemented however a given compiler/CPU pair chooses.</li>
+      <li><strong>"volatile (Java) makes an access globally instantaneous."</strong> It makes it ordered relative to other volatile/synchronizing accesses via happens-before — not instantaneous.</li>
+      <li><strong>"Atomics automatically make a compound algorithm correct."</strong> An atomic increment is atomic; a check-then-act built from two separate atomic operations is not, unless the whole operation is a single atomic RMW primitive.</li>
+      <li><strong>"SeqCst (or volatile/full fences) is required everywhere, to be safe."</strong> Weaker orderings are the correct, sufficient, and cheaper choice for a large fraction of real synchronization patterns — see "When weaker orderings are enough" below.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Common mistakes</h2>
+    <ul>
+      <li>Assuming a JMM VarHandle access mode maps index-for-index onto a Rust <code>Ordering</code> variant — they are close cousins, defined independently, not interchangeable one-to-one.</li>
+      <li>Using <code>getOpaque</code>/<code>setOpaque</code> (or a Relaxed load-then-store) as a substitute for a genuine atomic read-modify-write — a get-then-set pair is never atomic as a whole, no matter how strong the individual accesses are.</li>
+      <li>Publishing data with a plain write and a plain "ready" flag, then trusting the reader's plain read of the flag to mean the data is visible too.</li>
+      <li>Treating a memory-ordering bug that didn't reproduce today as evidence the code is correct — reordering effects are legal, not guaranteed, and absence on one run/one machine proves nothing.</li>
+      <li>Reaching for <code>SeqCst</code>/<code>volatile</code> everywhere "to be safe" instead of identifying the actual happens-before edge a piece of code depends on.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>When weaker orderings are enough</h2>
+    <div class="trade-offs">
+      <div class="use">
+        <h4>Relaxed/Opaque is enough when</h4>
+        <ul>
+          <li>The value is a counter or statistic where only the final atomic value matters, not its ordering relative to any other variable (the "Relaxed counter" scenario).</li>
+          <li>Nothing else in the program depends on the order in which this variable's updates become visible relative to other memory operations.</li>
+        </ul>
+      </div>
+      <div class="avoid">
+        <h4>You need Acquire/Release or stronger when</h4>
+        <ul>
+          <li>One thread publishes data that another thread must not observe before it's fully written (the message-passing / publication pattern).</li>
+          <li>Correctness depends on <em>multiple independent</em> atomics agreeing on a relative order across threads (the store-buffering test) — this specific case needs SeqCst, not just Acquire/Release.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Investigation task</h2>
+    <p>Using the Java or Rust project in <code>code/</code>:</p>
+    <ol>
+      <li>Run the broken-publication test in both languages and confirm it passes (i.e., does not assert a guarantee plain access cannot provide) — then run the release/acquire version and confirm it asserts the guaranteed outcome.</li>
+      <li>Run the store-buffering test under <code>Relaxed</code>/relaxed ordering in a loop (thousands of iterations) and record whether you ever observe both threads reading 0 for the other's write on your hardware. Note: not reproducing it on your machine does not mean the outcome is impossible — see "Methodology and limitations" above.</li>
+      <li>Re-run the same store-buffering test under <code>SeqCst</code>/seqcst and confirm your test assertion (at least one thread must observe the other's write) never fails, across as many iterations as you're willing to run.</li>
+      <li>Read your CPU vendor's architecture manual's memory-ordering chapter (Intel SDM Vol. 3A, or the Arm Architecture Reference Manual) and identify which store-to-load reordering, if any, it explicitly permits — compare it to what this lab's model assumes.</li>
+    </ol>
+  </section>
+
+  <section class="prose section">
+    <h2>Accessibility notes</h2>
+    <ul>
+      <li>The interactive model is fully keyboard operable: the scenario selector and the Java/Rust code tabs are roving-tabindex tablists (arrow keys, Home/End); the ordering toggle and step controls are native <code>&lt;button&gt;</code>s with <code>aria-pressed</code> reflecting the active ordering.</li>
+      <li>Every step is announced to screen readers via an <code>aria-live="polite"</code> region, in addition to the visible outcome badge, event log, and state inspector — state is never colour-only.</li>
+      <li>This page has no auto-playing or looping animation; step transitions resolve instantly, so there is nothing beyond the site-wide CSS rule to gate on <code>prefers-reduced-motion</code>.</li>
+      <li>With JavaScript disabled, this page's theory, Java and Rust code, methodology, trade-offs and sources remain fully readable — only the interactive model and the graded quiz require script.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Review questions</h2>
+    <p>Self-check before or after the graded quiz below:</p>
+    <ol>
+      <li>Why can a thread observe another thread's "ready" flag as set, but still see stale data underneath it, when both are written with plain access?</li>
+      <li>What specifically does a release write guarantee about writes that happened before it in program order?</li>
+      <li>Why does the store-buffering litmus test need SeqCst, when acquire/release already provides happens-before edges?</li>
+      <li>Give an example of an atomic operation that is atomic but provides no useful ordering guarantee for the rest of your program.</li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <h2>Quiz</h2>
+    <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><cite>The Java Language Specification, Chapter 17 (Threads and Locks)</cite> — <a href="https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html" rel="noopener">docs.oracle.com/javase/specs/jls</a></li>
+      <li><cite>JEP 193: Variable Handles</cite> — <a href="https://openjdk.org/jeps/193" rel="noopener">openjdk.org/jeps/193</a></li>
+      <li><cite>Java Concurrency in Practice</cite> — Goetz et al., Addison-Wesley, 2006.</li>
+      <li><cite>The Rust Reference — Atomics (<code>std::sync::atomic::Ordering</code>)</cite> — <a href="https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html" rel="noopener">doc.rust-lang.org/std/sync/atomic/enum.Ordering.html</a></li>
+      <li><cite>C++ Standard, <code>std::memory_order</code></cite> (the model Rust's atomic orderings are adapted from) — <a href="https://en.cppreference.com/w/cpp/atomic/memory_order" rel="noopener">en.cppreference.com/w/cpp/atomic/memory_order</a></li>
+      <li><cite>A Primer on Memory Consistency and Cache Coherence</cite> — Sorin, Hill, Wood, Morgan &amp; Claypool, 2011.</li>
+      <li><cite>Doug Lea, "The JSR-133 Cookbook for Compiler Writers"</cite> — <a href="https://gee.cs.oswego.edu/dl/jmm/cookbook.html" rel="noopener">gee.cs.oswego.edu/dl/jmm/cookbook.html</a></li>
+    </ul>
+  </section>
+</article>
+</main>
+
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+    <a href="/about/">About</a>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -57,13 +57,117 @@
       "concurrency"
     ],
     "prerequisites": [],
-    "unlocks": [],
+    "unlocks": [
+      "memory-ordering"
+    ],
     "languages": [
       "java",
       "rust"
     ],
     "interactive": true,
     "benchmark": false,
+    "conceptualModel": true
+  },
+  {
+    "id": "memory-ordering",
+    "title": "Memory Ordering in Java and Rust",
+    "status": "stable",
+    "level": 2,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "memory-model",
+      "coherence"
+    ],
+    "prerequisites": [
+      "mesi"
+    ],
+    "unlocks": [
+      "cas-contention"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": true,
+    "benchmark": false,
+    "conceptualModel": true
+  },
+  {
+    "id": "cas-contention",
+    "title": "CAS Contention and Backoff",
+    "status": "stable",
+    "level": 3,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "lock-free",
+      "coherence"
+    ],
+    "prerequisites": [
+      "memory-ordering"
+    ],
+    "unlocks": [
+      "spsc-ring-buffer"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": true,
+    "benchmark": true,
+    "conceptualModel": true
+  },
+  {
+    "id": "spsc-ring-buffer",
+    "title": "SPSC Ring Buffer",
+    "status": "stable",
+    "level": 4,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "lock-free",
+      "coherence"
+    ],
+    "prerequisites": [
+      "cas-contention"
+    ],
+    "unlocks": [
+      "thread-per-core"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": true,
+    "benchmark": true,
+    "conceptualModel": true
+  },
+  {
+    "id": "thread-per-core",
+    "title": "Thread-per-Core Architecture",
+    "status": "stable",
+    "level": 5,
+    "difficulty": "advanced",
+    "durationMinutes": 35,
+    "topics": [
+      "concurrency",
+      "architecture",
+      "scheduling"
+    ],
+    "prerequisites": [
+      "spsc-ring-buffer"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": true,
+    "benchmark": true,
     "conceptualModel": true
   }
 ]

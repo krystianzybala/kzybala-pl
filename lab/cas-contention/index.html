@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-6EBB8HVM2T"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-6EBB8HVM2T');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CAS Contention and Backoff | Performance Lab | Krystian Zybała</title>
+  <meta name="description" content="An interactive reference lab on compare-and-set: contention collapse, cache-line ping-pong, fixed vs. exponential backoff with jitter, a single-writer alternative, Java and Rust examples, and JMH/Criterion benchmarks.">
+  <link rel="canonical" href="https://kzybala.pl/lab/cas-contention/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="CAS Contention and Backoff | Performance Lab | Krystian Zybała">
+  <meta property="og:description" content="An interactive reference lab on compare-and-set: contention collapse, cache-line ping-pong, fixed vs. exponential backoff with jitter, a single-writer alternative, Java and Rust examples, and JMH/Criterion benchmarks.">
+  <meta property="og:url" content="https://kzybala.pl/lab/cas-contention/">
+  <meta property="og:image" content="https://kzybala.pl/assets/icons/social-card.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <script defer src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/labs/cas-contention-lab.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+<nav class="site-nav" aria-label="Primary navigation">
+  <a class="brand" href="/"><span class="brand-mark">KZ</span><span>Krystian Zybała</span></a>
+  <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links">
+    <a href="/engineering.html">Engineering</a>
+    <a href="/articles/">Articles</a>
+    <a href="/case-studies/">Case studies</a>
+    <a class="lab-link" href="/lab/">Performance Lab</a>
+    <a href="/academy/">Academy</a>
+    <a href="/research.html">Research</a>
+    <a href="/talks.html">Talks</a>
+    <a href="/consulting.html">Consulting</a>
+    <a href="/about/">About</a>
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">◐</button>
+  </div>
+</nav>
+</header>
+  <main id="content">
+<article data-lab-id="cas-contention">
+  <header class="lab-header prose section">
+    <p class="eyebrow">Lock-free · <a href="/lab/">Performance Lab</a></p>
+    <h1>CAS Contention and Backoff</h1>
+    <p class="lead">No lock, no blocking, no waiting — and yet a compare-and-set retry loop can still collapse under contention, wasting more coherence traffic on failed attempts than it spends on useful work. Lock-free does not automatically mean low latency.</p>
+  </header>
+
+  <section class="prose section">
+    <h2>Learning objective</h2>
+    <p>Explain compare-and-set as a conditional atomic update, show how retry loops under contention amplify both coherence traffic and latency, compare no-backoff, fixed-backoff, and exponential-backoff-with-jitter retry strategies, and explain why "lock-free" does not automatically mean "low latency" — contrasting CAS contention against a single-writer ownership alternative.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>The <a href="/lab/memory-ordering/">Memory Ordering in Java and Rust</a> lab — CAS is itself an atomic read-modify-write, and this lab assumes the atomicity/visibility/ordering distinction from there.</li>
+      <li>The <a href="/lab/mesi/">Cache Coherence and MESI</a> lab is useful background for "cache-line ping-pong" below, though not required.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Theory</h2>
+
+    <h3>Compare-and-set (CAS)</h3>
+    <p><strong>Compare-and-set</strong> is a single hardware-atomic instruction (<code>cmpxchg</code> on x86, <code>ldxr</code>/<code>stxr</code> or <code>cas</code> on ARM) with the shape: "if the current value equals what I expect, replace it with a new value — atomically, as one indivisible step; tell me whether it worked." Unlike a plain store, CAS can <strong>fail</strong>: if another thread changed the value between when this thread last read it and when it attempts the CAS, the expected value no longer matches, and the operation does nothing except report failure.</p>
+    <pre><code>loop:
+    old = read current value
+    new = compute desired value from old
+    if compareAndSet(old, new): return   // success
+    // else: someone else moved it first — retry</code></pre>
+    <p>This retry loop is the fundamental building block of lock-free data structures — no lock is ever held, no thread ever blocks waiting for another, but a thread <em>can</em> spin through many failed attempts before it succeeds.</p>
+
+    <h3>Contention and cache-line ping-pong</h3>
+    <p>Under low contention, CAS usually succeeds on the first attempt. <strong>Under contention</strong> — many threads repeatedly attempting CAS on the same location — every attempt, whether it succeeds or fails, requires the attempting core to have exclusive access to that cache line, exactly as a write does in the MESI model. When several cores constantly attempt CAS on one location, the line is repeatedly invalidated and re-fetched, core to core — the same cache-line ping-pong the False Sharing and MESI labs describe, except here it's the direct, unavoidable consequence of many threads legitimately wanting to update the <em>same</em> value.</p>
+    <p>More contenders does not just mean more total work — it means a <strong>higher fraction of that work is wasted retries</strong>. This is what "contention collapse" means: throughput does not merely plateau as contender count grows, it can fall, because the wasted-retry fraction grows faster than the useful-work fraction.</p>
+
+    <h3>Backoff and jitter</h3>
+    <table>
+      <thead><tr><th>Strategy</th><th>Behaviour</th></tr></thead>
+      <tbody>
+        <tr><td>No backoff</td><td>Retry immediately on failure. Optimal under light contention; maximizes collisions under heavy contention.</td></tr>
+        <tr><td>Fixed backoff</td><td>Wait a constant delay after each failure. Spaces out contenders — a delay too short does little, too long wastes latency once contention clears.</td></tr>
+        <tr><td>Exponential backoff</td><td>Double the delay (capped) after each consecutive failure for a thread, reset on success. Adapts to a thread's own recent luck.</td></tr>
+        <tr><td>Jitter</td><td>A randomized (here: deterministic, reproducible) perturbation on the delay, so contenders who failed together don't all retry in lockstep again.</td></tr>
+      </tbody>
+    </table>
+    <p><strong>None of this is universal.</strong> A backoff delay well-tuned for one contention level can be wrong for another — see "When backoff helps, and when it doesn't" below.</p>
+
+    <h3>The single-writer alternative</h3>
+    <p>CAS retry loops are not the only way to update shared state safely. If the architecture can be changed so exactly one thread ever owns the right to write a given piece of state, there is no contention to manage at all: every write succeeds on the first attempt, because nothing else is racing for it. This is not a claim that single-writer designs are always better — they trade away "any thread can update this," and moving that constraint elsewhere doesn't make the coordination problem disappear, it relocates it.</p>
+
+    <h3>ABA, briefly</h3>
+    <p>A classic CAS hazard: a thread reads value <code>A</code>, but before its CAS executes, another thread changes the value from <code>A</code> to <code>B</code> and back to <code>A</code>. The CAS still succeeds — the value <em>is</em> <code>A</code> — even though the state changed and changed back, which can silently invalidate an assumption the first thread's logic depended on. <strong>A successful CAS proves the value is currently what you expected, not that nothing happened in between.</strong> Solving this needs a versioned/tagged CAS, hazard pointers, or epoch-based reclamation — substantial topics this lab does not implement (see "Non-goals").</p>
+
+    <h3>Fairness and starvation</h3>
+    <p>A CAS retry loop makes no fairness promise. Under sustained contention, it is possible for one thread to fail repeatedly while others succeed — a bare CAS loop has no queue and no memory of who tried first, unlike a fair lock. Whether this matters depends entirely on the workload.</p>
+
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>The interactive model below schedules contenders in a fixed, deterministic round-robin order with deterministic (non-random) jitter — real schedulers and real hardware timing are neither round-robin nor perfectly predictable. "Completion" below is a simulated step count, not measured time — see "Benchmark methodology" for real, disclosed timing data.</p>
+    </div>
+  </section>
+
+  <section data-lab-stage class="section">
+    <p class="eyebrow">Try it</p>
+    <h2>Interactive contention model</h2>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Conceptual model</p>
+      <p>A deterministic round-robin simulation of CAS retry contention among 1–4 threads, not a scheduler or timing simulation. See "Limitations of this model" below for what this leaves out.</p>
+    </div>
+
+    <nav data-lab-scenario-nav aria-label="Scenario"></nav>
+    <p data-scenario-description>One thread, no contention. Every CAS succeeds on the first attempt — the baseline before any of the failure modes below exist.</p>
+
+    <div class="cpu-grid" data-lab-grid></div>
+
+    <dl data-lab-inspector>
+      <dt>Scenario</dt><dd>Single thread</dd>
+      <dt>Step</dt><dd>0 of 3</dd>
+      <dt>Value</dt><dd>0</dd>
+      <dt>Successful CAS</dt><dd>0</dd>
+      <dt>Failed CAS</dt><dd>0</dd>
+      <dt>Retries</dt><dd>0</dd>
+      <dt>Ownership transfers</dt><dd>0</dd>
+      <dt>Completion (simulated steps)</dt><dd>—</dd>
+    </dl>
+
+    <div class="control-row" data-lab-controls>
+      <button class="control" type="button" disabled>Previous</button>
+      <button class="control" type="button">Next</button>
+      <button class="control" type="button">Reset</button>
+    </div>
+
+    <h3>Event log</h3>
+    <ol data-lab-event-log>
+      <li>Initial state — no CAS attempts yet.</li>
+    </ol>
+
+    <p class="sr-only" role="status" aria-live="polite" data-lab-announcer></p>
+  </section>
+
+  <section class="prose section" data-lab-code-tabs>
+    <h2>Java and Rust</h2>
+    <div role="tablist" aria-label="Language">
+      <button role="tab" id="tab-java" aria-controls="panel-java" aria-selected="true" tabindex="0">Java</button>
+      <button role="tab" id="tab-rust" aria-controls="panel-rust" aria-selected="false" tabindex="-1">Rust</button>
+    </div>
+
+    <div role="tabpanel" id="panel-java" aria-labelledby="tab-java">
+      <h3>CAS retry loop</h3>
+      <pre><code>public final class CasCounter {
+    private final AtomicLong value = new AtomicLong();
+
+    // updateAndGet already implements the retry loop internally — shown
+    // manually once below to make the retry explicit, per the theory above.
+    public long incrementViaBuiltin() {
+        return value.updateAndGet(v -&gt; v + 1);
+    }
+
+    public long incrementManually() {
+        long old, updated;
+        do {
+            old = value.get();
+            updated = old + 1;
+        } while (!value.compareAndSet(old, updated));
+        return updated;
+    }
+}</code></pre>
+      <p><code>compareAndSet</code> returns <code>false</code> on a failed attempt without throwing or blocking — the <code>do</code>/<code>while</code> loop is the manual form of exactly what <code>updateAndGet</code> does internally. Under contention, this loop's body can run many times per successful increment.</p>
+
+      <h3>Single-writer alternative</h3>
+      <pre><code>public final class SingleWriterCounter {
+    // No CAS, no atomics — correct only because exactly one thread ever
+    // calls increment(). See theory.md "The single-writer alternative".
+    private long value;
+
+    public long increment() {
+        return ++value;
+    }
+}</code></pre>
+      <p>The runnable Maven/JMH project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/cas-contention/code/java" rel="noopener"><code>content/labs/cas-contention/code/java/</code></a> in this site's repository.</p>
+    </div>
+
+    <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
+      <h3>CAS retry loop</h3>
+      <pre><code>use std::sync::atomic::{AtomicU64, Ordering};
+
+pub struct CasCounter {
+    value: AtomicU64,
+}
+
+impl CasCounter {
+    pub fn increment_via_builtin(&amp;self) -&gt; u64 {
+        // fetch_update already implements the retry loop internally.
+        self.value.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| Some(v + 1)).unwrap() + 1
+    }
+
+    pub fn increment_manually(&amp;self) -&gt; u64 {
+        loop {
+            let old = self.value.load(Ordering::SeqCst);
+            let updated = old + 1;
+            if self.value.compare_exchange(old, updated, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                return updated;
+            }
+            // else: someone else moved it first — retry
+        }
+    }
+}</code></pre>
+      <p><code>compare_exchange</code> returns a <code>Result</code>; <code>Err</code> carries the current value so a retry doesn't need a second load. <code>fetch_update</code> is the built-in equivalent of the manual loop.</p>
+
+      <h3>Single-writer alternative</h3>
+      <pre><code>pub struct SingleWriterCounter {
+    // No atomics needed — correct only because exactly one thread ever
+    // calls increment().
+    value: u64,
+}
+
+impl SingleWriterCounter {
+    pub fn increment(&amp;mut self) -&gt; u64 {
+        self.value += 1;
+        self.value
+    }
+}</code></pre>
+      <p>The runnable Cargo/Criterion project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/cas-contention/code/rust" rel="noopener"><code>content/labs/cas-contention/code/rust/</code></a> in this site's repository.</p>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Benchmark methodology</h2>
+    <div class="disclosure measured">
+      <p class="disclosure-kind">Measured</p>
+      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations of 1 second each, <code>Mode.Throughput</code>. Rust: default Criterion sampling (100 samples, ~5 s target per benchmark). Single developer machine with ordinary desktop load running alongside — not a dedicated, thermally-stable rig. Treat absolute numbers as illustrative of the effect's <em>shape</em> (contention collapse as thread count grows), not a portable performance claim.</p>
+    </div>
+    <p>Method: 1, 2, 4, and 8 threads, each repeatedly calling <code>compareAndSet</code>/<code>compare_exchange</code> in a retry loop against one shared counter, measuring aggregate throughput as thread count grows — contrasted against a single-writer counter touched by exactly one thread.</p>
+    <p><strong>Java (JMH, ops/ms, higher is better):</strong></p>
+    <table>
+      <thead><tr><th>Threads</th><th>Throughput</th><th>99.9% CI</th></tr></thead>
+      <tbody>
+        <tr><td>1 (CAS)</td><td>139,812.901</td><td>±511.706</td></tr>
+        <tr><td>2 (CAS)</td><td>29,390.379</td><td>±600.692</td></tr>
+        <tr><td>4 (CAS)</td><td>14,219.198</td><td>±520.758</td></tr>
+        <tr><td>8 (CAS)</td><td>4,520.314</td><td>±114.867</td></tr>
+        <tr><td>Single-writer (1, no CAS)</td><td>483,984.812</td><td>±1,782.614</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Rust (Criterion, derived ops/ms from median batch time — batch sizes scale with thread count):</strong></p>
+    <table>
+      <thead><tr><th>Threads</th><th>Batch</th><th>Median batch time</th><th>Derived ops/ms</th></tr></thead>
+      <tbody>
+        <tr><td>1 (CAS)</td><td>20,000 ops</td><td>167.76 µs</td><td>119,200</td></tr>
+        <tr><td>2 (CAS)</td><td>40,000 ops</td><td>1.1505 ms</td><td>34,767</td></tr>
+        <tr><td>4 (CAS)</td><td>80,000 ops</td><td>4.1018 ms</td><td>19,505</td></tr>
+        <tr><td>8 (CAS)</td><td>160,000 ops</td><td>26.912 ms</td><td>5,945</td></tr>
+        <tr><td>Single-writer (1, no CAS)</td><td>160,000 ops</td><td>50.356 µs</td><td>3,177,654</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Contention collapse, unambiguously, in both languages:</strong> doubling thread count from 1→2 roughly quarters Java's throughput and cuts Rust's by a similar factor — going from zero contention to any contention at all is the steepest drop in both runs, and throughput keeps falling rather than plateauing all the way to 8 threads. <strong>The single-writer counter is dramatically faster than even uncontended CAS</strong> — roughly 3.5× in Java, and far more in Rust, where a plain non-atomic scalar increment can be optimized far more aggressively than an <code>AtomicLong</code> under HotSpot or a <code>SeqCst</code> Rust atomic. This is exactly why this lab does not present one cross-language "backoff wins by N%" number — absolute baselines differ enormously by language and JIT/compiler behavior; the <em>shape</em> (collapse under contention, single-writer's advantage) is what transfers. See <code>benchmark.md</code> in the code repository for the full write-up, including a real optimizer pitfall this benchmark hit while being built (Rust's initial single-writer measurement was a physically impossible 314.75 picoseconds — LLVM had proven the whole loop dead and eliminated it; <code>black_box</code> fixed it, see rust.md).</p>
+    <p>Re-run the project in <code>code/</code> on your own hardware before treating any of this as authoritative for a design decision — thread count, core topology, and contention pattern all change the shape of this curve.</p>
+  </section>
+
+  <section class="prose section">
+    <h2>Common mistakes</h2>
+    <ul>
+      <li>Assuming "lock-free" means "fast regardless of contention" — a CAS loop under heavy contention can be slower than a well-implemented lock, because every failed attempt still pays full coherence cost for zero progress.</li>
+      <li>Adding backoff everywhere by default — under light contention, backoff only adds latency to attempts that would have succeeded immediately.</li>
+      <li>Treating a successful CAS as proof nothing happened to the value in between — see "ABA" above.</li>
+      <li>Reaching for a CAS retry loop when the actual fix is architectural — see "The single-writer alternative."</li>
+      <li>Assuming CAS retry loops are fair — a thread can, in principle, lose repeatedly under sustained contention.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>When backoff helps, and when it doesn't</h2>
+    <div class="trade-offs">
+      <div class="use">
+        <h4>Backoff helps when</h4>
+        <ul>
+          <li>Many threads, sustained contention, a genuinely hot shared value — this is where uncontrolled retries waste the most coherence traffic.</li>
+          <li>You've measured (not assumed) that failed-attempt rate is high enough that spacing out retries reduces total wasted work.</li>
+        </ul>
+      </div>
+      <div class="avoid">
+        <h4>Backoff doesn't help, or actively hurts, when</h4>
+        <ul>
+          <li>Contention is light or absent — backoff only adds latency to attempts that would have succeeded immediately.</li>
+          <li>The delay is poorly matched to the actual contention level — this lab's own scenarios show fixed and exponential backoff performing comparably at one fixed contention level; exponential's real advantage is adapting across varying contention, not a guaranteed win at any single level.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Investigation task</h2>
+    <p>Using the Java or Rust project in <code>code/</code>:</p>
+    <ol>
+      <li>Run the CAS-counter benchmark at 1, 2, 4, and 8 threads and record throughput at each point.</li>
+      <li>Plot throughput against thread count — identify the point where adding threads stops increasing throughput, or starts decreasing it (contention collapse).</li>
+      <li>If you have <code>perf</code> (Linux) or Instruments (macOS) available, look for a cache-miss or coherence-traffic counter and confirm it rises sharply at the same thread count where throughput collapses.</li>
+      <li>Compare against the single-writer benchmark run single-threaded — note that it isn't a fair apples-to-apples comparison (different architectures solve different problems), but observe how its cost scales (or doesn't) as you'd add more work to the same single thread.</li>
+      <li>Write down your CPU model and core count, your measured numbers, and explain any difference from the disclosed numbers above.</li>
+    </ol>
+  </section>
+
+  <section class="prose section">
+    <h2>Accessibility notes</h2>
+    <ul>
+      <li>The interactive model is fully keyboard operable: the scenario selector and the Java/Rust code tabs are roving-tabindex tablists (arrow keys, Home/End); every step/reset control is a native <code>&lt;button&gt;</code>.</li>
+      <li>Every state change is announced to screen readers via an <code>aria-live="polite"</code> region, in addition to the visible per-contender status badges and the state inspector table — state is never colour-only.</li>
+      <li>This page has no auto-playing or looping animation; step transitions resolve instantly, so there is nothing beyond the site-wide CSS rule to gate on <code>prefers-reduced-motion</code>.</li>
+      <li>With JavaScript disabled, this page's theory, Java and Rust code, benchmark methodology, trade-offs and sources remain fully readable — only the interactive model and the graded quiz require script.</li>
+    </ul>
+  </section>
+
+  <section class="prose section">
+    <h2>Review questions</h2>
+    <p>Self-check before or after the graded quiz below:</p>
+    <ol>
+      <li>Why can a CAS retry loop become slower, not just no-faster, as more threads contend for the same location?</li>
+      <li>What specifically does exponential backoff adapt to that fixed backoff does not?</li>
+      <li>Why doesn't a successful CAS prove nothing changed in between the thread's read and its attempt?</li>
+      <li>Give one condition under which adding backoff would make throughput worse, not better.</li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <h2>Quiz</h2>
+    <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><cite>The Art of Multiprocessor Programming</cite> — Herlihy &amp; Shavit, Morgan Kaufmann, 2020.</li>
+      <li><cite>Java Concurrency in Practice</cite> — Goetz et al., Addison-Wesley, 2006.</li>
+      <li><cite>java.util.concurrent.atomic.AtomicLong — Java SE documentation</cite> — <a href="https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/atomic/AtomicLong.html" rel="noopener">docs.oracle.com</a></li>
+      <li><cite>The Rust Reference — `compare_exchange`/`fetch_update`</cite> — <a href="https://doc.rust-lang.org/std/sync/atomic/struct.AtomicU64.html" rel="noopener">doc.rust-lang.org/std/sync/atomic</a></li>
+      <li><cite>Exponential Backoff and Jitter</cite> — Marc Brooker, AWS Architecture Blog — <a href="https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/" rel="noopener">aws.amazon.com/blogs/architecture</a></li>
+      <li><cite>JMH: Java Microbenchmark Harness</cite> — <a href="https://openjdk.org/projects/code-tools/jmh/" rel="noopener">openjdk.org/projects/code-tools/jmh</a></li>
+      <li><cite>Criterion.rs User Guide</cite> — <a href="https://bheisler.github.io/criterion.rs/book/" rel="noopener">bheisler.github.io/criterion.rs</a></li>
+    </ul>
+  </section>
+</article>
+</main>
+
+<footer class="site-footer">
+  <div>
+    <strong>Krystian Zybała</strong>
+    <p>Principal JVM Performance Engineer · Low-Latency Systems Architect</p>
+  </div>
+  <div class="footer-links">
+    <a href="mailto:contact@kzybala.pl">Contact</a>
+    <a href="https://webosystem.pl" rel="noopener">Webosystem</a>
+    <a href="/lab/">Performance Lab</a>
+    <a href="/about/">About</a>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "id": "cas-contention",
+  "title": "CAS Contention and Backoff",
+  "status": "stable",
+  "level": 3,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "lock-free", "coherence"],
+  "prerequisites": ["memory-ordering"],
+  "unlocks": ["spsc-ring-buffer"],
+  "languages": ["java", "rust"],
+  "interactive": true,
+  "benchmark": true,
+  "conceptualModel": true
+}
