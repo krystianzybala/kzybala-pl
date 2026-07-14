@@ -140,12 +140,17 @@
 <section class="section">
   <div class="section-heading">
     <div><p class="eyebrow">Interactive learning</p><h2>Performance Lab</h2></div>
-    <p>Small visual models for concepts that are usually explained with three paragraphs, a dubious analogy and avoidable suffering.</p>
+    <p>Small visual models for concepts that are usually explained with three paragraphs, a dubious analogy and avoidable suffering. Every card below is a complete, stable reference laboratory — not a preview.</p>
   </div>
-  <div class="grid three">
-    <a class="card" href="/lab/#false-sharing"><p class="meta">CACHE COHERENCE</p><h3>False sharing visualiser</h3><p>Step through invalidation traffic as two cores write to one cache line.</p></a>
-    <a class="card" href="/lab/#ring-buffer"><p class="meta">LOCK-FREE</p><h3>SPSC ring buffer</h3><p>Move producer and consumer cursors through a bounded queue.</p></a>
-    <a class="card" href="/lab/#jit-pipeline"><p class="meta">HOTSPOT</p><h3>JIT compilation path</h3><p>Follow Java source through bytecode, profiling, C1 and C2.</p></a>
+  <div class="grid four">
+    <a class="card" href="/lab/cache-hierarchy/"><p class="meta">CPU CACHE</p><h3>Cache hierarchy</h3><p>L1/L2/L3/RAM, spatial and temporal locality, and hardware prefetching.</p></a>
+    <a class="card" href="/lab/false-sharing/"><p class="meta">CACHE COHERENCE</p><h3>False sharing</h3><p>Step through invalidation traffic as two cores write to one cache line.</p></a>
+    <a class="card" href="/lab/spsc-ring-buffer/"><p class="meta">LOCK-FREE</p><h3>SPSC ring buffer</h3><p>Reservation, publication, wrap-around, and two concrete correctness bugs.</p></a>
+    <a class="card" href="/lab/thread-per-core/"><p class="meta">ARCHITECTURE</p><h3>Thread-per-core architecture</h3><p>Owned partitions vs. a shared worker pool, cross-core handoff, and backpressure.</p></a>
+  </div>
+  <div class="prose">
+    <p><a href="/lab/">Browse all 7 labs in the Performance Lab catalogue →</a> — including Cache Coherence and MESI, Memory Ordering, and CAS Contention and Backoff.</p>
+    <p>An early, non-reference <strong>prototype</strong> exploring the JIT compilation pipeline is also still up at <a href="/lab/#jit-pipeline">/lab/#jit-pipeline</a> — it predates the interactive framework above and isn't held to the same bar; a full reference lab for it hasn't shipped yet.</p>
   </div>
 </section>
 

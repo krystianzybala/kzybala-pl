@@ -17,7 +17,7 @@ function labCard(lab) {
 
 function applyFilters(labs, filters) {
   return labs.filter(lab =>
-    (!filters.topic || lab.topics.includes(filters.topic)) &&
+    (!filters.topics || lab.topics.includes(filters.topics)) &&
     (!filters.difficulty || lab.difficulty === filters.difficulty) &&
     (!filters.status || lab.status === filters.status)
   );

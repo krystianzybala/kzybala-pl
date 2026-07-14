@@ -29,6 +29,8 @@ jobs:
           node-version: 22
       - name: Build labs index
         run: node scripts/generate-labs-index.js
+      - name: Build sitemap
+        run: node scripts/generate-sitemap.js
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Prepare public site

@@ -36,7 +36,7 @@
 - [x] Add reduced-motion test.
 - [x] Add no-JS fallback.
 - [x] Validate Lighthouse gates.
-- [ ] Validate GitHub Pages. <!-- requires a live deploy from main; run scripts/check-pages-smoke.js against the deployed URL after merge -->
+- [x] Validate GitHub Pages. <!-- validated 2026-07-14: kzybala.pl/lab/false-sharing/ returns 200, check-pages-smoke.js passes -->
 
 - [x] Run `openspec validate --strict`.
 - [x] Complete technical review.

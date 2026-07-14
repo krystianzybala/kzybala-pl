@@ -29,4 +29,4 @@
 - [x] Add browser smoke test.
 - [x] Run npm run verify.
 - [x] Run openspec validate --all --strict.
-- [ ] Validate live GitHub Pages deployment.
+- [x] Validate live GitHub Pages deployment.

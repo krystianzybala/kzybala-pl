@@ -81,9 +81,9 @@
 </nav>
 
 <section class="signal-strip" aria-label="Performance Lab by the numbers">
-  <div class="signal"><strong data-lab-count-strong>3</strong><span data-lab-count-label>interactive laboratories</span></div>
+  <div class="signal"><strong data-lab-count-strong>7</strong><span>interactive laboratories</span></div>
+  <div class="signal"><strong data-lab-stable-count-strong>7</strong><span>shipped and stable</span></div>
   <div class="signal"><strong>0</strong><span>runtime npm dependencies</span></div>
-  <div class="signal"><strong>60+</strong><span>automated reducer tests</span></div>
   <div class="signal"><strong>100%</strong><span>spec-driven via OpenSpec</span></div>
 </section>
 
@@ -118,7 +118,7 @@
     <p>Same engineering, different formats — pick whichever fits how you learn.</p>
   </div>
   <div class="grid four">
-    <a class="card icon-card" href="/lab/"><span class="icon">LAB</span><h3>Performance Lab</h3><p><span data-lab-count-sentence>3 interactive laboratories</span> with deterministic, keyboard-accessible visual models and Java/Rust code.</p></a>
+    <a class="card icon-card" href="/lab/"><span class="icon">LAB</span><h3>Performance Lab</h3><p><span data-lab-count-sentence>7 interactive laboratories</span> with deterministic, keyboard-accessible visual models and Java/Rust code.</p></a>
     <a class="card icon-card" href="/case-studies/"><span class="icon">CASE</span><h3>Case studies</h3><p>Sanitised, real-shaped engagements: problem, evidence, design, and result — no confidential internals.</p></a>
     <a class="card icon-card" href="/articles/"><span class="icon">ART</span><h3>Articles</h3><p>Longer-form technical writing on JVM internals, concurrency, and hot-path design.</p></a>
     <a class="card icon-card" href="/academy/"><span class="icon">ACAD</span><h3>Academy</h3><p>A five-level curriculum from measurement fundamentals to production performance leadership.</p></a>
@@ -133,27 +133,10 @@
     <div><p class="eyebrow">Current focus</p><h2>What's shipped, what's next</h2></div>
     <p>Performance Lab's own roadmap — not a projection, the actual sequence of OpenSpec changes in progress.</p>
   </div>
-  <div class="timeline">
-    <article class="timeline-item">
-      <div><span class="state-badge is-success">Shipped</span></div>
-      <div><h3>Cache Coherence and MESI</h3><p>Coherence vs. consistency, the four-state MESI model, read-for-ownership, cache-to-cache transfer, and <code>perf c2c</code> methodology.</p></div>
-    </article>
-    <article class="timeline-item">
-      <div><span class="state-badge is-active">In progress</span></div>
-      <div><h3>Memory Ordering in Java and Rust</h3><p>Program order versus observed order, compiler and CPU reordering, happens-before, and data races — compared across VarHandles and Rust atomics.</p></div>
-    </article>
-    <article class="timeline-item">
-      <div><span class="state-badge is-idle">Planned</span></div>
-      <div><h3>CAS Contention and Backoff</h3><p>Compare-and-set semantics, failed retries, contention collapse, exponential backoff, and why lock-free doesn't automatically mean low-latency.</p></div>
-    </article>
-    <article class="timeline-item">
-      <div><span class="state-badge is-idle">Planned</span></div>
-      <div><h3>SPSC Ring Buffer, rebuilt</h3><p>Replacing the early prototype with a complete reference laboratory: bounded capacity, head/tail ownership, wrap-around, full/empty detection.</p></div>
-    </article>
-    <article class="timeline-item">
-      <div><span class="state-badge is-idle">Planned</span></div>
-      <div><h3>Thread-per-Core Architecture</h3><p>Shared-nothing ownership, partitioning, affinity, handoff, backpressure, and predictable tail latency.</p></div>
-    </article>
+  <div class="timeline" data-roadmap-timeline>
+    <noscript>
+      <p class="prose">Every lab currently published is stable and shipped. See the <a href="/lab/">Performance Lab catalogue</a> for the full, always-current list and status of each one — this section requires JavaScript to render the same data as a timeline.</p>
+    </noscript>
   </div>
 </section>
 
@@ -241,11 +224,22 @@
 
 <script type="module">
   import { loadLabsIndex } from "/assets/js/core/metadata.js";
+  import { buildRoadmapItems, renderRoadmap } from "/assets/js/core/roadmap.js";
+
   loadLabsIndex().then(labs => {
     const count = labs.length;
+    const stableCount = labs.filter(lab => lab.status === "stable").length;
     document.querySelectorAll("[data-lab-count-strong]").forEach(el => { el.textContent = String(count); });
-    document.querySelectorAll("[data-lab-count-label]").forEach(el => { el.textContent = "interactive laboratories"; });
+    document.querySelectorAll("[data-lab-stable-count-strong]").forEach(el => { el.textContent = String(stableCount); });
     document.querySelectorAll("[data-lab-count-sentence]").forEach(el => { el.textContent = `${count} interactive laboratories`; });
+
+    fetch("/assets/data/roadmap-planned.json")
+      .then(res => res.ok ? res.json() : [])
+      .catch(() => [])
+      .then(planned => {
+        const items = buildRoadmapItems(labs, planned);
+        renderRoadmap(document.querySelector("[data-roadmap-timeline]"), items);
+      });
   }).catch(() => {});
 </script>
 </body>
