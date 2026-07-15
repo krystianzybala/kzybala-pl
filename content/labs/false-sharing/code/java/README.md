@@ -10,10 +10,20 @@ Maven project you clone/copy out and run on your own machine.
 mvn test
 ```
 
-Runs `CounterCorrectnessTest`: every variant (shared, padded, `@Contended`,
-sharded) must produce exact counts under concurrent writers, asserted
-against the shared fixture `../fixtures/false-sharing-fixtures.json` (the
-Rust tests assert the same cases).
+Runs `CounterCorrectnessTest` (every variant — shared, padded, `@Contended`,
+sharded — must produce exact counts under concurrent writers, asserted
+against the shared fixture `../fixtures/false-sharing-fixtures.json`; the
+Rust tests assert the same cases), `CounterLayoutTest` (real field offsets
+verified with JOL — layout is never assumed) and
+`EvidenceBenchmarkContractTest` (the structural contract the native-Linux
+evidence runner depends on).
+
+## Publication evidence (native Linux only)
+
+Hardware-counter evidence (`perf stat`, `perf c2c`) is collected only by
+`scripts/performance-lab/run-linux-evidence.sh` on a supported native
+Linux host — see `docs/linux-evidence-runner.md`. macOS runs of this
+project are development/smoke only.
 
 ## Build
 

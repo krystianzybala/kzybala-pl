@@ -170,3 +170,16 @@ group, one each); pass an explicit `@Threads` and a `ThreadParams`-aware
 setup only if you need more producers per role. The runnable project is in
 `code/java/` alongside this file — see `README.md` there for build and run
 instructions.
+
+## Publication-evidence benchmark (native Linux)
+
+`FalseSharingLinuxEvidenceBenchmark` is a separate, parameterized class the
+native-Linux evidence runner drives with `-p layout=shared` or `-p
+layout=padded`, one variant per JVM invocation, exactly two group worker
+threads, and a trial teardown that fails the run if either counter did not
+advance. Its layout claims are **verified, not assumed**: `CounterLayoutTest`
+reads the real field offsets with JOL and fails if `SharedCounters` stops
+being adjacent, or `PaddedCounters`/`@Contended` counters fall closer than
+64 bytes under the documented flags. See `docs/linux-evidence-runner.md`
+for the full collection workflow (`perf stat`, `perf c2c`, provenance and
+review policy).

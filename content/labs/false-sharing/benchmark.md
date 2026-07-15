@@ -62,32 +62,38 @@ variants do and don't share:
 
 **Thread placement profiles:**
 
-| Profile | Status on this host |
+| Profile | Status |
 |---|---|
-| Two threads (OS-scheduled) | measured (this run) |
-| Physical-core sweep (1..N pinned cores) | **unsupported on this host** — macOS provides no public thread-to-core affinity API; the OS scheduler places threads. Reproduce on Linux with `taskset`/`pthread_setaffinity_np`. |
-| SMT sibling placement | **not applicable on this host** — Apple M1 Max has no SMT. On an SMT x86 host, pin both writers to one core's siblings and the false-sharing gap collapses (shared L1). |
-| Cross-socket placement | **not applicable on this host** — single-socket part. On multi-socket hosts expect a substantially larger shared-layout penalty. |
+| Two threads (OS-scheduled) | measured (development run above) |
+| Two pinned physical cores, same socket/NUMA node | **awaiting-native-linux-measurement** — the primary publication scenario; `run-linux-evidence.sh --cpus A,B` validates the pair maps to two different physical cores on one socket/node before measuring |
+| SMT sibling placement | rejected by the runner by design — siblings share an L1 and cannot exhibit cross-core false sharing; the topology check refuses such a pair |
+| Cross-socket placement | separate explicit scenario — `--allow-cross-socket` only; classified and recorded as `cross-socket` in the evidence manifest |
 
 **Metrics:**
 
-| Metric | Status on this host |
+| Metric | Status |
 |---|---|
-| ops/s (throughput) | measured — JMH `thrpt` (reported as ops/ms) |
+| ops/s (throughput) | measured — JMH `thrpt` (reported as ops/ms); development-grade on macOS, publication-grade via the Linux evidence runner |
 | ns/update | measured — Criterion time per 100,000-increment batch (ns/batch ÷ 100,000 per-thread updates) |
-| Cache-to-cache transfers | **evidence unavailable on this host** — requires `perf c2c` (Linux). Not fabricated; see the evidence-tools table. |
-| LLC misses | **evidence unavailable on this host** — requires `perf stat` (Linux). |
-| CPU utilization | observed qualitatively (all writer threads at ~100% in every variant — false sharing does not show up as idle time, which is exactly why counters, not utilization, are needed to see it). Not captured as a per-run artifact on this host. |
+| Cache-to-cache transfers (HITM) | **awaiting-native-linux-measurement** — collected exclusively by `perf c2c` through `scripts/performance-lab/run-linux-evidence.sh` on a supported native Linux host; never estimated, synthesized or substituted |
+| LLC / cache misses | **awaiting-native-linux-measurement** — `perf stat` through the same runner |
+| CPU utilization | captured by the runner (`task-clock`, "CPUs utilized" derived metric) per variant; awaiting the same native run |
 
-**Evidence tools:**
+**Evidence tools and environments (editorial policy):**
 
-| Tool | Availability |
+| Environment | Role |
 |---|---|
-| JMH group benchmarks | used (raw `-rf json` in the run artifact) |
+| macOS workstation | development, correctness testing and benchmark **smoke** validation only — its numbers never serve as publication evidence for HITM, cache-to-cache transfers or per-line contention |
+| Native, controlled Linux host | the **only** source of publication measurements and hardware-counter evidence, collected by `scripts/performance-lab/run-linux-evidence.sh` (explicit physical-core placement, capability checks, provenance, hashes) |
+| Emulation, containers on foreign architectures, shared CI runners, synthetic examples | **never** publication evidence, under any labeling |
+
+| Tool | Status |
+|---|---|
+| JMH group benchmarks | used (raw `-rf json` in the run artifact); the Linux runner collects its own multi-fork JMH evidence per variant |
 | Criterion threaded harness | used (raw `estimates.json`/`sample.json` in the run artifact) |
-| `perf c2c` | unavailable (Linux-only; macOS host). The lab page's evidence panel shows the *shape* of a HITM report and how to read one; capturing a real one on Linux is exercise 3's follow-up. |
-| `perf stat` | unavailable (Linux-only; macOS host) |
-| async-profiler | available on macOS in principle; not captured for this run — CPU-time profiles do not attribute coherence stalls on this platform, so it adds little here. Marked absent in the imported records. |
+| `perf c2c` | **awaiting-native-linux-measurement** — runner records `perf-c2c.data` + `--stdio` report per variant, preserved and hashed |
+| `perf stat` | **awaiting-native-linux-measurement** — runner collects 3 independent CSV repetitions per variant |
+| async-profiler | not part of the Linux evidence workflow's minimum set; may be added to a future run — recorded as absent, never faked |
 
 ## Reproduction commands
 
@@ -106,8 +112,13 @@ node scripts/benchmark-platform/write-run-artifact.js false-sharing full
 java -jar target/benchmarks.jar -f 2 -wi 3 -w 1s -i 5 -r 1s -rf json -rff <run-dir>/raw/jmh-full.json
 cargo bench --bench false_sharing -- --warm-up-time 3 --measurement-time 5 --sample-size 100 --noplot
 
-# 4. Publication profile: only on a controlled host —
-#    see docs/benchmark-publication-procedure.md.
+# 4. Publication + hardware-counter evidence: on the dedicated native Linux
+#    host, with explicit physical CPU ids (see docs/linux-evidence-runner.md):
+sudo ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
+  --profile publication --cpus 2,4
+# then copy the printed archive to the repository machine and:
+./scripts/performance-lab/verify-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst
+./scripts/performance-lab/import-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst
 ```
 
 ## Measured data (full profile, run `99a8cb189d18d569` — not a portable claim)
@@ -150,11 +161,12 @@ uncontended relaxed `LDADD` RMW on this microarchitecture: layout decides
 whether cores fight over a line; ordering strength sets the per-operation
 floor once they don't.
 
-**Limitation:** one machine (no SMT, single socket, no affinity control),
-one run set, OS-scheduled thread placement, and no hardware-counter
-evidence on this host — the coherence-traffic interpretation rests on the
+**Limitation:** one development machine (no SMT, single socket, no affinity
+control), one run set, OS-scheduled thread placement, and hardware-counter
+evidence still pending its native-Linux run — until the evidence runner's
+artifacts are imported, the coherence-traffic interpretation rests on the
 controlled layout variable plus the mechanism model, not on a direct
-cache-to-cache transfer measurement here. The cross-language ordering
+cache-to-cache transfer measurement. The cross-language ordering
 difference means Java-vs-Rust absolute numbers must not be read as a
 language race (see the equivalence contract).
 

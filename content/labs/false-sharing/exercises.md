@@ -141,12 +141,16 @@ with `std::mem::size_of` assertions in a test.
 ## Exercise 3 — Evidence interpretation (raw counter output)
 
 Below is a **synthetic teaching example** in `perf stat`'s output format —
-constructed for this exercise, not captured from a run, because this lab's
-macOS host cannot run `perf` at all (see the evidence-availability table in
-`benchmark.md`). The counter *relationships* are modeled on the published
-signature of false sharing on x86-64; the absolute values are illustrative
-only. Two runs of an adjacent-counters benchmark, one shared layout, one
-padded, labels removed:
+constructed for this exercise, not captured from any run. It is educational
+material for practicing counter interpretation only: it is never used as
+measurement evidence, never supports this lab's performance conclusions,
+and never enters a comparison or maturity calculation. (The lab's real
+hardware-counter evidence comes exclusively from the native-Linux evidence
+runner — `scripts/performance-lab/run-linux-evidence.sh` — and is imported
+with full provenance; see `benchmark.md`.) The counter *relationships* here
+are modeled on the published signature of false sharing on x86-64; the
+absolute values are illustrative only. Two runs of an adjacent-counters
+benchmark, one shared layout, one padded, labels removed:
 
 ```
 Run A:

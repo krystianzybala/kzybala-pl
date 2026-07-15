@@ -183,12 +183,20 @@ for (const [dir, lab] of validLabs) {
 // data) show runnable reproduction commands and a raw-data section. A lab
 // missing these fails the gate rather than silently rendering placeholders.
 // Contract details: docs/lab-framework.md.
+//
+// Adoption is per-lab while plab-011-unified-lab-framework migrates the
+// existing labs one at a time (old content is preserved until parity, per
+// its design.md rollback rule). A lab is added here in the same change that
+// brings its content up to the contract — never before.
+const CONTRACT_ADOPTED = new Set(["false-sharing"]);
+
 const read = (dir, file) => {
   const path = join(LABS_DIR, dir, file);
   return existsSync(path) ? readFileSync(path, "utf8") : null;
 };
 
 for (const [dir, lab] of validLabs) {
+  if (!CONTRACT_ADOPTED.has(dir)) continue;
   const theory = read(dir, "theory.md");
   if (theory !== null) {
     if (!theory.includes("## Performance question and hypothesis")) {

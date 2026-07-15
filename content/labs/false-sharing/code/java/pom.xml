@@ -45,6 +45,14 @@
       <version>5.10.2</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- Layout verification (CounterLayoutTest): the padded/shared field
+           offsets are checked against the real JVM layout, never assumed. -->
+      <groupId>org.openjdk.jol</groupId>
+      <artifactId>jol-core</artifactId>
+      <version>0.17</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -96,8 +104,11 @@
         <version>3.2.5</version>
         <configuration>
           <!-- Same export the main sources need for @Contended; harmless for
-               the tests that don't touch it. -->
-          <argLine>--add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED</argLine>
+               the tests that don't touch it. -XX:-RestrictContended makes
+               @Contended effective outside java.base so CounterLayoutTest
+               verifies the layout the benchmark actually runs with; the
+               add-opens lines are for JOL's field-offset inspection. -->
+          <argLine>--add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED -XX:-RestrictContended --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED</argLine>
         </configuration>
       </plugin>
       <plugin>

@@ -1,0 +1,168 @@
+# Native-Linux evidence runner (false-sharing lab)
+
+`scripts/performance-lab/run-linux-evidence.sh` is the only source of
+publication hardware-counter evidence for the false-sharing reference lab.
+
+## Editorial policy
+
+- **macOS workstation** — development, correctness testing and benchmark
+  *smoke* validation only. Its numbers are never publication evidence for
+  HITM, cache-to-cache transfers or per-cache-line contention.
+- **Native, controlled Linux host** — publication measurements and
+  hardware-counter evidence, collected exclusively by this runner.
+- **Emulation, containers on foreign architectures, shared CI runners,
+  synthetic examples** — never publication evidence. The runner refuses to
+  run when virtualization is detected; CI never fabricates a live `perf`
+  execution (`scripts/test-linux-evidence.js` uses fixtures and stubs for
+  command construction and failure paths only).
+- Synthetic `perf` output may appear **only** in a clearly labeled
+  interpretation exercise (exercise 3 of the lab). It must never appear in
+  measured results, evidence, conclusions, regression baselines,
+  Java-versus-Rust comparisons, or verified-maturity calculations.
+- Until native Linux artifacts are imported, the lab's evidence status is
+  rendered **`awaiting-native-linux-measurement`** — not "unavailable".
+
+## Usage (on the dedicated Linux host)
+
+```sh
+sudo ./scripts/performance-lab/run-linux-evidence.sh \
+  false-sharing \
+  --profile publication \
+  --cpus 2,4
+```
+
+`--cpus A,B` is required — publication runs never silently choose CPUs.
+The pair is validated against `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE`:
+
+- both CPUs must exist and be online,
+- they must be different logical CPUs,
+- they must map to **different physical cores** (SMT siblings are rejected
+  — siblings share an L1 and cannot exhibit cross-core false sharing),
+- same socket and same NUMA node by default; `--allow-cross-socket` runs
+  the explicitly separate `cross-socket` scenario.
+
+Other flags: `--profile publication|full`, `--out <dir>`, `--dry-run`
+(prints every planned command, creates the metadata skeleton, executes no
+measurement), `--skip-load-check` (non-publication runs only).
+
+## What must hold before measurement starts (all enforced)
+
+`perf` installed and usable (`perf stat` can count; `perf c2c record -e
+list` can open its memory events — not every x86_64 part supports useful
+c2c evidence), no virtualization/emulation detected, valid CPU selection,
+identifiable git revision (a dirty tree is recorded with a diff hash),
+1-minute load per core ≤ 0.20, writable output directory, and a **passing
+correctness gate** (`mvn test`: fixture-based counter correctness, JOL
+layout verification, benchmark structural contract). Capability results are
+stored in `capabilities.json`; unsupported fields are recorded as
+`unavailable`, never omitted.
+
+## Collection design
+
+Variants are never mixed in one invocation. Per variant (`shared`,
+`padded`), each in its own output directory with its own provenance:
+
+1. **JMH evidence run** — `taskset -c A,B java -Xms1g -Xmx1g
+   -XX:+UseParallelGC -jar benchmarks.jar
+   'FalseSharingLinuxEvidenceBenchmark' -p layout=<variant> -t 2 -f 5 -wi 5
+   -w 1s -i 10 -r 1s -rf json` (publication profile; 5 independent forks —
+   one long invocation is not a substitute). Wrapped in a counting-mode
+   `perf stat -e cpu-migrations,context-switches,task-clock` whose output
+   enforces the placement policy (max 5 cpu-migrations/second of
+   task-clock; a violating run fails).
+2. **perf stat** — 3 independent repetitions, `-x,` CSV, events: cycles,
+   instructions, cache-references, cache-misses, branches, branch-misses,
+   task-clock, context-switches, cpu-migrations, page-faults. Each
+   repetition wraps a single-fork JMH run whose JSON is kept next to the
+   CSV so per-operation ratios divide counters by operations from the same
+   execution. `<not supported>` rows are recorded, never discarded.
+3. **perf c2c** — `perf c2c record -o perf-c2c.data -- taskset ...` then
+   `perf c2c report --stdio --show-all --call-graph none`. The binary
+   `perf-c2c.data` is preserved and hashed; the text report is not a
+   substitute for it. JVM source-line symbolization is not required for
+   HITM evidence; symbolization capability is recorded separately in
+   `capabilities.json`.
+
+`taskset` confines every JVM thread (including GC/JIT) to the two selected
+CPUs; it cannot pin writer A to CPU A specifically — migrations between
+the two allowed CPUs are therefore counted and bounded by policy instead.
+
+## Artifact layout
+
+```
+results/false-sharing/<run-id>/
+├── environment.json        # governor, freq, turbo, SMT, NUMA, microcode,
+│                           # perf restrictions, virt detection, load, commit
+├── topology.txt            # raw lscpu, lscpu -e, uname -a, cpuinfo, cmdline
+├── capabilities.json
+├── toolchain.json          # java/maven/JMH versions, full JVM args
+├── benchmark-profile.json  # the exact resolved profile
+├── correctness.json (+ correctness-console.log)
+├── shared/   jmh.json, jmh-placement.csv, perf-stat.csv (+ -r2/-r3 and
+│             matched perf-stat-jmh*.json), perf-c2c.data,
+│             perf-c2c-report.txt, canonical-jmh.json*,
+│             canonical-perf-stat.json*
+├── padded/   (same shape)
+├── comparison.json*
+├── evidence-manifest.json
+└── SHA256SUMS
+```
+
+Entries marked `*` are produced at import time on the repository machine
+(the measurement host is not assumed to have node). Every artifact is
+SHA-256 hashed; the manifest references source commit, dirty-tree state +
+diff hash, environment, correctness, profile, raw artifacts and (after
+import) canonical artifacts and the derived comparison.
+
+## After the run
+
+The runner prints and produces one archive, e.g.
+`false-sharing-<run-id>-linux-evidence.tar.zst`. On the repository machine:
+
+```sh
+./scripts/performance-lab/verify-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst
+./scripts/performance-lab/import-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst
+```
+
+`verify` checks every hash and manifest reference. `import` copies the run
+into `results/false-sharing/<run-id>/` (immutable — an existing directory
+is never overwritten), runs the plab-003 importers (JMH + perf-counter) to
+produce schema-validated canonical records, and generates
+`comparison.json`: throughputRatio, cyclesPerOperation,
+instructionsPerOperation, cacheMissesPerMillionOperations,
+hitmPerMillionOperations — raw values, formulas and input references kept;
+display rounding separate.
+
+## What import does NOT do
+
+- It does not mark the lab, any record, or any importer "verified" or
+  "live-publication-validated". `evidence-maturity.js` derives maturity
+  from evidence dimensions; a fresh import starts at reproduction 0/1,
+  no reviewer — i.e. *draft*.
+- Promoting the perf importer's capability in
+  `capability-registry.js` happens only after a maintainer reviews real
+  artifacts produced by this runner on real hardware.
+- Throughput alone never establishes causation. The false-sharing
+  conclusion requires, together: shared-vs-padded JMH results, `perf c2c`
+  HITM evidence, equivalent correctness results, and stable
+  placement/environment metadata.
+
+## Review checklist (before any content claims "verified")
+
+1. `verify-evidence.sh` passes; run directory hashes intact.
+2. `environment.json`: no virtualization; governor/turbo state acceptable;
+   selected CPUs' validation line shows two physical cores, same
+   socket/node (or the run is explicitly the cross-socket scenario).
+3. `correctness.json` status `passed`; console log clean.
+4. Placement: `jmh-placement.csv` migration counts within policy.
+5. JMH: shared vs padded distributions coherent across all 5 forks (no
+   bimodality suggesting placement drift).
+6. `perf stat`: cache-miss gap consistent across all 3 repetitions;
+   `<not supported>` rows acknowledged.
+7. `perf c2c` report: hottest line's HITM concentrated on two offsets in
+   the shared run, collapsed in the padded run; raw `perf-c2c.data`
+   retained.
+8. Only then: update the lab content from the canonical records, record
+   reproduction/reviewer fields in a documented follow-up, and consider a
+   maintainer change to `capability-registry.js` with the justification
+   written into `docs/benchmark-results-importers.md`.
