@@ -56,6 +56,13 @@
   </header>
 
   <section class="prose section">
+    <h2>Performance question and hypothesis</h2>
+    <p><strong>Question:</strong> what can compiler and CPU reordering do to program order, and how do VarHandles and Rust atomics constrain it?</p>
+    <p><strong>Hypothesis:</strong> without an ordering constraint, two writes to different locations may become visible to another thread out of program order — and a release/acquire pair on the publishing flag restores exactly the edge a publication pattern needs, at lower cost than full sequential consistency on weakly-ordered hardware.</p>
+    <p><strong>What would disprove it:</strong> observing even one stale read through a correctly release/acquire-published pointer would falsify the model's central guarantee. The reverse is deliberately asymmetric: a plain/relaxed publication test that never happens to fail does <strong>not</strong> prove it correct — absence of an observed reordering is not evidence of ordering, which is itself one of this lab's core lessons.</p>
+  </section>
+
+  <section class="prose section">
     <h2>Learning objective</h2>
     <p>Explain why the order two threads observe each other's writes is not the same as the order those writes appear in source code, distinguish visibility from atomicity from ordering, explain acquire/release publication and why it works, and map Java's VarHandle access modes and Rust's atomic orderings without assuming a direct one-to-one equivalence.</p>
   </section>
@@ -229,7 +236,7 @@ public void incrementAtomically() {
     COUNTER.getAndAdd(this, 1); // a genuine atomic read-modify-write
 }</code></pre>
       <p>This is the JVM analogue of the interactive model's relaxed-counter RMW step: the counter is always correct regardless of interleaving (atomicity), which says nothing about the ordering of any other, unrelated field.</p>
-      <p>The runnable Maven project (including a test demonstrating the broken and fixed publication paths) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/memory-ordering/code/java" rel="noopener"><code>content/labs/memory-ordering/code/java/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
 
     <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
@@ -282,7 +289,7 @@ pub fn try_consume(&amp;self) -&gt; bool {
     (t0.join().unwrap(), t1.join().unwrap())
 }</code></pre>
       <p>The store-buffering test has no dependency between <code>x</code> and <code>y</code> for <code>Acquire</code>/<code>Release</code> to attach to — neither thread's operations synchronize with the other's in a way that rules out both loads observing 0. <code>SeqCst</code> adds a single total order every SeqCst operation across every thread agrees on, which is exactly the extra guarantee needed to forbid that outcome. <strong>Getting this wrong is undefined behaviour, not a slow-but-safe fallback</strong> — Rust's type system does not check that your chosen ordering actually provides what your algorithm depends on.</p>
-      <p>The runnable Cargo project (including tests reproducing both publication paths and the store-buffering outcome under both orderings) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/memory-ordering/code/rust" rel="noopener"><code>content/labs/memory-ordering/code/rust/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
   </section>
 
@@ -340,7 +347,7 @@ pub fn try_consume(&amp;self) -&gt; bool {
 
   <section class="prose section">
     <h2>Investigation task</h2>
-    <p>Using the Java or Rust project in <code>code/</code>:</p>
+    <p>Using the lab's Java or Rust implementation :</p>
     <ol>
       <li>Run the broken-publication test in both languages and confirm it passes (i.e., does not assert a guarantee plain access cannot provide) — then run the release/acquire version and confirm it asserts the guaranteed outcome.</li>
       <li>Run the store-buffering test under <code>Relaxed</code>/relaxed ordering in a loop (thousands of iterations) and record whether you ever observe both threads reading 0 for the other's write on your hardware. Note: not reproducing it on your machine does not mean the outcome is impossible — see "Methodology and limitations" above.</li>
@@ -373,6 +380,16 @@ pub fn try_consume(&amp;self) -&gt; bool {
   <section class="section">
     <h2>Quiz</h2>
     <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Exercises</h2>
+    <p>One diagnosis exercise and one implementation exercise, each with success criteria. Hints and solutions are collapsed — attempt the exercise first. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
+    <h3>1. Diagnosis — the flag that "works on my machine"</h3>
+    <p>A writer builds a config object (plain field), then sets a <code>volatile ready</code> flag; a reader spins on the flag then uses the config. It works on x86-64 and crashes about once per million handoffs on ARM with a half-initialized config. Decide whether the stated reasoning ("volatile gives ordering") is right, wrong, or right-for-the-wrong-reason — and explain both behaviors. <strong>Success criteria:</strong> you identify what the JMM actually guarantees here, which reorderings are possible on each side, and why the ARM failure is rare rather than constant.</p>
+    <details><summary>Solution sketch</summary><p>The code <em>as shown</em> is correct: volatile store = release, volatile read = acquire, so seeing the flag establishes happens-before with the construction. The crash therefore proves the running code differs from the shown code — hunt for a post-flag reassignment, a second non-volatile publication channel, a cached local read, or a build where the field lost <code>volatile</code>. x86's TSO hides a missing edge almost for free; ARM exposes it rarely but fatally — and absence of failures is never evidence of correctness.</p></details>
+    <h3>2. Implementation — pay only for the ordering you need</h3>
+    <p>Re-implement the publication example with the minimum ordering that keeps it correct (<code>setRelease</code>/<code>getAcquire</code>; <code>store(Release)</code>/<code>load(Acquire)</code>) plus a two-thread stress test. <strong>Success criteria:</strong> the reader never observes flag-without-payload; you can point to the exact release/acquire pair and what each side orders; emitted instructions differ from the SeqCst version on your hardware or you can explain why the source-level contract still matters when they don't; and a deliberately broken all-relaxed variant is included, clearly labeled, with a comment on why passing tests would not make it correct.</p>
   </section>
 
   <section class="prose section">

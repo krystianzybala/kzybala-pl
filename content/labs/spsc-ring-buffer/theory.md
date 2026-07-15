@@ -1,5 +1,25 @@
 # SPSC ring buffer — theory
 
+## Performance question and hypothesis
+
+**Question:** how can one producer and one consumer exchange messages with
+bounded, allocation-free latency?
+
+**Hypothesis:** because each cursor has exactly one writer, an SPSC ring
+buffer needs no contended read-modify-write at all — release/acquire
+publication over single-owner cursors sustains transfer where a CAS-based
+queue would collapse, and caching the opposite side's cursor removes most
+of the remaining cross-core traffic.
+
+**What would disprove it:** if the SPSC ring's per-item cost grew with
+transfer rate the way the CAS-contention lab's counter does (single-owner
+cursors not actually eliminating contention), or if removing the
+cached-cursor optimisation made no measurable difference (the cross-core
+cursor reads it avoids were never a real cost), or if the correctness
+tests could pass with plain non-atomic cursor accesses (publication
+ordering unnecessary), the ownership-and-publication model taught here
+would be wrong.
+
 ## Learning objective
 
 Explain a bounded single-producer/single-consumer (SPSC) ring buffer as an

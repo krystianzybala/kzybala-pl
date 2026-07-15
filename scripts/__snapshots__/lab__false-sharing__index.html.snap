@@ -56,6 +56,13 @@
   </header>
 
   <section class="prose section">
+    <h2>Performance question and hypothesis</h2>
+    <p><strong>Question:</strong> why can independent counters destroy throughput when they occupy the same cache line?</p>
+    <p><strong>Hypothesis:</strong> coherence traffic — not logical sharing — causes the collapse; padding or ownership partitioning restores scalability.</p>
+    <p><strong>What would disprove it:</strong> if the throughput gap between adjacent and padded counters persisted with both threads on the same core (no cross-core coherence traffic possible), or if separating the counters onto different cache lines did <em>not</em> restore throughput while everything else stayed fixed, the coherence-traffic explanation would be wrong. The benchmark matrix below is designed so each alternative explanation — the atomic operations themselves, memory-ordering guarantees, scheduler effects — is separable from the layout variable.</p>
+  </section>
+
+  <section class="prose section">
     <h2>Learning objective</h2>
     <p>Explain why two threads writing to independent, unrelated variables can destroy each other's throughput, and be able to tell that failure mode apart from a data race or lock contention — then know when padding is worth its memory cost and when it isn't.</p>
   </section>
@@ -236,7 +243,8 @@ public class FalseSharingBenchmark {
     @Group("padded")
     public void writeB_padded() { padded.counterB++; }
 }</code></pre>
-      <p><code>@Group</code> with <code>Scope.Group</code> is what makes JMH run <code>writeA_*</code> and <code>writeB_*</code> concurrently on separate threads within the same group — without it the benchmark never reproduces the cross-core invalidation traffic being measured. JMH assigns one thread per <code>@Benchmark</code> method in a group by default. The runnable Maven/JMH project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/false-sharing/code/java" rel="noopener"><code>content/labs/false-sharing/code/java/</code></a> in this site's repository.</p>
+      <p><code>@Group</code> with <code>Scope.Group</code> is what makes JMH run <code>writeA_*</code> and <code>writeB_*</code> concurrently on separate threads within the same group — without it the benchmark never reproduces the cross-core invalidation traffic being measured. JMH assigns one thread per <code>@Benchmark</code> method in a group by default.</p>
+      <p><strong>A fourth variant — per-thread shards + reduction (<code>ShardedCounters</code>)</strong> — removes the problem instead of padding around it: every thread owns one 64-byte-strided shard in a <code>long[]</code> and nobody else ever writes it; readers reduce over the shards. Because each shard has exactly one writer, the owner needs no atomic read-modify-write at all — a plain read plus a VarHandle <code>setRelease</code> write suffices, paired with <code>getAcquire</code> on the reducing side. That weaker, cheaper contract is only correct because the single-writer invariant holds, and the correctness suite asserts exactly that invariant's observable result against the shared fixture. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
 
     <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
@@ -310,39 +318,39 @@ fn bench_shared(c: &amp;mut Criterion) {
 
 criterion_group!(benches, bench_shared);
 criterion_main!(benches);</code></pre>
-      <p>The runnable Cargo/Criterion project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/false-sharing/code/rust" rel="noopener"><code>content/labs/false-sharing/code/rust/</code></a> in this site's repository — it includes both the shared and padded benchmark functions in full.</p>
+      <p><strong>The per-thread shard variant (<code>ShardedCounters</code>)</strong> mirrors the Java sharding contract exactly: each shard is its own <code>CacheLineAligned&lt;AtomicU64&gt;</code> slot, the owner does a plain load plus a <code>Release</code> store (no RMW — there is no write-write race on a single-writer shard), and the reducer loads with <code>Acquire</code>. On this lab's ARM64 host that release store turned out to cost <em>more</em> per operation than an uncontended <code>fetch_add(Relaxed)</code> on a padded line — see the measured table and interpretation below for why that is an ordering-strength effect, not a layout one. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
   </section>
 
   <section class="prose section">
     <h2>Benchmark methodology</h2>
-    <div class="disclosure measured">
-      <p class="disclosure-kind">Measured</p>
-      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores, no SMT), macOS, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 3 warmup + 5 measurement iterations of 1 second each. Rust: 1 s warm-up, 30 samples targeting ~3 s collection. Single developer machine running inside a sandboxed environment, not a dedicated thermally-stable rig — treat absolute numbers as illustrative of the effect's <em>shape</em>, not a portable performance claim.</p>
+    <p>The shared and padded layouts are measured in separate JVM invocations with JMH (independent forks, one writer per counter, each writer pinned to its own physical core with verified placement), field layouts are verified with JOL rather than assumed, and hardware-counter evidence (perf stat, perf c2c) is collected per variant; a correctness gate runs before any timing is trusted.</p>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Awaiting native-Linux measurement</p>
+      <p>The benchmark implementation and correctness checks exist, but no canonical native-Linux evidence has been imported and reviewed. No publication-grade performance numbers are shown yet. Canonical results for this laboratory are collected on the dedicated native-Linux benchmark host with explicit physical-CPU placement, full environment capture, correctness gates, independent JVM forks, and profiler evidence where required.</p>
     </div>
-    <p>Method: two threads, each incrementing its own dedicated counter in a tight loop, for the shared, padded, and (Java only) <code>@Contended</code> layouts above. JMH <code>@Group</code>/<code>Scope.Group</code> (Java) and two joined <code>std::thread::spawn</code> handles (Rust) ensure both counters are written concurrently from separate OS threads — a single-threaded run of the same code shows no difference between layouts and is not a valid reproduction (see the investigation task below, step 3).</p>
-    <p><strong>Java (JMH, ops/ms, higher is better):</strong></p>
-    <table>
-      <thead><tr><th>Layout</th><th>Throughput</th><th>99.9% CI</th></tr></thead>
-      <tbody>
-        <tr><td>Shared counters</td><td>68,869</td><td>±4,506</td></tr>
-        <tr><td>Padded counters (manual)</td><td>255,796</td><td>±32,251</td></tr>
-        <tr><td>@Contended counters</td><td>325,893</td><td>±7,616</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Rust (Criterion, time per 100,000-increment batch, lower is better):</strong></p>
-    <table>
-      <thead><tr><th>Layout</th><th>Median</th><th>[min, max]</th></tr></thead>
-      <tbody>
-        <tr><td>Adjacent atomics (shared line)</td><td>1.0017 ms</td><td>[984.80 µs, 1.0228 ms]</td></tr>
-        <tr><td>align(64) counters (padded)</td><td>263.44 µs</td><td>[262.21 µs, 265.07 µs]</td></tr>
-      </tbody>
-    </table>
-    <p>On this run: padding gave roughly a 3.7× throughput improvement in Java and a 3.8× reduction in time-per-batch in Rust; <code>@Contended</code> slightly outperformed manual padding in Java. These ratios — not the absolute numbers — are the part worth trusting across machines. The runnable projects (<code>content/labs/false-sharing/code/java/</code>, <code>content/labs/false-sharing/code/rust/</code>) each emit raw per-iteration samples (JMH <code>-rf json</code>; Criterion's <code>target/criterion/**/new/raw.csv</code> plus its generated HTML report) — inspect those, and replace this table with your own environment's numbers, before treating any of it as authoritative for a design decision.</p>
   </section>
 
   <section class="prose section">
-    <h2>Common mistakes</h2>
+    <h2>Profiler and counter evidence</h2>
+    <p>The mechanism claim above — that the collapse is coherence traffic — has a direct hardware signature: cache-to-cache transfers (HITM, "hit in another core's modified line") in <code>perf c2c</code>, and a large gap in cache-miss counters between the shared and padded layouts in <code>perf stat</code>. <strong>Native Linux evidence is required for this lab's cache-coherence analysis.</strong> macOS is used only for development, correctness testing and benchmark smoke validation; emulated environments, containers on foreign architectures, shared CI runners and synthetic examples are never publication evidence.</p>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Status: awaiting-native-linux-measurement</p>
+      <p>The repository provides an executable evidence runner, <code>scripts/performance-lab/run-linux-evidence.sh</code>, which runs the shared and padded variants <em>separately</em> on explicitly selected physical CPU cores (validated to be distinct physical cores on one socket/NUMA node — SMT siblings are rejected, cross-socket requires an explicit flag) and captures JMH result artifacts, host and CPU topology, toolchain configuration, <code>perf stat</code> counters, <code>perf c2c</code> recordings and reports, correctness-gate results and cryptographic hashes for every artifact. This section is populated only from artifacts captured on a supported, native Linux host and imported through the canonical result pipeline (<code>scripts/performance-lab/import-evidence.sh</code>). Until those artifacts have been collected and reviewed, the laboratory remains <strong>implemented but not evidence-verified</strong>.</p>
+      <p>What the imported report will be read for: a false-sharing victim appears as one cache line with a high HITM count whose accesses come from two different data addresses inside that line (offsets 0 and 8 for these two counters), each written by a different thread; the padded run shows the same two addresses on different lines with the HITM count collapsed. The evidence-interpretation exercise below uses a clearly labeled synthetic example to teach that reading — synthetic output is educational only and cannot support this lab's performance conclusions.</p>
+    </div>
+  </section>
+
+  <section class="prose section">
+    <h2>Common mistakes and benchmark traps</h2>
+    <p>Four traps this lab is explicitly designed to avoid — check for each before trusting any false-sharing measurement, including this lab's:</p>
+    <ul>
+      <li><strong>Using thread count without topology.</strong> "Two threads" says nothing about <em>where</em> they run: SMT siblings share an L1 and never generate cross-core coherence traffic; cross-socket threads pay far more per transfer. A result that doesn't state thread placement is not reproducible — the placement matrix above marks which placements this lab's host cannot even express.</li>
+      <li><strong>Padding local objects that are not adjacent.</strong> Padding only does anything when the two hot variables would otherwise share a line. Padding thread-local objects, or objects the allocator already placed apart, changes nothing — and "the padded version measured the same" then gets misread as "false sharing doesn't matter". Verify adjacency first.</li>
+      <li><strong>Claiming <code>volatile</code> itself is the cause.</strong> The counters are <code>volatile</code>/atomic in every variant — shared, padded and sharded alike — and the collapse appears only in the shared-line layout. Dropping <code>volatile</code> "to fix false sharing" trades a performance bug for a correctness bug and leaves the layout problem in place.</li>
+      <li><strong>Using different memory-order guarantees across compared variants.</strong> A Java <code>volatile</code> increment and a Rust <code>fetch_add(Relaxed)</code> are different contracts with different costs on weakly-ordered hardware. This lab keeps ordering constant within each language's variant set and discloses the cross-language difference instead of pretending it away.</li>
+    </ul>
+    <p>Further mistakes worth knowing:</p>
     <ul>
       <li>Padding by declaration order alone, without <code>@Contended</code> or an explicit alignment attribute, and trusting it survives optimization or field reordering across every JVM/compiler version.</li>
       <li>Assuming a universal 64-byte cache line — query it or state the assumption explicitly.</li>
@@ -375,13 +383,31 @@ criterion_main!(benches);</code></pre>
 
   <section class="prose section">
     <h2>Investigation task</h2>
-    <p>Using the Java or Rust project in <code>code/</code>, and a profiler or hardware counter tool available to you:</p>
+    <p>Using the lab's Java or Rust implementation and a profiler or hardware counter tool available to you:</p>
     <ol>
       <li>Run the shared-counters benchmark and the padded-counters benchmark and record throughput for both.</li>
       <li>Look for a cache-miss or coherence-event counter (e.g. <code>perf stat -e cache-misses</code>, or <code>perf c2c</code> on Linux for cache-to-cache transfer detection) and compare it between the two runs.</li>
       <li>Reduce the benchmark to a single thread and confirm the shared-vs-padded gap disappears — this isolates the effect to concurrent cross-core access, not the layout alone.</li>
       <li>Write down your CPU model and core topology (are the two threads pinned to different physical cores, or could they land on SMT siblings of the same core?), your measured numbers, and explain any difference from the disclosed numbers above.</li>
     </ol>
+  </section>
+
+  <section class="prose section">
+    <h2>Exercises</h2>
+    <p>Three exercises, one per skill this lab teaches: diagnosing the mechanism, fixing it with code, and reading the hardware's own evidence. Hints and solutions are collapsed — attempt each before opening them, and verify against the stated success criteria. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
+
+    <h3>1. Diagnosis — a deliberately flawed benchmark</h3>
+    <p>A colleague "reproduces" this lab with <code>@State(Scope.Thread)</code>, two plain (ungrouped) <code>@Benchmark</code> methods over non-<code>volatile</code> fields, runs <code>-t 2</code>, measures no difference between padded and unpadded — and concludes false sharing is a myth. Identify every reason this benchmark cannot observe false sharing, regardless of padding (there are at least three independent flaws). <strong>Success criteria:</strong> you can name each flaw, explain why it hides the effect (which line is or isn't shared, which threads write it), and state the minimal fix.</p>
+    <details><summary>Hint</summary><p>Look at (1) what <code>Scope.Thread</code> does to the object instances, (2) which fields the two ungrouped methods write and from which threads, and (3) whether a register-held counter generates per-increment line traffic at all.</p></details>
+    <details><summary>Solution sketch</summary><p><code>Scope.Thread</code> gives each thread its own instance (nothing is shared, falsely or otherwise — padding non-adjacent locals changes nothing); without <code>@Group</code> the two methods never run concurrently against one state object in the same measurement; and non-<code>volatile</code> counters can be register-allocated so the loop rarely touches memory. Fix: <code>Scope.Group</code> + <code>@Group</code> methods + <code>volatile</code> fields kept identical across variants — exactly the lab benchmark's shape. Bonus: thread placement is still uncontrolled without topology awareness.</p></details>
+
+    <h3>2. Implementation — restructure a hot status struct</h3>
+    <p>A <code>WorkerStatus</code> struct mixes a hot worker-owned counter (~1M writes/s), a cold worker-owned heartbeat (1 write/s), and a once-ever <code>shutdown</code> flag written by another thread and read hot by all workers, stored in a <code>Vec&lt;WorkerStatus&gt;</code>. Restructure it so no hot write can invalidate a line another thread reads or writes — <em>without padding every field</em>. <strong>Success criteria (measure, don't assert):</strong> counts stay exact after join; two-worker throughput of the hot counter is within noise of one-worker throughput on a Criterion harness modeled on this lab's; total size grew by less than a cache line per field.</p>
+    <details><summary>Hint</summary><p>Group fields by (writer thread, write rate). Hot worker-owned data wants a line per worker; cold fields of different workers can share lines with each other far more cheaply than with any hot field; a written-once flag settles into every reader's cache in Shared state and needs no padding at all.</p></details>
+
+    <h3>3. Evidence interpretation — which run is the shared layout?</h3>
+    <p>Given two <code>perf stat</code> outputs from the same cycle budget — one with IPC 0.20, 512M L1-dcache-load-misses and 498M memory-ordering machine clears; the other with IPC 0.78, 11M misses and 142K clears — decide which run used the shared layout, justify it from at least three separate counters, and state one conclusion the numbers <em>cannot</em> support. (The full exercise text shows the complete output; it is a clearly-labeled synthetic example in <code>perf stat</code> format, educational only — it is never measurement evidence and never supports this lab's conclusions; the real counter evidence comes exclusively from the native-Linux evidence runner. The counter relationships model the published x86-64 false-sharing signature.) <strong>Success criteria:</strong> correct identification; each cited counter's reasoning mentions invalidation→refetch; and your "cannot conclude" statement is genuinely unsupported by the data rather than merely cautious.</p>
+    <details><summary>Solution sketch</summary><p>The IPC-0.20 run is the shared layout: same cycles, ~4× less work retired; ~46× more L1 misses (refetch after invalidation); ~3,500× more memory-ordering machine clears (speculative work discarded when the line is yanked mid-flight). The data cannot attribute the effect to any particular variable or prove padding caused the other run's improvement — the labels were removed and nothing in the counters shows layout; line-level attribution is what <code>perf c2c</code>'s HITM report adds.</p></details>
   </section>
 
   <section class="prose section">

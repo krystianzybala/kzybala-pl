@@ -1,5 +1,25 @@
 # CAS contention and backoff — theory
 
+## Performance question and hypothesis
+
+**Question:** why does lock-free contention collapse under load, and when
+does backoff help?
+
+**Hypothesis:** a failed CAS is not free — every retry still acquires the
+cache line exclusively, so retries amplify coherence traffic and aggregate
+throughput *falls* as contenders are added; spacing retries out (backoff,
+especially exponential with jitter) recovers throughput at a latency cost,
+and single-writer ownership avoids the contention entirely.
+
+**What would disprove it:** if per-operation cost stayed flat as the
+contender count grew from 1 to 8 (no collapse), or if adding backoff under
+high contention did not change aggregate throughput (retry spacing
+irrelevant), or if the single-writer baseline showed the same per-op cost
+as contended CAS (ownership buys nothing), the retry-amplified
+coherence-traffic explanation would be wrong. The benchmark sweeps thread
+count and retry policy independently so each claim is separately
+falsifiable.
+
 ## Learning objective
 
 Explain compare-and-set (CAS) as a conditional atomic update, show how

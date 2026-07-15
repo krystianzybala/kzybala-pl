@@ -56,6 +56,13 @@
   </header>
 
   <section class="prose section">
+    <h2>Performance question and hypothesis</h2>
+    <p><strong>Question:</strong> why does the same access pattern get dramatically slower as data moves from L1 to L2, L3 and DRAM?</p>
+    <p><strong>Hypothesis:</strong> the work performed per element is constant — what changes is which level of the memory hierarchy serves the accesses. When the working set outgrows a cache level's capacity, or the pattern defeats spatial locality and prefetching, average access latency steps up to the next level's, and time-per-element steps up with it.</p>
+    <p><strong>What would disprove it:</strong> if time-per-element stayed flat as the working set crossed the L1, L2 and L3 capacity boundaries, or if sequential and random traversals of the same DRAM-sized working set cost the same per element, the hierarchy-and-locality explanation would be wrong. The benchmark sweeps working-set size and access pattern independently so both claims are separately falsifiable.</p>
+  </section>
+
+  <section class="prose section">
     <h2>Learning objective</h2>
     <p>Explain why the same amount of work can run orders of magnitude slower depending only on memory access pattern, by relating it to the L1/L2/L3/RAM hierarchy, cache lines, spatial and temporal locality, and hardware prefetching — then be able to predict, for a given working-set size and access pattern, roughly which level of the hierarchy will serve most accesses.</p>
   </section>
@@ -234,7 +241,7 @@ public class CacheHierarchyBenchmark {
 }</code></pre>
       <p>Each benchmark method reports the average wall-clock time for one batch of <code>CHASES</code> (1,000,000) dependent chases — see "Benchmark methodology" below for the measured numbers. <strong>Why AverageTime, not Throughput?</strong> Throughput mode (as used in the False sharing lab) suits independent, parallelizable operations. This benchmark's operations are a single dependent chain — there's exactly one chase in flight at a time — so average wall-clock time per batch is the more direct measurement.</p>
       <p><strong>What isn't eliminated, and what isn't controlled.</strong> <code>next[(int) idx]</code> still performs a normal array bounds check on every access: HotSpot's range-check elimination only removes checks it can prove statically, which requires a loop-invariant index — <code>idx</code> here comes from the array's own contents, not the loop counter, so the check stays. That cost is small, branch-predicts well, and applies identically to every benchmark in this file, so it doesn't bias the comparison. Separately, neither this benchmark nor its Rust counterpart pins the process to a CPU core — Apple silicon's performance and efficiency cores differ in cache size and clock, and macOS documents its thread-affinity API as advisory on Apple silicon, not a hard pin. See "Known limitations" under Benchmark methodology below for a concrete example of what unpinned scheduling did to an earlier run of this exact benchmark.</p>
-      <p>The runnable Maven/JMH project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/cache-hierarchy/code/java" rel="noopener"><code>content/labs/cache-hierarchy/code/java/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
 
     <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
@@ -296,50 +303,17 @@ fn bench_random_large(c: &amp;mut Criterion) {
 criterion_group!(benches, /* ...small variants..., */ bench_sequential_large, bench_random_large);
 criterion_main!(benches);</code></pre>
       <p><code>black_box(&amp;table)</code> stops the optimizer treating the table as a compile-time constant. The closure's return value doesn't need a second, explicit <code>black_box</code> — Criterion's own <code>Bencher::iter</code> already wraps every closure call in <code>black_box</code> internally. That fallback (this project uses stable Rust, not the nightly-only <code>real_blackbox</code> feature) is a <code>std::ptr::read_volatile</code> + <code>std::mem::forget</code>, which Criterion's own doc comment admits "may... fail to prevent code from being eliminated" — a strong convention, not a compiler guarantee. Disassembling this crate's <code>chase</code> function in isolation (<code>rustc -O --emit=asm</code>) confirms LLVM keeps both the load and its bounds check (a <code>cmp</code>/branch pair immediately before <code>ldr</code>) in the compiled loop — that empirical check, not the doc comment, is what this lab relies on. The same disassembly shows <code>for _ in 0..steps</code> compiles to a plain decrement-and-branch pair, identical in shape to Java's counted loop — no measurable iterator overhead. As with the Java benchmark, this process is not pinned to a CPU core; see "Known limitations" under Benchmark methodology below.</p>
-      <p>The runnable Cargo/Criterion project (including the small-working-set benchmarks omitted above for length) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/cache-hierarchy/code/rust" rel="noopener"><code>content/labs/cache-hierarchy/code/rust/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
   </section>
 
   <section class="prose section">
     <h2>Benchmark methodology</h2>
-    <div class="disclosure measured">
-      <p class="disclosure-kind">Illustrative development run</p>
-      <p>These preliminary values were captured on an Apple M1 Max developer workstation under uncontrolled desktop conditions. They are retained only to illustrate the likely shape of the effect and are not publication-grade performance evidence. Canonical results for this laboratory are collected separately on the dedicated native-Linux benchmark host with explicit CPU placement, environment capture, correctness gates, independent JVM forks, and profiler evidence where required. <strong>Canonical results: awaiting native-Linux measurement</strong> — the implementation and correctness gates exist, but no canonical host evidence has been imported yet, so no verified performance conclusion is available and the development numbers below are not a substitute.</p>
-      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations of 1 second each, <code>Mode.AverageTime</code>. Rust: default Criterion sampling (100 samples, ~3–5 s target per benchmark). Single developer machine with ordinary desktop load running alongside — not a dedicated, thermally-stable rig, no CPU affinity pinning, no control over performance- vs. efficiency-core scheduling (see "Known limitations" below). Treat absolute numbers as illustrative of the effect's <em>shape</em>, not a portable performance claim.</p>
+    <p>Java is measured with JMH (multi-fork, warmup separated from measurement) and Rust with Criterion, over byte-identical working sets and access patterns in both languages; a correctness gate runs before any timing is trusted.</p>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Awaiting native-Linux measurement</p>
+      <p>The benchmark implementation and correctness checks exist, but no canonical native-Linux evidence has been imported and reviewed. No publication-grade performance numbers are shown yet. Canonical results for this laboratory are collected on the dedicated native-Linux benchmark host with explicit physical-CPU placement, full environment capture, correctness gates, independent JVM forks, and profiler evidence where required.</p>
     </div>
-    <p>Method: 1,000,000 dependent pointer-chase steps per benchmark, identical down to the byte in both languages — a 16,384-byte working set (fits L1) and a 134,217,728-byte / 128 MiB working set (exceeds cache), each in sequential and random cycle order built by the same Sattolo's-algorithm construction. Approximate per-access latency (ns) = batch time ÷ 1,000,000.</p>
-    <p><strong>Sized against this machine's actual cache hierarchy</strong>, not a generic guess (Apple M1 Max, per AnandTech's teardown): the 16 KB working set fits inside even the smallest L1D on the chip (64 KiB, E-core) with room to spare; the 128 MiB working set exceeds the single largest cache level (48 MiB System Level Cache) by close to 3×, and any per-cluster L2 (12 MiB P-cluster / 4 MiB E-cluster) by an order of magnitude.</p>
-    <p><strong>Java (JMH, mean time per 1,000,000-chase batch ± 99.9% CI, lower is better):</strong></p>
-    <table>
-      <thead><tr><th>Benchmark</th><th>Mean ± CI</th><th>Median</th><th>≈ ns/access</th></tr></thead>
-      <tbody>
-        <tr><td>sequentialSmall</td><td>2,197.141 ± 5.120 µs</td><td>2,197.927 µs</td><td>2.20</td></tr>
-        <tr><td>randomSmall</td><td>2,201.602 ± 18.088 µs</td><td>2,197.129 µs</td><td>2.20</td></tr>
-        <tr><td>sequentialLarge</td><td>2,447.468 ± 365.860 µs</td><td>2,361.393 µs</td><td>2.45</td></tr>
-        <tr><td>randomLarge</td><td>118,539.850 ± 3,185.489 µs</td><td>118,721.567 µs</td><td>118.54</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Rust (Criterion, bootstrap-median time per 1,000,000-chase batch, lower is better):</strong></p>
-    <table>
-      <thead><tr><th>Benchmark</th><th>Median [CI]</th><th>Mean</th><th>≈ ns/access</th></tr></thead>
-      <tbody>
-        <tr><td>sequential_small</td><td>1.2578 ms [1.2557, 1.2626]</td><td>1.2720 ms</td><td>1.26</td></tr>
-        <tr><td>random_small</td><td>1.2739 ms [1.2626, 1.2890]</td><td>1.4172 ms</td><td>1.27</td></tr>
-        <tr><td>sequential_large</td><td>1.2820 ms [1.2809, 1.2841]</td><td>1.2844 ms</td><td>1.28</td></tr>
-        <tr><td>random_large</td><td>110.9753 ms [110.4471, 111.7004]</td><td>110.9466 ms</td><td>110.98</td></tr>
-      </tbody>
-    </table>
-    <p>Small working sets land within rounding of each other regardless of order in both languages (order stops mattering once everything is cache-resident). Large-sequential is nearly as fast as small in both languages — prefetching at work. Large-random is where the two languages actually agree on the physically meaningful number: <strong>118.54 ns/access (Java) vs. 110.98 ns/access (Rust)</strong>, about 7% apart — both plausible single uncontended DRAM accesses, and this is the figure that should generalize across languages on the same hardware, because it's dominated by the memory subsystem rather than either runtime.</p>
-    <p><strong>The naive sequential/random ratio (~48–50× in Java, ~86–87× in Rust) is not directly comparable across languages, and the reason is traceable, not mysterious:</strong> that ~1.75× gap between the two ratios tracks almost exactly the ~1.75× gap between the languages' own <code>sequentialSmall</code>/<code>sequential_small</code> floors (Java ≈ 2.2 µs, Rust ≈ 1.26 µs per batch) — a gap that has nothing to do with memory latency, since a 16 KB, L1-resident chase should cost near-identical CPU cycles regardless of language. That floor is fixed per-invocation harness overhead (JMH's blackhole consumption vs. Criterion's leaner closure call), and because <code>sequentialLarge</code> is also mostly prefetch-hidden, it inherits roughly that same overhead-dominated floor instead of reflecting real memory cost — which mechanically compresses Java's computed ratio relative to Rust's. Treat the ratio as "prefetching helps a lot," not as a precise, portable multiplier — the absolute random-access latency above is the trustworthy cross-language number.</p>
-    <p>Re-run the project in <code>code/</code> on your own hardware before treating any of this as authoritative for a design decision — see the raw per-iteration samples (JMH <code>-rf json</code>; Criterion's <code>target/criterion/**/new/sample.json</code> and <code>estimates.json</code>) for more than the summary line.</p>
-    <h3>Known limitations</h3>
-    <ul>
-      <li><strong>No CPU affinity or core-type pinning.</strong> Neither JMH nor Cargo/Criterion pins the process to a specific core, and macOS documents its thread-affinity API as advisory on Apple silicon, not a hard pin — there is no user-space <code>taskset</code> equivalent here. Results reflect whatever core(s) the OS scheduler actually granted.</li>
-      <li><strong>Concretely observed, not just a theoretical caveat:</strong> an earlier attempt at this exact run, made while an unrelated browser process briefly used &gt;100% CPU on this machine, produced a <code>randomSmall</code> result of 35,257 ± 61,833 µs/op — a mean <em>smaller than its own error bar</em> — with per-iteration samples swinging from 2,267 µs to 93,274 µs within one ten-iteration window. That run was discarded; the numbers above are from a subsequent run taken once load had settled. Latency-bound (random-access) benchmarks are far more exposed to this than throughput-bound (sequential/prefetched) ones, because a prefetched stream has slack to absorb a brief stall where a dependent random chase does not.</li>
-      <li><strong>Bounds checks are retained, in both languages, and that's correct.</strong> <code>idx</code> is data-dependent (read from the array itself), not a loop-invariant range either HotSpot's range-check elimination or LLVM's bounds-check elision can statically prove safe, so the check on every access is not eliminated in either language. Disassembling the Rust <code>chase</code> function (<code>rustc -O --emit=asm</code>) confirms it directly as a <code>cmp</code>/branch pair before the load. This cost applies identically to every benchmark here, so it doesn't bias the sequential-vs-random comparison.</li>
-      <li><strong>Criterion's stable-Rust <code>black_box</code> is a strong convention, not a compiler guarantee</strong> — its own doc comment admits the fallback (a volatile read + forget, since this project doesn't enable the nightly-only <code>real_blackbox</code> feature) "may... fail to prevent code from being eliminated." The disassembly evidence above, not the comment, is what this lab relies on. JMH's auto-detected compiler blackhole is a more mature, purpose-built mechanism by comparison.</li>
-      <li>Benchmarks were run <strong>sequentially, one language at a time</strong>, specifically to avoid the two processes contending for shared L2/SLC bandwidth — an earlier attempt at running both concurrently was caught and abandoned before any numbers from it were used.</li>
-    </ul>
   </section>
 
   <section class="prose section">
@@ -376,7 +350,7 @@ criterion_main!(benches);</code></pre>
 
   <section class="prose section">
     <h2>Investigation task</h2>
-    <p>Using the Java or Rust project in <code>code/</code>, and a profiler or hardware counter tool available to you:</p>
+    <p>Using the lab's Java or Rust implementation and a profiler or hardware counter tool available to you:</p>
     <ol>
       <li>Run all four benchmarks (<code>sequentialSmall</code>, <code>randomSmall</code>, <code>sequentialLarge</code>, <code>randomLarge</code> in Java; the equivalent Criterion functions in Rust) and record the reported time per batch for each.</li>
       <li>Compute an approximate nanoseconds-per-access figure for each by dividing the reported batch time by the number of chases per batch (1,000,000 — see "Benchmark methodology" above).</li>
@@ -411,6 +385,16 @@ criterion_main!(benches);</code></pre>
   <section class="section">
     <h2>Quiz</h2>
     <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Exercises</h2>
+    <p>One diagnosis exercise and one implementation exercise, each with success criteria. Hints and solutions are collapsed — attempt the exercise first. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
+    <h3>1. Diagnosis — a misread measurement</h3>
+    <p>A colleague sums a 64&nbsp;MB array in index order and in "index order starting from the middle", measures no difference, and concludes position in RAM doesn't matter and the cache-hierarchy story is overblown. Identify every reason this experiment cannot distinguish the hierarchy's levels, and design the minimal change that would. <strong>Success criteria:</strong> you can state which property of the access pattern (not the data's address) determines which level serves it, why both variants have that property, and your redesign predicts a concrete, directional time-per-element difference.</p>
+    <details><summary>Solution sketch</summary><p>Both traversals are sequential streams — prefetchers serve either equally well, so nearly every access hits L1/L2 regardless of the 64&nbsp;MB footprint. The minimal change: visit the same indices in a shuffled order, defeating prefetch; with a DRAM-sized working set, time-per-element rises by roughly an order of magnitude, and shrinking the shuffled working set back under L1/L2 collapses the gap — exactly this lab's benchmark sweep.</p></details>
+    <h3>2. Implementation — make the working set hierarchy-friendly</h3>
+    <p>Restructure the lab's pointer-chasing traversal so the nodes' payloads are stored contiguously in traversal order, without changing what is computed. <strong>Success criteria (measure, don't assert):</strong> the traversal result is bit-identical; at an LLC-exceeding working set your contiguous version's time-per-element is measurably lower on your machine and the gap shrinks when the working set fits in L1; and you can explain which effect (spatial locality vs prefetch-friendliness) your numbers can and cannot separate.</p>
   </section>
 
   <section class="prose section">

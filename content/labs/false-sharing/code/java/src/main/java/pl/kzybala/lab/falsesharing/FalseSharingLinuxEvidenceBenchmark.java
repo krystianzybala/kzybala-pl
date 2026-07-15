@@ -66,6 +66,51 @@ public class FalseSharingLinuxEvidenceBenchmark {
     private PaddedCounters padded;
     private boolean useShared;
 
+    /**
+     * Per-worker pinning: each writer method takes its own
+     * {@code Scope.Thread} state whose trial setup runs <em>on that
+     * worker's thread</em> — the only reliable place to call
+     * sched_setaffinity for it. Process-level {@code taskset} remains a
+     * secondary containment mechanism only; it is never treated as worker
+     * pinning. Pinning happens entirely outside the measured methods.
+     */
+    @State(Scope.Thread)
+    public static class PinWriterA {
+        WorkerPin pin;
+
+        @Setup(Level.Trial)
+        public void pin() {
+            if (WorkerPin.pinningRequested()) {
+                pin = WorkerPin.establish("writeA", WorkerPin.CPU_A);
+            }
+        }
+
+        @TearDown(Level.Trial)
+        public void verify() {
+            if (pin != null) pin.verifyAndRecord();
+        }
+    }
+
+    @State(Scope.Thread)
+    public static class PinWriterB {
+        WorkerPin pin;
+
+        @Setup(Level.Trial)
+        public void pin() {
+            if (WorkerPin.pinningRequested()) {
+                if (WorkerPin.CPU_B == null) {
+                    throw new IllegalStateException("plab.cpuA is set but plab.cpuB is not — both writers must be pinned or neither");
+                }
+                pin = WorkerPin.establish("writeB", WorkerPin.CPU_B);
+            }
+        }
+
+        @TearDown(Level.Trial)
+        public void verify() {
+            if (pin != null) pin.verifyAndRecord();
+        }
+    }
+
     @Setup(Level.Trial)
     public void setUp(ThreadParams threads) {
         if (threads.getGroupThreadCount() != 2) {
@@ -87,7 +132,7 @@ public class FalseSharingLinuxEvidenceBenchmark {
 
     @Benchmark
     @Group("counters")
-    public void writeA() {
+    public void writeA(PinWriterA pinned) {
         if (useShared) {
             shared.counterA++;
         } else {
@@ -97,7 +142,7 @@ public class FalseSharingLinuxEvidenceBenchmark {
 
     @Benchmark
     @Group("counters")
-    public void writeB() {
+    public void writeB(PinWriterB pinned) {
         if (useShared) {
             shared.counterB++;
         } else {

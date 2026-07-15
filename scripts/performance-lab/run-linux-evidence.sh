@@ -65,14 +65,23 @@ done
 
 fail() { echo "run-linux-evidence: $*" >&2; exit 1; }
 
-[ "$LAB_ID" = "false-sharing" ] || fail "only the false-sharing lab is supported (got '${LAB_ID:-<none>}')"
-[ -n "$CPUS" ] || fail "--cpus A,B is required: publication runs never silently choose CPUs"
-case "$CPUS" in
-  *,*) : ;;
-  *) fail "--cpus must name exactly two logical CPUs, e.g. --cpus 2,4" ;;
-esac
-CPU_A="${CPUS%%,*}"
-CPU_B="${CPUS##*,}"
+# --- Lab configuration ---------------------------------------------------------
+# One common runner, per-lab configuration (never divergent script copies).
+# A lab without a config file is rejected.
+LAB_CONF="${SCRIPT_DIR}/labs/${LAB_ID:-none}.conf"
+if [ -z "$LAB_ID" ] || [ ! -f "$LAB_CONF" ]; then
+  SUPPORTED="$(ls "${SCRIPT_DIR}/labs" 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')"
+  fail "unsupported lab id '${LAB_ID:-<none>}' — supported: ${SUPPORTED:-none}"
+fi
+# shellcheck source=/dev/null
+source "$LAB_CONF"
+
+[ -n "$CPUS" ] || fail "--cpus is required: publication runs never silently choose CPUs"
+IFS=',' read -r -a CPU_LIST <<<"$CPUS"
+[ "${#CPU_LIST[@]}" -ge "${LAB_MIN_CPUS:-2}" ] \
+  || fail "lab ${LAB_ID} needs at least ${LAB_MIN_CPUS:-2} explicitly selected CPUs (--cpus), got ${#CPU_LIST[@]}"
+CPU_A="${CPU_LIST[0]}"
+CPU_B="${CPU_LIST[1]}"
 
 # --- Resolved publication profile -------------------------------------------
 # Explicit values, stored verbatim in benchmark-profile.json. Multiple
@@ -93,17 +102,35 @@ case "$PROFILE" in
     ;;
   *) fail "unsupported profile '${PROFILE}' (publication|full|development|smoke)" ;;
 esac
-EV_THREADS=2
-EV_JVM_ARGS="-Xms1g -Xmx1g -XX:+UseParallelGC"
-EV_SELECTOR="pl.kzybala.lab.falsesharing.FalseSharingLinuxEvidenceBenchmark"
+# GC/JVM choice for evidence runs: these benchmarks allocate nothing in the
+# measured path, so the collector's job is trivial — SerialGC is chosen to
+# minimize auxiliary JVM worker threads (no parallel GC gangs migrating
+# across the pinned CPU pair and inflating process-level migration counts).
+# Heap safety is demonstrated, not assumed: the correctness gate runs the
+# full suite under the same fixed 1g heap before any measurement, and a
+# fork that OOMs fails the run. -XX:ActiveProcessorCount is set per
+# scenario to the pinned CPU count so the JVM sizes its internal pools for
+# the CPUs it actually has, not the whole host. This was not changed to
+# make a result prettier: worker-level migration policy (below) is what
+# gates publication; the GC choice only reduces unrelated JVM noise, and
+# both GC selection and the resolved compiler/processor counts are captured
+# in toolchain.json for review.
+EV_JVM_ARGS_BASE="-Xms1g -Xmx1g -XX:+UseSerialGC --enable-native-access=ALL-UNNAMED"
 EV_PERF_EVENTS="cycles,instructions,cache-references,cache-misses,branches,branch-misses,task-clock,context-switches,cpu-migrations,page-faults"
 PERF_STAT_REPS=3
-MAX_MIGRATIONS_PER_SEC=5
+# Process-level aggregate migrations are host/JVM-noise evidence, recorded
+# and bounded separately; benchmark-WORKER migrations (worker-placement
+# evidence) are the blocking publication gate. The aggregate threshold only
+# becomes blocking when worker pinning is unavailable.
+MAX_AGGREGATE_MIGRATIONS_PER_SEC=50
 MAX_LOAD_PER_CORE_X100=20
 FAILURE_POLICY="abort-on-first-error"
-export EV_CPUS="$CPUS" EV_JVM_ARGS EV_SELECTOR EV_THREADS EV_FORKS EV_WI EV_W EV_I EV_R EV_PERF_EVENTS
+export EV_SELECTOR EV_FORKS EV_WI EV_W EV_I EV_R EV_PERF_EVENTS
 
-JAVA_DIR="${REPO_ROOT}/content/labs/false-sharing/code/java"
+JAVA_DIR="${REPO_ROOT}/${LAB_JAVA_DIR}"
+[ -d "$JAVA_DIR" ] || fail "lab config points at missing Java project ${LAB_JAVA_DIR}"
+RUST_DIR=""
+[ -n "${LAB_RUST_DIR:-}" ] && RUST_DIR="${REPO_ROOT}/${LAB_RUST_DIR}"
 export EV_JAR="${JAVA_DIR}/target/benchmarks.jar"
 
 RUN_ID="linux-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -207,7 +234,16 @@ else
   [ "$DRY_RUN" = "1" ] || fail "lscpu is unavailable"
 fi
 if [ -s "$LSCPU_E_FILE" ]; then
-  TOPO_RESULT="$(topo_validate_cpus "$LSCPU_E_FILE" "$CPU_A" "$CPU_B" "$ALLOW_CROSS_SOCKET")" || fail "CPU selection rejected"
+  # Every pair in the selected set must satisfy the placement policy —
+  # distinct physical cores, no SMT siblings, same socket/node unless the
+  # cross-socket scenario was explicitly requested.
+  for ((ti = 0; ti < ${#CPU_LIST[@]}; ti++)); do
+    for ((tj = ti + 1; tj < ${#CPU_LIST[@]}; tj++)); do
+      topo_validate_cpus "$LSCPU_E_FILE" "${CPU_LIST[ti]}" "${CPU_LIST[tj]}" "$ALLOW_CROSS_SOCKET" >/dev/null \
+        || fail "CPU selection rejected (pair ${CPU_LIST[ti]},${CPU_LIST[tj]})"
+    done
+  done
+  TOPO_RESULT="$(topo_validate_cpus "$LSCPU_E_FILE" "$CPU_A" "$CPU_B" "$ALLOW_CROSS_SOCKET")"
   SCENARIO="$(topo_scenario "$LSCPU_E_FILE" "$CPU_A" "$CPU_B")"
   echo "   topology: ${TOPO_RESULT} (scenario: ${SCENARIO})"
 else
@@ -241,9 +277,12 @@ fi
 mkdir -p "$RUN_DIR" 2>/dev/null || fail "cannot create output directory ${RUN_DIR}"
 [ -w "$RUN_DIR" ] || fail "output directory ${RUN_DIR} is not writable"
 
-# 8. Java/Maven toolchain present.
+# 8. Java/Maven toolchain present and actually runnable — `command -v`
+#    alone is fooled by broken shims (e.g. macOS's /usr/bin/java stub with
+#    no JDK); executing `java -version` is the real check, and it resolves
+#    through whatever PATH the host uses (SDKMAN installs included).
 if [ "$DRY_RUN" != "1" ]; then
-  command -v java >/dev/null 2>&1 || fail "java is not installed"
+  java -version >/dev/null 2>&1 || fail "java is not installed"
   command -v mvn >/dev/null 2>&1 || fail "mvn (Maven) is not installed"
 fi
 
@@ -301,6 +340,9 @@ MVN_VERSION="$(capture_or_unavailable bash -c 'mvn --version 2>/dev/null | head 
 JMH_VERSION="$(grep -o '<jmh.version>[^<]*</jmh.version>' "${JAVA_DIR}/pom.xml" | sed 's/<[^>]*>//g' || echo unavailable)"
 RUSTC_VERSION="$(capture_or_unavailable rustc --version)"
 CARGO_VERSION="$(capture_or_unavailable cargo --version)"
+# Resolved JVM thread-pool sizing under the evidence flags — captured, not
+# assumed (compiler thread count and active processor count in particular).
+JVM_RESOLVED_FLAGS="$(capture_or_unavailable bash -c "java ${EV_JVM_ARGS_BASE} -XX:ActiveProcessorCount=2 -XX:+PrintFlagsFinal -version 2>/dev/null | grep -E 'CICompilerCount|ActiveProcessorCount|UseSerialGC' | tr -s ' '")"
 
 cat > "${RUN_DIR}/environment.json" <<ENVEOF
 {
@@ -339,7 +381,9 @@ cat > "${RUN_DIR}/toolchain.json" <<TOOLEOF
   "jmh": $(json_escape "$JMH_VERSION"),
   "rustc": $(json_escape "$RUSTC_VERSION"),
   "cargo": $(json_escape "$CARGO_VERSION"),
-  "jvmArgs": $(json_escape "$EV_JVM_ARGS"),
+  "jvmArgsBase": $(json_escape "$EV_JVM_ARGS_BASE"),
+  "jvmArgsNote": "per-scenario additions: -XX:ActiveProcessorCount=<pinned cpu count>, worker pin properties (-Dplab.*), placement dir — recorded per variant in benchmark-profile.json and the JMH json's jvmArgs",
+  "jvmResolvedFlags": $(json_escape "$JVM_RESOLVED_FLAGS"),
   "benchmarkSelector": $(json_escape "$EV_SELECTOR")
 }
 TOOLEOF
@@ -367,11 +411,24 @@ cat > "${RUN_DIR}/benchmark-profile.json" <<PROFEOF
     "warmupTime": "${EV_W}",
     "measurementIterations": ${EV_I},
     "measurementTime": "${EV_R}",
-    "threads": ${EV_THREADS},
+    "threadsPerScenario": {$(FIRST=1; for V in $(lab_variants); do [ "$FIRST" = "1" ] || printf ', '; FIRST=0; printf '"%s": %s' "$V" "$(lab_threads "$V")"; done)},
     "selector": $(json_escape "$EV_SELECTOR")
   },
-  "jvm": { "args": $(json_escape "$EV_JVM_ARGS") },
-  "placement": { "cpus": "${CPUS}", "mechanism": "taskset -c (confines every JVM thread, including GC/JIT, to the selected CPUs; it cannot pin thread A to CPU A specifically — migrations between the two allowed CPUs are counted and bounded by policy instead)", "maxCpuMigrationsPerSecond": ${MAX_MIGRATIONS_PER_SEC}, "scenario": $(json_escape "$SCENARIO") },
+  "jvm": {
+    "argsBase": $(json_escape "$EV_JVM_ARGS_BASE"),
+    "gc": "SerialGC — allocation-free measured paths; minimizes auxiliary JVM worker threads so process-level migration counts reflect the host, not GC gangs; heap safety demonstrated by the correctness gate under the same fixed 1g heap",
+    "activeProcessorCount": "set per scenario to the pinned CPU count",
+    "workerPinning": "sched_setaffinity per worker thread via FFM (plab.cpuA/plab.cpuB or plab.workerCpus), established at trial setup, verified at teardown"
+  },
+  "placement": {
+    "cpus": "${CPUS}",
+    "scenarioCpuMapping": {$(FIRST=1; for V in $(lab_variants); do [ "$FIRST" = "1" ] || printf ', '; FIRST=0; CNT=$(lab_cpu_count "$V"); MAP="${CPU_LIST[0]}"; for ((mi=1; mi<CNT; mi++)); do MAP="${MAP},${CPU_LIST[mi]}"; done; printf '"%s": "%s"' "$V" "$MAP"; done)},
+    "workerMechanism": "per-thread sched_setaffinity (blocking policy: any pinned-worker migration or misplacement rejects the run; evidence in <variant>/worker-placement.json)",
+    "processContainment": "taskset -c (secondary containment for the whole JVM — never treated as worker pinning)",
+    "maxAggregateProcessMigrationsPerSecond": ${MAX_AGGREGATE_MIGRATIONS_PER_SEC},
+    "aggregatePolicy": "host/JVM-noise evidence; blocking only when worker placement is unavailable",
+    "scenario": $(json_escape "$SCENARIO")
+  },
   "perfStatRepetitions": ${PERF_STAT_REPS},
   "failurePolicy": "${FAILURE_POLICY}",
   "loadPolicy": { "maxOneMinuteLoadPerCoreX100": ${MAX_LOAD_PER_CORE_X100} }
@@ -380,7 +437,7 @@ PROFEOF
 
 cat > "${RUN_DIR}/correctness.json" <<COREOF
 {
-  "gate": "mvn test (CounterCorrectnessTest, CounterLayoutTest, EvidenceBenchmarkContractTest)",
+  "gate": "mvn test (${LAB_JAVA_DIR})",
   "status": "${CORRECTNESS_STATUS}",
   "console": "correctness-console.log"
 }
@@ -407,29 +464,105 @@ if [ "$PREFLIGHT_ONLY" = "1" ]; then
 fi
 
 # =============================================================================
-# Measurement — one variant at a time, fully separated.
+# Measurement — one variant at a time, fully separated. A policy violation
+# stamps the run rejected (diagnostic only, never canonical evidence) and
+# exits non-zero.
 # =============================================================================
-for VARIANT in shared padded; do
+write_run_status() {
+  cat > "${RUN_DIR}/run-status.json" <<STATEOF
+{
+  "runStatus": "$1",
+  "publicationEligible": $([ "$1" = "collected" ] && echo "$PUBLICATION_ELIGIBLE" || echo "false"),
+  "canonicalEvidenceEligible": $([ "$1" = "collected" ] && echo "true" || echo "false"),
+  "rejectionReason": $([ -n "${2:-}" ] && json_escape "$2" || printf 'null')
+}
+STATEOF
+}
+
+mark_rejected() {
+  echo "run-linux-evidence: RUN REJECTED — $1" >&2
+  write_run_status "rejected" "$1"
+  write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
+  echo "Partial artifacts preserved as DIAGNOSTIC ONLY in ${RUN_DIR} (run-status.json: rejected)." >&2
+  exit 1
+}
+
+for VARIANT in $(lab_variants); do
   VDIR="${RUN_DIR}/${VARIANT}"
   mkdir -p "$VDIR"
   echo "== variant: ${VARIANT}"
 
+  # Per-scenario resolution from the lab config: thread count, the
+  # deterministic CPU-list prefix this scenario uses, worker pin
+  # properties, and the JMH parameter selection.
+  VTHREADS="$(lab_threads "$VARIANT")"
+  VCPU_COUNT="$(lab_cpu_count "$VARIANT")"
+  SCEN_CPUS="${CPU_LIST[0]}"
+  for ((ci = 1; ci < VCPU_COUNT; ci++)); do SCEN_CPUS="${SCEN_CPUS},${CPU_LIST[ci]}"; done
+  export EV_CPUS="$SCEN_CPUS"
+  export EV_THREADS="$VTHREADS"
+  export EV_JMH_EXTRA="$(lab_jmh_args "$VARIANT")"
+  export EV_JVM_ARGS="${EV_JVM_ARGS_BASE} -XX:ActiveProcessorCount=${VCPU_COUNT} $(lab_worker_props "$VARIANT") -Dplab.placementDir=${VDIR}"
+  echo "   scenario cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}'"
+
   echo "-- JMH evidence run (${EV_FORKS} forks)"
   run_or_plan "$(build_jmh_evidence_command "$VARIANT" "$VDIR") > ${VDIR}/jmh-console.log 2>&1"
-  if [ "$DRY_RUN" != "1" ]; then
-    check_migrations "${VDIR}/jmh-placement.csv" "$MAX_MIGRATIONS_PER_SEC" \
-      || fail "variant ${VARIANT}: JMH timing run violated the CPU-migration policy"
-  fi
 
   echo "-- perf stat (${PERF_STAT_REPS} repetitions)"
   for REP in $(seq 1 "$PERF_STAT_REPS"); do
     run_or_plan "$(build_perf_stat_command "$VARIANT" "$VDIR" "$REP") > ${VDIR}/perf-stat-console-r${REP}.log 2>&1"
   done
 
-  echo "-- perf c2c record + report"
-  run_or_plan "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
-  run_or_plan "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-report.txt 2> ${VDIR}/perf-c2c-report.log"
+  if [ "${LAB_C2C_REQUIRED:-0}" = "1" ] || [ "$PERF_C2C_OK" = "true" ]; then
+    echo "-- perf c2c record + report"
+    run_or_plan "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
+    run_or_plan "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-report.txt 2> ${VDIR}/perf-c2c-report.log"
+  else
+    echo "-- perf c2c: optional for this lab and unavailable on this host — recorded as absent"
+  fi
+
+  RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"
+  if [ -n "$RUST_CMD" ]; then
+    echo "-- Rust persistent-worker harness"
+    run_or_plan "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log"
+  fi
+
+  # --- Placement policy (after all of this variant's executions) -------------
+  if [ "$DRY_RUN" != "1" ]; then
+    # 1. Benchmark-WORKER migrations: BLOCKING. Merge the per-fork
+    #    worker-placement files the benchmark wrote and validate every
+    #    worker was pinned, landed on its intended CPU and never migrated.
+    if ls "${VDIR}"/worker-placement-*.json >/dev/null 2>&1; then
+      merge_worker_placement "$VDIR" \
+        || mark_rejected "worker-placement-or-migration-policy (variant ${VARIANT})"
+      WORKER_PLACEMENT_STATE="verified"
+    else
+      WORKER_PLACEMENT_STATE="unavailable"
+    fi
+
+    # 2. Aggregate JVM-process migrations (jmh-placement.csv): host/JVM
+    #    noise evidence — recorded always; blocking only when worker-level
+    #    evidence is unavailable (no pinning), since then it is the only
+    #    placement signal we have.
+    AGG_INFO="$(check_migrations "${VDIR}/jmh-placement.csv" "$MAX_AGGREGATE_MIGRATIONS_PER_SEC" 2>&1)" \
+      && AGG_STATE="within-policy" || AGG_STATE="exceeded"
+    cat > "${VDIR}/placement-policy.json" <<PLACEOF
+{
+  "workerPlacement": "${WORKER_PLACEMENT_STATE}",
+  "workerMigrationPolicy": "blocking — any pinned-worker migration rejects the run",
+  "aggregateProcessMigrations": $(json_escape "$AGG_INFO"),
+  "aggregateState": "${AGG_STATE}",
+  "aggregatePolicy": "host/JVM-noise evidence, max ${MAX_AGGREGATE_MIGRATIONS_PER_SEC}/s of task-clock; blocking only when worker placement is unavailable",
+  "processContainment": "taskset -c ${SCEN_CPUS} (secondary containment only — never treated as worker pinning)"
+}
+PLACEOF
+    if [ "$WORKER_PLACEMENT_STATE" = "unavailable" ] && [ "$AGG_STATE" = "exceeded" ]; then
+      mark_rejected "aggregate-migration-policy-without-worker-pinning (variant ${VARIANT})"
+    fi
+  fi
 done
+
+write_run_status "collected" ""
 
 # =============================================================================
 # Manifest, hashes, archive
@@ -456,23 +589,23 @@ cat > "${RUN_DIR}/evidence-manifest.json" <<MANEOF
   "benchmarkProfile": "benchmark-profile.json",
   "correctness": "correctness.json",
   "variants": {
-    "shared": {
-      "jmh": "shared/jmh.json",
-      "jmhPlacement": "shared/jmh-placement.csv",
-      "perfStat": ["shared/perf-stat.csv", "shared/perf-stat-r2.csv", "shared/perf-stat-r3.csv"],
-      "perfStatJmh": ["shared/perf-stat-jmh.json", "shared/perf-stat-jmh-r2.json", "shared/perf-stat-jmh-r3.json"],
-      "perfC2cData": "shared/perf-c2c.data",
-      "perfC2cReport": "shared/perf-c2c-report.txt"
-    },
-    "padded": {
-      "jmh": "padded/jmh.json",
-      "jmhPlacement": "padded/jmh-placement.csv",
-      "perfStat": ["padded/perf-stat.csv", "padded/perf-stat-r2.csv", "padded/perf-stat-r3.csv"],
-      "perfStatJmh": ["padded/perf-stat-jmh.json", "padded/perf-stat-jmh-r2.json", "padded/perf-stat-jmh-r3.json"],
-      "perfC2cData": "padded/perf-c2c.data",
-      "perfC2cReport": "padded/perf-c2c-report.txt"
-    }
+$(FIRST=1; for V in $(lab_variants); do
+  [ "$FIRST" = "1" ] || printf ',\n'
+  FIRST=0
+  printf '    "%s": {\n' "$V"
+  printf '      "jmh": "%s/jmh.json",\n' "$V"
+  printf '      "jmhPlacement": "%s/jmh-placement.csv",\n' "$V"
+  printf '      "workerPlacement": "%s/worker-placement.json",\n' "$V"
+  printf '      "placementPolicy": "%s/placement-policy.json",\n' "$V"
+  printf '      "perfStat": ["%s/perf-stat.csv", "%s/perf-stat-r2.csv", "%s/perf-stat-r3.csv"],\n' "$V" "$V" "$V"
+  printf '      "perfStatJmh": ["%s/perf-stat-jmh.json", "%s/perf-stat-jmh-r2.json", "%s/perf-stat-jmh-r3.json"],\n' "$V" "$V" "$V"
+  printf '      "perfC2cData": "%s/perf-c2c.data",\n' "$V"
+  printf '      "perfC2cReport": "%s/perf-c2c-report.txt",\n' "$V"
+  printf '      "rustEvidence": "%s/rust-evidence.json"\n' "$V"
+  printf '    }'
+done; printf '\n')
   },
+  "runStatusFile": "run-status.json",
   "canonical": { "pendingImport": true, "importer": "scripts/performance-lab/import-evidence.sh (adds canonical-jmh.json, canonical-perf-stat.json, comparison.json on the repository machine)" },
   "review": { "verifiedMaturityRequiresHumanReview": true, "importDoesNotPromote": true }
 }

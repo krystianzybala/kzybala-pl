@@ -1,5 +1,25 @@
 # Thread-per-core architecture — theory
 
+## Performance question and hypothesis
+
+**Question:** can ownership partitioning remove synchronization from the
+hot path, one core at a time?
+
+**Hypothesis:** when each thread exclusively owns its partition of state,
+the hot path needs no lock and no atomic read-modify-write, so per-core
+throughput scales with core count where a shared worker pool's collapses —
+the costs don't vanish, they move to cross-core handoff and load
+imbalance.
+
+**What would disprove it:** if the partitioned design's aggregate
+throughput failed to scale versus the shared-pool baseline as threads are
+added (partitioning buys nothing), or if its hot-path per-operation cost
+still carried contention signatures (the "exclusive ownership" wasn't
+actually exclusive — e.g. false sharing between partitions), or if a
+perfectly balanced synthetic load showed the same win as a skewed one
+(the load-imbalance caveat would be empty). The benchmark and the
+imbalance scenario in the model below separate these claims.
+
 ## Learning objective
 
 Explain thread-per-core as an ownership and execution model — not merely

@@ -3,8 +3,8 @@
 //! buffer. See rust.md for methodology notes and benchmark.md (in the lab
 //! content directory) for environment disclosure.
 
-use spsc_ring_buffer_lab::ring_buffer;
 use criterion::{criterion_group, criterion_main, Criterion};
+use spsc_ring_buffer_lab::ring_buffer;
 use std::thread;
 
 const ITEMS: u64 = 200_000;

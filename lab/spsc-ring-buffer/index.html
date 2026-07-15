@@ -56,6 +56,13 @@
   </header>
 
   <section class="prose section">
+    <h2>Performance question and hypothesis</h2>
+    <p><strong>Question:</strong> how can one producer and one consumer exchange messages with bounded, allocation-free latency?</p>
+    <p><strong>Hypothesis:</strong> because each cursor has exactly one writer, an SPSC ring buffer needs no contended read-modify-write at all — release/acquire publication over single-owner cursors sustains transfer where a CAS-based queue would collapse, and caching the opposite side's cursor removes most of the remaining cross-core traffic.</p>
+    <p><strong>What would disprove it:</strong> if the SPSC ring's per-item cost grew with transfer rate the way the CAS-contention lab's counter does, or if removing the cached-cursor optimisation made no measurable difference, or if the correctness tests could pass with plain non-atomic cursor accesses, the ownership-and-publication model taught here would be wrong.</p>
+  </section>
+
+  <section class="prose section">
     <h2>Learning objective</h2>
     <p>Explain a bounded SPSC ring buffer as an ownership-discipline problem: show why separating reservation from publication, and payload read from consumption acknowledgement, is what makes the structure correct, work through wrap-around, full, and empty detection, show the cached-cursor optimisation, contrast per-item publication with batching, and demonstrate two concrete correctness bugs a naive implementation can introduce.</p>
   </section>
@@ -231,7 +238,7 @@ public class SpscRingBufferBenchmark {
         while (!buffer.tryConsume(out)) Thread.onSpinWait();
     }
 }</code></pre>
-      <p>The runnable Maven/JMH project (with correctness tests) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/spsc-ring-buffer/code/java" rel="noopener"><code>content/labs/spsc-ring-buffer/code/java/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
 
     <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
@@ -316,38 +323,17 @@ unsafe impl Send for Consumer {}</code></pre>
     consumer_handle.join().unwrap();
 }</code></pre>
       <p><strong>This benchmark's timed region includes spawning and joining both threads on every sample</strong> — a materially different methodology from the Java benchmark's persistent-thread <code>@Group</code>, so the two numbers below are not directly comparable. See "Benchmark methodology" for why.</p>
-      <p>The runnable Cargo/Criterion project (with correctness tests) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/spsc-ring-buffer/code/rust" rel="noopener"><code>content/labs/spsc-ring-buffer/code/rust/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
   </section>
 
   <section class="prose section">
     <h2>Benchmark methodology</h2>
-    <div class="disclosure measured">
-      <p class="disclosure-kind">Illustrative development run</p>
-      <p>These preliminary values were captured on an Apple M1 Max developer workstation under uncontrolled desktop conditions. They are retained only to illustrate the likely shape of the effect and are not publication-grade performance evidence. Canonical results for this laboratory are collected separately on the dedicated native-Linux benchmark host with explicit CPU placement, environment capture, correctness gates, independent JVM forks, and profiler evidence where required. <strong>Canonical results: awaiting native-Linux measurement</strong> — the implementation and correctness gates exist, but no canonical host evidence has been imported yet, so no verified performance conclusion is available and the development numbers below are not a substitute.</p>
-      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations of 1 second each, <code>Mode.Throughput</code>, <code>@Group</code> with one producer thread and one consumer thread pinned to a 1024-slot buffer for the whole run. Rust: default Criterion sampling (100 samples), each sample spawning a fresh producer/consumer thread pair moving 200,000 items, then joining both. Single developer machine with ordinary desktop load running alongside — not a dedicated, thermally-stable rig.</p>
+    <p>One persistent producer worker and one persistent consumer worker (no thread creation in the measured path, one physical core each) exchange items through a fixed power-of-two ring; Java uses JMH group threads and Rust a persistent-worker harness with the same operation definition, capacities and batch sizes; sequence-verifying correctness checks run before any timing is trusted.</p>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Awaiting native-Linux measurement</p>
+      <p>The benchmark implementation and correctness checks exist, but no canonical native-Linux evidence has been imported and reviewed. No publication-grade performance numbers are shown yet. Canonical results for this laboratory are collected on the dedicated native-Linux benchmark host with explicit physical-CPU placement, full environment capture, correctness gates, independent JVM forks, and profiler evidence where required.</p>
     </div>
-    <p><strong>Both languages benchmark the same shape but measure different things — the numbers must not be compared directly.</strong> JMH's <code>@Group</code> keeps both threads alive for the entire measurement window, reporting steady-state throughput. Criterion's <code>b.iter(...)</code> re-runs the whole closure — including <code>thread::spawn</code>/<code>.join()</code> for a fresh pair — every sample, so its time necessarily includes thread creation/teardown overhead the Java number excludes.</p>
-    <p><strong>Java (JMH, <code>@Group("spsc")</code>, ops/ms per side, higher is better):</strong></p>
-    <table>
-      <thead><tr><th>Benchmark</th><th>Throughput</th><th>99.9% CI</th></tr></thead>
-      <tbody>
-        <tr><td><code>spsc</code> (combined)</td><td>24,850.079 ops/ms</td><td>±412.206</td></tr>
-        <tr><td><code>spsc:produce</code></td><td>12,424.844 ops/ms</td><td>±206.229</td></tr>
-        <tr><td><code>spsc:consume</code></td><td>12,425.235 ops/ms</td><td>±205.978</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Rust (Criterion, full pipeline including thread spawn/join, 200,000 items per sample):</strong></p>
-    <table>
-      <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-      <tbody>
-        <tr><td>Median pipeline time</td><td>907.47 µs</td></tr>
-        <tr><td>Min–max (100 samples)</td><td>864.16 µs – 955.78 µs</td></tr>
-        <tr><td>Derived items/ms (from median)</td><td>≈220,392</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Producer and consumer throughput match almost exactly in the Java run</strong> (12,424.844 vs. 12,425.235 ops/ms) — expected for a correctly balanced SPSC pipeline where both sides do symmetric, equally-cheap work. <strong>The Rust number cannot be read as "faster than Java" here</strong> — its derived ~220,392 items/ms includes real thread spawn/join overhead the Java methodology deliberately excludes; a persistent-thread harness would very likely change it substantially. <strong>Neither number is a "real-world" figure</strong> — both run the tightest possible spin-loop with no actual payload processing, isolating the ring buffer's own mechanics from any application work.</p>
-    <p>Re-run the projects in <code>code/</code> on your own hardware before treating any of this as authoritative for a design decision.</p>
   </section>
 
   <section class="prose section">
@@ -385,7 +371,7 @@ unsafe impl Send for Consumer {}</code></pre>
 
   <section class="prose section">
     <h2>Investigation task</h2>
-    <p>Using the Java or Rust project in <code>code/</code>:</p>
+    <p>Using the lab's Java or Rust implementation :</p>
     <ol>
       <li>Run the benchmark and record the reported throughput or pipeline time on your own hardware.</li>
       <li>Change the buffer capacity (a power of two) and re-run — observe whether throughput changes, and form a hypothesis for why or why not.</li>
@@ -419,6 +405,16 @@ unsafe impl Send for Consumer {}</code></pre>
   <section class="section">
     <h2>Quiz</h2>
     <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Exercises</h2>
+    <p>One diagnosis exercise and one implementation exercise, each with success criteria. Hints and solutions are collapsed — attempt the exercise first. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
+    <h3>1. Diagnosis — the off-by-one that only fails under load</h3>
+    <p>A consumer reads the producer's cursor with a plain load (the producer publishes with a release store) and occasionally consumes a stale or half-written item — but only at high rates, never in unit tests. Find the bug (it is not in the producer). <strong>Success criteria:</strong> you name the exact unconstrained access pair, explain why single-threaded and low-rate tests never catch it, and state the one-token fix.</p>
+    <details><summary>Solution sketch</summary><p>The release store is only half the handshake: without a matching <code>getAcquire</code>/<code>load(Acquire)</code> on the cursor, the consumer's payload read may be satisfied before the cursor read's implications are ordered — it can read the slot before the payload write is visible. Low rates leave a huge publish-to-consume window; only under load does the race window matter. Fix: acquire-load the producer cursor.</p></details>
+    <h3>2. Implementation — batch the consumer, measure the cursor traffic</h3>
+    <p>Implement drain-in-batches consumption: read the producer cursor once, consume everything available, publish one tail update for the batch. <strong>Success criteria (measure, don't assert):</strong> the correctness tests still pass including wrap-around; items-per-second measurably improves at high rates on your machine; and you can name which cross-core accesses were eliminated and why the win shrinks when the buffer runs nearly empty.</p>
   </section>
 
   <section class="prose section">

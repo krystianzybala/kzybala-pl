@@ -9,6 +9,10 @@ publish = false
 name = "cas_contention_lab"
 path = "src/lib.rs"
 
+[dependencies]
+# Worker affinity for the native-Linux evidence harness (src/bin/cas_evidence.rs).
+libc = "0.2"
+
 [dev-dependencies]
 criterion = "0.5"
 

@@ -39,7 +39,18 @@ unsafe impl Sync for Shared {}
 /// Creates a bound pair of ring-buffer handles. `capacity` must be a power
 /// of two.
 pub fn ring_buffer(capacity: usize) -> (Producer, Consumer) {
-    assert!(capacity.is_power_of_two(), "capacity must be a power of two");
+    ring_buffer_with_mode(capacity, true)
+}
+
+/// As [`ring_buffer`], with the cursor-caching optimisation selectable:
+/// `cached_cursors = false` re-reads the opposite cursor on every operation
+/// — the "uncached" evidence scenario the benchmark matrix compares against
+/// the cached baseline.
+pub fn ring_buffer_with_mode(capacity: usize, cached_cursors: bool) -> (Producer, Consumer) {
+    assert!(
+        capacity.is_power_of_two(),
+        "capacity must be a power of two"
+    );
     let slots = (0..capacity).map(|_| UnsafeCell::new(0)).collect();
     let shared = Arc::new(Shared {
         slots,
@@ -48,8 +59,18 @@ pub fn ring_buffer(capacity: usize) -> (Producer, Consumer) {
         tail: AtomicU64::new(0),
     });
     (
-        Producer { shared: Arc::clone(&shared), reserve_index: 0, cached_tail: 0 },
-        Consumer { shared, read_index: 0, cached_head: 0 },
+        Producer {
+            shared: Arc::clone(&shared),
+            reserve_index: 0,
+            cached_tail: 0,
+            cached_cursors,
+        },
+        Consumer {
+            shared,
+            read_index: 0,
+            cached_head: 0,
+            cached_cursors,
+        },
     )
 }
 
@@ -57,6 +78,7 @@ pub struct Producer {
     shared: Arc<Shared>,
     reserve_index: u64,
     cached_tail: u64,
+    cached_cursors: bool,
 }
 
 impl Producer {
@@ -65,7 +87,7 @@ impl Producer {
     /// not yet acknowledged.
     pub fn try_produce(&mut self, value: u64) -> bool {
         let capacity = self.shared.slots.len() as u64;
-        if self.reserve_index - self.cached_tail == capacity {
+        if !self.cached_cursors || self.reserve_index - self.cached_tail == capacity {
             self.cached_tail = self.shared.tail.load(Ordering::Acquire);
             if self.reserve_index - self.cached_tail == capacity {
                 return false; // genuinely full
@@ -79,7 +101,9 @@ impl Producer {
             *self.shared.slots[idx].get() = value; // payload write — not yet visible
         }
         self.reserve_index += 1;
-        self.shared.head.store(self.reserve_index, Ordering::Release); // publication
+        self.shared
+            .head
+            .store(self.reserve_index, Ordering::Release); // publication
         true
     }
 }
@@ -93,13 +117,14 @@ pub struct Consumer {
     shared: Arc<Shared>,
     read_index: u64,
     cached_head: u64,
+    cached_cursors: bool,
 }
 
 impl Consumer {
     /// Reads and acknowledges the next published value. Returns `None`
     /// (nothing available) rather than reading unpublished slot content.
     pub fn try_consume(&mut self) -> Option<u64> {
-        if self.read_index == self.cached_head {
+        if !self.cached_cursors || self.read_index == self.cached_head {
             self.cached_head = self.shared.head.load(Ordering::Acquire);
             if self.read_index == self.cached_head {
                 return None; // genuinely empty
@@ -116,6 +141,34 @@ impl Consumer {
     }
 }
 
+impl Consumer {
+    /// Drains up to `out.len()` published values into `out` with ONE cursor
+    /// read and ONE acknowledgement for the whole batch — the batched
+    /// variant of the evidence matrix. Returns the number of items read
+    /// (0 when empty). Same ownership and release/acquire discipline as
+    /// [`Consumer::try_consume`].
+    pub fn try_consume_batch(&mut self, out: &mut [u64]) -> usize {
+        if !self.cached_cursors || self.read_index == self.cached_head {
+            self.cached_head = self.shared.head.load(Ordering::Acquire);
+            if self.read_index == self.cached_head {
+                return 0; // genuinely empty
+            }
+        }
+        let available = ((self.cached_head - self.read_index) as usize).min(out.len());
+        for (i, slot) in out.iter_mut().enumerate().take(available) {
+            let idx = ((self.read_index + i as u64) & self.shared.mask) as usize;
+            // SAFETY: every index below cached_head was published by the
+            // producer (head acquire above), and the producer will not
+            // reuse any of them until it re-reads tail past this batch's
+            // acknowledgement below.
+            *slot = unsafe { *self.shared.slots[idx].get() };
+        }
+        self.read_index += available as u64;
+        self.shared.tail.store(self.read_index, Ordering::Release); // one acknowledgement per batch
+        available
+    }
+}
+
 // SAFETY: see the `Producer` impl above; the same reasoning applies to `Consumer`.
 unsafe impl Send for Consumer {}
 
@@ -129,7 +182,10 @@ mod tests {
         let (mut producer, _consumer) = ring_buffer(2);
         assert!(producer.try_produce(1));
         assert!(producer.try_produce(2));
-        assert!(!producer.try_produce(3), "reservation should be rejected once the buffer is full");
+        assert!(
+            !producer.try_produce(3),
+            "reservation should be rejected once the buffer is full"
+        );
     }
 
     #[test]
@@ -186,7 +242,10 @@ mod tests {
 
         producer_handle.join().unwrap();
         let matched = consumer_handle.join().unwrap();
-        assert_eq!(matched, items, "every value must be received exactly once, in FIFO order");
+        assert_eq!(
+            matched, items,
+            "every value must be received exactly once, in FIFO order"
+        );
     }
 
     #[test]

@@ -453,6 +453,7 @@ name = "spsc-ring-buffer-lab"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "libc",
 ]
 
 [[package]]

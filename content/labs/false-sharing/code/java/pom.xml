@@ -21,8 +21,8 @@
          for a system module (jdk.internal.vm.annotation, for @Contended)
          together with "release", since "release" uses the sealed ct.sym API
          description rather than the running JDK's actual module graph. -->
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
+    <maven.compiler.source>22</maven.compiler.source>
+    <maven.compiler.target>22</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jmh.version>1.37</jmh.version>
   </properties>
@@ -71,8 +71,8 @@
                 <requireJavaVersion>
                   <!-- Pinned toolchain floor (plab-002): benchmark.md discloses the
                        exact JDK build actually used for measured numbers; this only
-                       rejects a JDK too old to run the lab at all. -->
-                  <version>[21,)</version>
+                       rejects a JDK too old to run the lab at all (22+ for the final FFM API used by CpuAffinity). -->
+                  <version>[22,)</version>
                 </requireJavaVersion>
               </rules>
             </configuration>

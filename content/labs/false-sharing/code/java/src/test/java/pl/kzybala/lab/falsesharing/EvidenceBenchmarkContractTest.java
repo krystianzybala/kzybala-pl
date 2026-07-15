@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -42,6 +43,44 @@ class EvidenceBenchmarkContractTest {
         Param param = layout.getAnnotation(Param.class);
         assertEquals(List.of("shared", "padded"), List.of(param.value()),
             "the runner selects variants with -p layout=<shared|padded>; keep this list in sync with it");
+    }
+
+    @Test
+    void eachWriterCarriesItsOwnPinStateAndPinningHappensOutsideMeasurement() throws NoSuchMethodException {
+        // writeA is pinned to plab.cpuA via PinWriterA, writeB to plab.cpuB
+        // via PinWriterB — per-worker thread states, so sched_setaffinity
+        // runs on the worker's own thread. The pin/verify methods carry
+        // @Setup/@TearDown(Level.Trial): affinity is established and
+        // checked strictly outside the measured operations.
+        Method writeA = FalseSharingLinuxEvidenceBenchmark.class.getMethod(
+            "writeA", FalseSharingLinuxEvidenceBenchmark.PinWriterA.class);
+        Method writeB = FalseSharingLinuxEvidenceBenchmark.class.getMethod(
+            "writeB", FalseSharingLinuxEvidenceBenchmark.PinWriterB.class);
+        assertTrue(writeA.isAnnotationPresent(Benchmark.class));
+        assertTrue(writeB.isAnnotationPresent(Benchmark.class));
+        for (Class<?> pinState : List.of(
+            FalseSharingLinuxEvidenceBenchmark.PinWriterA.class,
+            FalseSharingLinuxEvidenceBenchmark.PinWriterB.class)) {
+            Method pin = Arrays.stream(pinState.getMethods())
+                .filter(m -> m.isAnnotationPresent(org.openjdk.jmh.annotations.Setup.class))
+                .findFirst().orElseThrow();
+            assertEquals(org.openjdk.jmh.annotations.Level.Trial,
+                pin.getAnnotation(org.openjdk.jmh.annotations.Setup.class).value(),
+                pinState.getSimpleName() + " must pin at trial setup, never per invocation");
+            assertTrue(Arrays.stream(pinState.getMethods())
+                    .anyMatch(m -> m.isAnnotationPresent(org.openjdk.jmh.annotations.TearDown.class)),
+                pinState.getSimpleName() + " must verify placement at teardown");
+        }
+    }
+
+    @Test
+    void affinityIsRefusedRatherThanFakedOffLinux() {
+        // Process-level taskset is never accepted as worker pinning; on a
+        // platform without sched_setaffinity the pin must throw, aborting a
+        // run that requested pinning — not silently continue unpinned.
+        if (!CpuAffinity.isSupported()) {
+            assertThrows(IllegalStateException.class, () -> CpuAffinity.pinCurrentThread(0));
+        }
     }
 
     @Test

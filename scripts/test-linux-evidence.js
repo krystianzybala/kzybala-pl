@@ -109,14 +109,14 @@ const CMD_ENV = {
 };
 
 test("commands: JMH evidence run pins the explicit CPUs and selects exactly one layout", () => {
-  const shared = libCall(`build_jmh_evidence_command shared /out/shared`, CMD_ENV).stdout.trim();
+  const shared = libCall(`build_jmh_evidence_command shared /out/shared`, { ...CMD_ENV, EV_JMH_EXTRA: "-p layout=shared" }).stdout.trim();
   assert.match(shared, /taskset -c 2,4/);
   assert.match(shared, /-p layout=shared/);
   assert.doesNotMatch(shared, /layout=padded/);
   assert.match(shared, /-t 2 -f 5 -wi 5 -w 1s -i 10 -r 1s/);
   assert.match(shared, /-rf json -rff \/out\/shared\/jmh\.json/);
   assert.match(shared, /perf stat -x, -e cpu-migrations,context-switches,task-clock/);
-  const padded = libCall(`build_jmh_evidence_command padded /out/padded`, CMD_ENV).stdout.trim();
+  const padded = libCall(`build_jmh_evidence_command padded /out/padded`, { ...CMD_ENV, EV_JMH_EXTRA: "-p layout=padded" }).stdout.trim();
   assert.match(padded, /-p layout=padded/);
   assert.match(padded, /\/out\/padded\/jmh\.json/);
 });
@@ -132,7 +132,7 @@ test("commands: perf stat repetitions use single-fork runs with matched JMH outp
 });
 
 test("commands: perf c2c record preserves binary data and the report is deterministic stdio", () => {
-  const rec = libCall(`build_c2c_record_command padded /out/padded`, CMD_ENV).stdout.trim();
+  const rec = libCall(`build_c2c_record_command padded /out/padded`, { ...CMD_ENV, EV_JMH_EXTRA: "-p layout=padded" }).stdout.trim();
   assert.match(rec, /perf c2c record -o \/out\/padded\/perf-c2c\.data -- taskset -c 2,4 java/);
   assert.match(rec, /-p layout=padded/);
   const rep = libCall(`build_c2c_report_command padded /out/padded`, CMD_ENV).stdout.trim();
@@ -243,20 +243,47 @@ exit 0`,
   }
 });
 
-test("runner: fails before measurement when the correctness gate fails", () => {
-  const stubs = makeStubDir({
-    uname: `echo Linux`,
-    "systemd-detect-virt": `echo none`,
-    lscpu: LSCPU_STUB,
-    perf: `case "$1" in
+// Three independent toolchain/correctness failure paths — a stub set with
+// no detectable java tests Java *discovery*, not the correctness gate, so
+// each case controls exactly the layer it is about.
+const GATE_PERF_STUB = `case "$1" in
   --version) echo "perf version 6.8"; exit 0 ;;
   stat) exit 0 ;;
   c2c) echo "ldlat-loads, ldlat-stores"; exit 0 ;;
 esac
-exit 0`,
-    mvn: `echo "simulated test failure" >&2; exit 1`,
+exit 0`;
+
+function gateStubs({ java, mvn }) {
+  const stubs = {
+    uname: `echo Linux`,
+    "systemd-detect-virt": `echo none`,
+    lscpu: LSCPU_STUB,
+    perf: GATE_PERF_STUB,
     nproc: `echo 8`,
-  });
+  };
+  if (java !== null) stubs.java = java;
+  if (mvn !== null) stubs.mvn = mvn;
+  return makeStubDir(stubs);
+}
+
+test("runner: missing Java fails at Java discovery, before the correctness gate", () => {
+  // A stub that exists but cannot run -version shadows any host java shim
+  // (/usr/bin/java on macOS) — "missing" means "not runnable", hermetically.
+  const stubs = gateStubs({ java: `echo "no java runtime" >&2; exit 127`, mvn: `exit 0` });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "publication", "--cpus", "0,1"], stubs, out);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /java is not installed/);
+    assert.doesNotMatch(r.stderr, /correctness gate failed/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: fails before measurement when the correctness gate fails (Java present)", () => {
+  const stubs = gateStubs({ java: `exit 0`, mvn: `echo "simulated test failure" >&2; exit 1` });
   const out = mkdtempSync(join(tmpdir(), "ev-out-"));
   try {
     const r = runRunner(["--profile", "publication", "--cpus", "0,1"], stubs, out);
@@ -266,6 +293,19 @@ exit 0`,
     assert.equal(existsSync(join(out, "false-sharing")), true);
     const runDirs = execSync(`find '${out}' -name jmh.json`, { encoding: "utf8" }).trim();
     assert.equal(runDirs, "");
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: Java present and correctness passing continues past the gate (preflight completes)", () => {
+  const stubs = gateStubs({ java: `exit 0`, mvn: `exit 0` });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "publication", "--cpus", "0,1", "--preflight-only"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Preflight passed\./);
   } finally {
     rmSync(stubs, { recursive: true, force: true });
     rmSync(out, { recursive: true, force: true });
@@ -316,8 +356,10 @@ test("runner: dry-run produces the artifact skeleton and fully separated per-var
     }
     const profile = JSON.parse(readFileSync(join(runDir, "benchmark-profile.json"), "utf8"));
     assert.equal(profile.jmh.forks, 5);
-    assert.equal(profile.jmh.threads, 2);
+    assert.deepEqual(profile.jmh.threadsPerScenario, { shared: 2, padded: 2 });
     assert.equal(profile.placement.cpus, "0,1");
+    assert.deepEqual(profile.placement.scenarioCpuMapping, { shared: "0,1", padded: "0,1" });
+    assert.match(profile.jvm.argsBase, /UseSerialGC/);
     const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
     assert.equal(manifest.canonical.pendingImport, true);
     assert.equal(manifest.review.importDoesNotPromote, true);
@@ -522,6 +564,100 @@ test("runner: unknown options still fail", () => {
   }
 });
 
+// --- per-lab evidence configurations ----------------------------------------------
+
+const LABS_DIR = join(ROOT, "scripts", "performance-lab", "labs");
+
+function confCall(lab, script, cpus = "2,4") {
+  const cpuArray = cpus.split(",").join(" ");
+  return libCall(`CPU_LIST=(${cpuArray}); source '${join(LABS_DIR, `${lab}.conf`)}'; ${script}`);
+}
+
+test("configs: the runner rejects unsupported lab ids", () => {
+  const stubs = makeStubDir({ lscpu: LSCPU_STUB });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = (() => {
+      try {
+        const stdout = execFileSync("bash", [RUNNER, "no-such-lab", "--cpus", "0,1", "--out", out], {
+          env: { ...process.env, PATH: `${stubs}:/usr/bin:/bin` }, encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
+        });
+        return { status: 0, stdout, stderr: "" };
+      } catch (err) {
+        return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+      }
+    })();
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /unsupported lab id 'no-such-lab'/);
+    assert.match(r.stderr, /false-sharing/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("configs: SPSC scenarios cover cursor mode, batch and capacity, with a persistent-worker Rust harness", () => {
+  const variants = confCall("spsc-ring-buffer", "lab_variants").stdout.trim().split(/\s+/);
+  assert.deepEqual(variants, ["cached-b1-c1024", "uncached-b1-c1024", "cached-b64-c1024", "cached-b1-c65536"]);
+  const args = confCall("spsc-ring-buffer", "lab_jmh_args uncached-b1-c1024").stdout.trim();
+  assert.equal(args, "-p cursorMode=uncached -p batch=1 -p capacity=1024");
+  const rust = confCall("spsc-ring-buffer", "lab_rust_evidence_cmd cached-b64-c65536").stdout.trim();
+  // Methodology parity: the publication harness is the persistent-worker
+  // bin — never the Criterion spawn/join lifecycle benchmark.
+  assert.match(rust, /--bin spsc_evidence/);
+  assert.doesNotMatch(rust, /cargo bench/);
+  assert.match(rust, /--cpus 2,4/);
+});
+
+test("configs: CAS contender scenarios derive from the validated CPU set, never hardcoded CPU numbers", () => {
+  const two = confCall("cas-contention", "lab_variants", "2,4").stdout.trim().split(/\s+/);
+  assert.ok(two.includes("cas-t2-none") && two.includes("single-writer"));
+  assert.ok(!two.some((v) => v.includes("t4") || v.includes("t8")), "2 CPUs cannot host 4/8 contenders");
+  const eight = confCall("cas-contention", "lab_variants", "1,2,3,4,5,6,7,8").stdout.trim().split(/\s+/);
+  assert.ok(eight.includes("cas-t8-expjitter"));
+  const props = confCall("cas-contention", "lab_worker_props cas-t4-none", "1,2,3,4,5,6,7,8").stdout.trim();
+  assert.equal(props, "-Dplab.workerCpus=1,2,3,4", "worker CPUs are a deterministic prefix of the validated set");
+  const threads = confCall("cas-contention", "lab_threads cas-t8-fixed").stdout.trim();
+  assert.equal(threads, "8");
+  assert.equal(confCall("cas-contention", "lab_threads single-writer").stdout.trim(), "1");
+});
+
+// --- rejected runs stay diagnostic-only --------------------------------------------
+
+test("rejected runs: the importer refuses a run stamped rejected", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ev-rejected-"));
+  try {
+    writeFileSync(join(dir, "evidence-manifest.json"), JSON.stringify({ labId: "false-sharing", runId: "x", variants: { shared: {} } }));
+    writeFileSync(join(dir, "environment.json"), JSON.stringify({ capturedAt: "2026-07-15T00:00:00Z" }));
+    writeFileSync(join(dir, "benchmark-profile.json"), JSON.stringify({ placement: { cpus: "2,4" } }));
+    writeFileSync(join(dir, "correctness.json"), JSON.stringify({ status: "passed" }));
+    writeFileSync(join(dir, "run-status.json"), JSON.stringify({
+      runStatus: "rejected", publicationEligible: false, canonicalEvidenceEligible: false,
+      rejectionReason: "worker-placement-or-migration-policy",
+    }));
+    const r = (() => {
+      try {
+        const stdout = execFileSync("node", [join(ROOT, "scripts", "performance-lab", "import-linux-evidence.mjs"), dir], {
+          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+        });
+        return { status: 0, stdout, stderr: "" };
+      } catch (err) {
+        return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+      }
+    })();
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /rejected\/partial runs are diagnostic only/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("rejected runs: results/ and evidence archives are ignored by git", () => {
+  const ignored = execSync("git check-ignore results/false-sharing/some-run/jmh.json results/false-sharing-x-linux-evidence.tar.zst || true", { cwd: ROOT, encoding: "utf8" });
+  assert.match(ignored, /results\/false-sharing\/some-run\/jmh\.json/);
+  assert.match(ignored, /linux-evidence\.tar\.zst/);
+});
+
 // --- evidence-maturity invariants ------------------------------------------------
 
 test("capability: perf and jmh importers remain fixture-only until real-host artifacts pass review", () => {
@@ -642,8 +778,12 @@ test("policy: no lab page or manifest still carries a bare Measured status for M
     assert.match(md, /Awaiting native-Linux measurement/, `${lab}/benchmark.md missing the awaiting state`);
     const page = readFileSync(join(ROOT, "lab", lab, "index.html"), "utf8");
     assert.ok(!page.includes('disclosure-kind">Measured<'), `lab/${lab} page still renders a bare Measured badge`);
-    assert.match(page, /Illustrative development run/);
-    assert.match(page, /awaiting native-Linux measurement/i);
+    // Public pages no longer render Mac numeric tables at all — the
+    // internal benchmark.md retains them as development artifacts.
+    assert.ok(!page.includes("Apple M1 Max"), `lab/${lab} page still renders developer-workstation results`);
+    assert.match(page, /Awaiting native-Linux measurement/i);
+    assert.ok(!page.includes("github.com/krystianzybala/kzybala-pl"), `lab/${lab} links the private repository`);
+    assert.ok(!page.includes("site's repository"), `lab/${lab} still claims repository access`);
   }
 });
 

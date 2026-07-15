@@ -56,6 +56,13 @@
   </header>
 
   <section class="prose section">
+    <h2>Performance question and hypothesis</h2>
+    <p><strong>Question:</strong> can ownership partitioning remove synchronization from the hot path, one core at a time?</p>
+    <p><strong>Hypothesis:</strong> when each thread exclusively owns its partition of state, the hot path needs no lock and no atomic read-modify-write, so per-core throughput scales with core count where a shared worker pool's collapses — the costs don't vanish, they move to cross-core handoff and load imbalance.</p>
+    <p><strong>What would disprove it:</strong> if the partitioned design's aggregate throughput failed to scale versus the shared-pool baseline, or if its hot-path per-operation cost still carried contention signatures (e.g. false sharing between partitions), or if a perfectly balanced load showed the same win as a skewed one, the model's claims would be wrong.</p>
+  </section>
+
+  <section class="prose section">
     <h2>Learning objective</h2>
     <p>Explain thread-per-core as an ownership and execution model, contrast it against a shared worker pool, show how partitioned ownership eliminates lock contention but introduces cross-core handoff cost, demonstrate that partitioning alone does not fix load imbalance, explain the affinity/scheduler and NUMA caveats that determine whether the model's assumptions hold on real hardware, and show bounded-queue backpressure as the honest response to overload.</p>
   </section>
@@ -199,7 +206,7 @@ public class ThreadPerCoreBenchmark {
         return state.counter.increment();
     }
 }</code></pre>
-      <p>The runnable Maven/JMH project (with correctness tests) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/thread-per-core/code/java" rel="noopener"><code>content/labs/thread-per-core/code/java/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
 
     <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
@@ -258,36 +265,17 @@ fn run_owned_partitions() {
     for h in handles { h.join().unwrap(); }
 }</code></pre>
       <p>Both functions spawn 4 real threads per sample and join them, so this comparison is apples-to-apples: the only difference is whether the counters are shared behind a <code>Mutex</code> or owned outright.</p>
-      <p>The runnable Cargo/Criterion project (with correctness tests) is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/thread-per-core/code/rust" rel="noopener"><code>content/labs/thread-per-core/code/rust/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
   </section>
 
   <section class="prose section">
     <h2>Benchmark methodology</h2>
-    <div class="disclosure measured">
-      <p class="disclosure-kind">Illustrative development run</p>
-      <p>These preliminary values were captured on an Apple M1 Max developer workstation under uncontrolled desktop conditions. They are retained only to illustrate the likely shape of the effect and are not publication-grade performance evidence. Canonical results for this laboratory are collected separately on the dedicated native-Linux benchmark host with explicit CPU placement, environment capture, correctness gates, independent JVM forks, and profiler evidence where required. <strong>Canonical results: awaiting native-Linux measurement</strong> — the implementation and correctness gates exist, but no canonical host evidence has been imported yet, so no verified performance conclusion is available and the development numbers below are not a substitute.</p>
-      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations of 1 second each, <code>Mode.Throughput</code>, 4 threads. Rust: default Criterion sampling (100 samples), each sample spawning 4 real threads doing 20,000 increments each, then joining. Single developer machine with ordinary desktop load running alongside — not a dedicated, thermally-stable rig, no CPU affinity pinning.</p>
+    <p>Partitioned per-thread ownership is measured against a shared-pool baseline with JMH and a matching Rust harness; a correctness gate runs before any timing is trusted.</p>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Awaiting native-Linux measurement</p>
+      <p>The benchmark implementation and correctness checks exist, but no canonical native-Linux evidence has been imported and reviewed. No publication-grade performance numbers are shown yet. Canonical results for this laboratory are collected on the dedicated native-Linux benchmark host with explicit physical-CPU placement, full environment capture, correctness gates, independent JVM forks, and profiler evidence where required.</p>
     </div>
-    <p>Method: 4 threads, two architectures, otherwise identical work. <strong>Shared pool:</strong> all 4 threads increment a randomly chosen partition (0–3) in one array guarded by a single lock. <strong>Owned partitions:</strong> each thread increments only its own, unshared counter.</p>
-    <p><strong>Java (JMH, ops/ms, 4 threads, higher is better):</strong></p>
-    <table>
-      <thead><tr><th>Benchmark</th><th>Throughput</th><th>99.9% CI</th></tr></thead>
-      <tbody>
-        <tr><td><code>sharedPoolIncrement</code></td><td>48,783.530 ops/ms</td><td>±3,934.041</td></tr>
-        <tr><td><code>ownedPartitionIncrement</code></td><td>1,861,211.873 ops/ms</td><td>±9,726.822</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Rust (Criterion, 80,000 increments total per sample):</strong></p>
-    <table>
-      <thead><tr><th>Benchmark</th><th>Median time</th><th>Derived ops/ms</th></tr></thead>
-      <tbody>
-        <tr><td><code>shared_pool_increment_4_threads</code></td><td>2.3671 ms</td><td>≈33,798</td></tr>
-        <tr><td><code>owned_partition_increment_4_threads</code></td><td>65.375 µs</td><td>≈1,223,982</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Owned partitions outperform the shared, lock-guarded pool by roughly 38× in Java and roughly 36× in Rust</strong> — consistent in <em>magnitude</em> across both languages, even though absolute baselines differ (see the SPSC Ring Buffer lab's benchmark notes on why absolute numbers don't transfer across language/JIT boundaries). This is the concrete cost of one shared lock serializing 4 threads' worth of work down to roughly one thread's worth of throughput. This benchmark isolates the lock/no-lock difference in the purest possible case — a trivial increment with no real request-processing, handoff, or queueing on either side — so treat it as evidence of the mechanism's raw cost, not a deployable system's expected end-to-end speedup.</p>
-    <p>Re-run the projects in <code>code/</code> on your own hardware before treating any of this as authoritative for a design decision.</p>
   </section>
 
   <section class="prose section">
@@ -326,7 +314,7 @@ fn run_owned_partitions() {
 
   <section class="prose section">
     <h2>Investigation task</h2>
-    <p>Using the Java or Rust project in <code>code/</code>:</p>
+    <p>Using the lab's Java or Rust implementation :</p>
     <ol>
       <li>Run the benchmark and record the shared-pool vs. owned-partition throughput ratio on your own hardware.</li>
       <li>Vary the thread/partition count (2, 4, 8) and re-run — observe how the shared pool's throughput changes (or doesn't) as thread count grows, versus the owned-partition case.</li>
@@ -360,6 +348,16 @@ fn run_owned_partitions() {
   <section class="section">
     <h2>Quiz</h2>
     <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Exercises</h2>
+    <p>One diagnosis exercise and one implementation exercise, each with success criteria. Hints and solutions are collapsed — attempt the exercise first. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
+    <h3>1. Diagnosis — partitioned, and still not scaling</h3>
+    <p>Per-thread partitions store 3 × 8-byte stat slots contiguously in one big array; 8 threads barely reach 2× single-thread throughput with no locks anywhere and all cores at ~100%. Explain why per-thread <em>slots</em> are not per-thread <em>cache lines</em>, quantify the collision for this layout, and give two independent fixes preserving exact counts. <strong>Success criteria:</strong> you name the mechanism, count partitions per 64-byte line, and your fixes keep the final counts identical.</p>
+    <details><summary>Solution sketch</summary><p>24 bytes per partition means ~2.7 partitions — three different owner threads — share each 64-byte line: textbook false sharing, invisible to lock profiling and utilization graphs. Fixes: pad/align each partition's slots to a line boundary, or move hot slots into per-thread blocks aggregated only on read. Ownership must be partitioned in the <em>layout</em>, not just the index space.</p></details>
+    <h3>2. Implementation — make imbalance visible, then bound it</h3>
+    <p>Add a skewed-load scenario (80% of operations to one partition) and the simplest mitigation that doesn't reintroduce sharing: bounded queues with explicit backpressure between ingress and partition owners. <strong>Success criteria (measure, don't assert):</strong> nothing is silently lost (processed = offered − explicitly rejected); the skewed run shows the hot owner saturating while others idle (record the per-owner spread); queue depth is provably capped under overload; and you can state what partitioning cannot fix — one partition's ceiling is one core.</p>
   </section>
 
   <section class="prose section">

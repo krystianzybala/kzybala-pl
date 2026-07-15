@@ -202,6 +202,16 @@ decision.
 
 ## Raw data and reproduction
 
+```sh
+# Correctness gate — run before trusting any timing:
+node scripts/benchmark-platform/run-correctness-gate.js cache-hierarchy
+
+# Smoke run (wiring check only — zero statistical value):
+cd content/labs/cache-hierarchy/code/java && mvn -q -DskipTests package && \
+  java -jar target/benchmarks.jar -f 1 -wi 0 -i 1 -r 200ms -w 200ms
+cd content/labs/cache-hierarchy/code/rust && cargo bench -- --quick --noplot
+```
+
 The runnable benchmark projects are committed at `code/java/` (Maven + JMH)
 and `code/rust/` (Cargo + Criterion) next to this file. Each has a
 `README.md` with exact build/run commands. JMH and Criterion both emit

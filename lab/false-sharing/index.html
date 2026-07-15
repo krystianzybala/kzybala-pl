@@ -244,7 +244,7 @@ public class FalseSharingBenchmark {
     public void writeB_padded() { padded.counterB++; }
 }</code></pre>
       <p><code>@Group</code> with <code>Scope.Group</code> is what makes JMH run <code>writeA_*</code> and <code>writeB_*</code> concurrently on separate threads within the same group — without it the benchmark never reproduces the cross-core invalidation traffic being measured. JMH assigns one thread per <code>@Benchmark</code> method in a group by default.</p>
-      <p><strong>A fourth variant — per-thread shards + reduction (<code>ShardedCounters</code>)</strong> — removes the problem instead of padding around it: every thread owns one 64-byte-strided shard in a <code>long[]</code> and nobody else ever writes it; readers reduce over the shards. Because each shard has exactly one writer, the owner needs no atomic read-modify-write at all — a plain read plus a VarHandle <code>setRelease</code> write suffices, paired with <code>getAcquire</code> on the reducing side. That weaker, cheaper contract is only correct because the single-writer invariant holds, and the correctness suite asserts exactly that invariant's observable result against the shared fixture. The runnable Maven/JMH project, including this variant and its JUnit correctness gate, is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/false-sharing/code/java" rel="noopener"><code>content/labs/false-sharing/code/java/</code></a> in this site's repository.</p>
+      <p><strong>A fourth variant — per-thread shards + reduction (<code>ShardedCounters</code>)</strong> — removes the problem instead of padding around it: every thread owns one 64-byte-strided shard in a <code>long[]</code> and nobody else ever writes it; readers reduce over the shards. Because each shard has exactly one writer, the owner needs no atomic read-modify-write at all — a plain read plus a VarHandle <code>setRelease</code> write suffices, paired with <code>getAcquire</code> on the reducing side. That weaker, cheaper contract is only correct because the single-writer invariant holds, and the correctness suite asserts exactly that invariant's observable result against the shared fixture. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
 
     <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
@@ -318,64 +318,17 @@ fn bench_shared(c: &amp;mut Criterion) {
 
 criterion_group!(benches, bench_shared);
 criterion_main!(benches);</code></pre>
-      <p><strong>The per-thread shard variant (<code>ShardedCounters</code>)</strong> mirrors the Java sharding contract exactly: each shard is its own <code>CacheLineAligned&lt;AtomicU64&gt;</code> slot, the owner does a plain load plus a <code>Release</code> store (no RMW — there is no write-write race on a single-writer shard), and the reducer loads with <code>Acquire</code>. On this lab's ARM64 host that release store turned out to cost <em>more</em> per operation than an uncontended <code>fetch_add(Relaxed)</code> on a padded line — see the measured table and interpretation below for why that is an ordering-strength effect, not a layout one. The runnable Cargo/Criterion project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/false-sharing/code/rust" rel="noopener"><code>content/labs/false-sharing/code/rust/</code></a> in this site's repository — it includes the shared, padded and sharded benchmark functions and the fixture-matched <code>#[test]</code> correctness gate in full.</p>
+      <p><strong>The per-thread shard variant (<code>ShardedCounters</code>)</strong> mirrors the Java sharding contract exactly: each shard is its own <code>CacheLineAligned&lt;AtomicU64&gt;</code> slot, the owner does a plain load plus a <code>Release</code> store (no RMW — there is no write-write race on a single-writer shard), and the reducer loads with <code>Acquire</code>. On this lab's ARM64 host that release store turned out to cost <em>more</em> per operation than an uncontended <code>fetch_add(Relaxed)</code> on a padded line — see the measured table and interpretation below for why that is an ordering-strength effect, not a layout one. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
   </section>
 
   <section class="prose section">
     <h2>Benchmark methodology</h2>
-    <div class="disclosure measured">
-      <p class="disclosure-kind">Illustrative development run</p>
-      <p>These preliminary values were captured on an Apple M1 Max developer workstation under uncontrolled desktop conditions. They are retained only to illustrate the likely shape of the effect and are not publication-grade performance evidence. Canonical results for this laboratory are collected separately on the dedicated native-Linux benchmark host with explicit CPU placement, environment capture, correctness gates, independent JVM forks, and profiler evidence where required. <strong>Canonical results: awaiting native-Linux measurement</strong> — the implementation and correctness gates exist, but no canonical host evidence has been imported yet, so no verified performance conclusion is available and the development numbers below are not a substitute.</p>
-      <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores, no SMT, single socket), macOS, arm64. Rust: Criterion 0.5, rustc 1.88.0, same machine, pinned release profile. Profile: the repository's <code>full</code> profile (JMH: 2 forks, 3×1&nbsp;s warmup + 5×1&nbsp;s measurement; Criterion: 3&nbsp;s warm-up, 5&nbsp;s measurement, 100 samples). Single developer machine, not a dedicated thermally-stable rig — treat absolute numbers as illustrative of the effect's <em>shape</em>, not a portable performance claim. Raw harness output, environment metadata and exact commands are preserved in run artifact <code>results/false-sharing/99a8cb189d18d569/</code> and imported through the canonical result schema — no number below was typed from memory.</p>
+    <p>The shared and padded layouts are measured in separate JVM invocations with JMH (independent forks, one writer per counter, each writer pinned to its own physical core with verified placement), field layouts are verified with JOL rather than assumed, and hardware-counter evidence (perf stat, perf c2c) is collected per variant; a correctness gate runs before any timing is trusted.</p>
+    <div class="disclosure conceptual">
+      <p class="disclosure-kind">Awaiting native-Linux measurement</p>
+      <p>The benchmark implementation and correctness checks exist, but no canonical native-Linux evidence has been imported and reviewed. No publication-grade performance numbers are shown yet. Canonical results for this laboratory are collected on the dedicated native-Linux benchmark host with explicit physical-CPU placement, full environment capture, correctness gates, independent JVM forks, and profiler evidence where required.</p>
     </div>
-    <p>Method: two threads, each incrementing its own dedicated counter in a tight loop, for the shared, padded, <code>@Contended</code> (Java only) and per-thread-shard layouts above. JMH <code>@Group</code>/<code>Scope.Group</code> (Java) and two joined <code>std::thread::spawn</code> handles (Rust) ensure both counters are written concurrently from separate OS threads — a single-threaded run of the same code shows no difference between layouts and is not a valid reproduction (see the investigation task below, step 3). Thread placement in this development run is OS-scheduled; the lab's pinned-placement scenarios (two validated physical cores on one socket/NUMA node, and the explicit cross-socket scenario) are collected by the native-Linux evidence runner, <code>scripts/performance-lab/run-linux-evidence.sh</code>, and are <strong>awaiting-native-linux-measurement</strong> until its artifacts are imported.</p>
-    <p><strong>Semantic equivalence:</strong> both languages assert the same correctness fixtures (<code>code/fixtures/false-sharing-fixtures.json</code>) before any timing is trusted. One intentional difference is disclosed: Java's shared/padded/contended variants use <code>volatile</code> (sequentially-consistent) increments while Rust's shared/padded use <code>fetch_add(Relaxed)</code>; only the sharded variant uses an identical release-write/acquire-read protocol in both languages. Because the ordering contracts differ, Java-vs-Rust absolute numbers here are a design-trade-off illustration, <em>not</em> a language speed comparison — the valid comparisons are within a language, across layouts.</p>
-    <p><strong>Java (JMH, ops/ms, higher is better, 99.9% CI) — full profile, run <code>99a8cb189d18d569</code>:</strong></p>
-    <table>
-      <thead><tr><th>Layout</th><th>Throughput</th><th>99.9% CI</th></tr></thead>
-      <tbody>
-        <tr><td>Shared counters</td><td>69,735</td><td>±2,257</td></tr>
-        <tr><td>Padded counters (manual)</td><td>296,566</td><td>±51,379</td></tr>
-        <tr><td>@Contended counters</td><td>328,851</td><td>±506</td></tr>
-        <tr><td>Per-thread shards + reduction</td><td>871,538</td><td>±107,683</td></tr>
-      </tbody>
-    </table>
-    <figure>
-      <svg viewBox="0 0 640 190" role="img" aria-labelledby="fs-tput-title fs-tput-desc" style="max-width:100%;height:auto">
-        <title id="fs-tput-title">Java throughput by layout, measured run 99a8cb189d18d569</title>
-        <desc id="fs-tput-desc">Horizontal bar chart. Shared counters 69,735 ops/ms; padded counters 296,566 ops/ms; @Contended counters 328,851 ops/ms; per-thread shards 871,538 ops/ms. The preceding table carries the same data with confidence intervals.</desc>
-        <g font-size="13" fill="currentColor">
-          <text x="0" y="28">Shared</text>
-          <text x="0" y="70">Padded</text>
-          <text x="0" y="112">@Contended</text>
-          <text x="0" y="154">Sharded</text>
-        </g>
-        <g fill="var(--color-accent, #4a7d9f)">
-          <rect x="110" y="14" width="40" height="20" rx="2"></rect>
-          <rect x="110" y="56" width="170" height="20" rx="2"></rect>
-          <rect x="110" y="98" width="189" height="20" rx="2"></rect>
-          <rect x="110" y="140" width="500" height="20" rx="2"></rect>
-        </g>
-        <g font-size="12" fill="currentColor">
-          <text x="156" y="29">69,735 ops/ms</text>
-          <text x="286" y="71">296,566</text>
-          <text x="305" y="113">328,851</text>
-          <text x="475" y="155" fill="#fff">871,538</text>
-        </g>
-      </svg>
-      <figcaption>Java throughput by layout (higher is better) — same data as the table above, one host, one run set. Bar lengths are proportional to the measured ops/ms. A true throughput-vs-core-count scaling curve requires pinned physical-core sweeps — that evidence is awaiting the native-Linux measurement workflow rather than being approximated here.</figcaption>
-    </figure>
-    <p><strong>Rust (Criterion, time per 100,000-increment batch, lower is better, median with 95% CI):</strong></p>
-    <table>
-      <thead><tr><th>Layout</th><th>Median</th><th>95% CI</th></tr></thead>
-      <tbody>
-        <tr><td>Adjacent atomics (shared line)</td><td>975.1 µs</td><td>[959.0 µs, 1,003.9 µs]</td></tr>
-        <tr><td>align(64) counters (padded)</td><td>261.0 µs</td><td>[260.5 µs, 262.2 µs]</td></tr>
-        <tr><td>Per-thread shards (release store)</td><td>774.9 µs</td><td>[739.1 µs, 848.4 µs]</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Observation:</strong> separating the counters onto different lines improved Java throughput ~4.3× and cut Rust batch time ~3.7×; Java sharding was fastest of all Java variants (~2.9× over padding). <strong>Rust sharding was slower than Rust padding</strong> (775 µs vs 261 µs) while still beating the shared layout. <strong>Interpretation:</strong> the shared-vs-padded gap, with ordering held constant within each language, is the coherence-traffic mechanism this lab teaches; the Rust sharded slowdown is consistent with an ARM64 release store (<code>stlr</code>) costing more per operation than an uncontended relaxed <code>LDADD</code> — layout decides whether cores fight over a line, ordering strength sets the per-operation floor once they don't. <strong>Limitation:</strong> one uncontrolled development host, OS-scheduled placement, hardware-counter evidence still awaiting its native-Linux run — and the sharded-vs-padded Rust ranking may well invert on x86-64, a prediction the Linux evidence workflow can falsify. These ratios — never the absolute numbers — are the part worth checking on your own machine; the runnable projects (<code>content/labs/false-sharing/code/java/</code>, <code>content/labs/false-sharing/code/rust/</code>) emit raw per-iteration samples (JMH <code>-rf json</code>; Criterion's <code>target/criterion/**</code>). Replace these tables with your own environment's numbers before treating any of it as authoritative for a design decision.</p>
   </section>
 
   <section class="prose section">
@@ -430,7 +383,7 @@ criterion_main!(benches);</code></pre>
 
   <section class="prose section">
     <h2>Investigation task</h2>
-    <p>Using the Java or Rust project in <code>code/</code>, and a profiler or hardware counter tool available to you:</p>
+    <p>Using the lab's Java or Rust implementation and a profiler or hardware counter tool available to you:</p>
     <ol>
       <li>Run the shared-counters benchmark and the padded-counters benchmark and record throughput for both.</li>
       <li>Look for a cache-miss or coherence-event counter (e.g. <code>perf stat -e cache-misses</code>, or <code>perf c2c</code> on Linux for cache-to-cache transfer detection) and compare it between the two runs.</li>
@@ -441,7 +394,7 @@ criterion_main!(benches);</code></pre>
 
   <section class="prose section">
     <h2>Exercises</h2>
-    <p>Three exercises, one per skill this lab teaches: diagnosing the mechanism, fixing it with code, and reading the hardware's own evidence. Hints and solutions are collapsed — attempt each before opening them, and verify against the stated success criteria. The full exercise text, including the complete solution walkthroughs, lives in <a href="https://github.com/krystianzybala/kzybala-pl/blob/main/content/labs/false-sharing/exercises.md" rel="noopener"><code>content/labs/false-sharing/exercises.md</code></a>.</p>
+    <p>Three exercises, one per skill this lab teaches: diagnosing the mechanism, fixing it with code, and reading the hardware's own evidence. Hints and solutions are collapsed — attempt each before opening them, and verify against the stated success criteria. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
 
     <h3>1. Diagnosis — a deliberately flawed benchmark</h3>
     <p>A colleague "reproduces" this lab with <code>@State(Scope.Thread)</code>, two plain (ungrouped) <code>@Benchmark</code> methods over non-<code>volatile</code> fields, runs <code>-t 2</code>, measures no difference between padded and unpadded — and concludes false sharing is a myth. Identify every reason this benchmark cannot observe false sharing, regardless of padding (there are at least three independent flaws). <strong>Success criteria:</strong> you can name each flaw, explain why it hides the effect (which line is or isn't shared, which threads write it), and state the minimal fix.</p>

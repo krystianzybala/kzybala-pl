@@ -10,12 +10,17 @@ pub struct CasCounter {
 
 impl CasCounter {
     pub fn new() -> Self {
-        Self { value: AtomicU64::new(0) }
+        Self {
+            value: AtomicU64::new(0),
+        }
     }
 
     /// `fetch_update` already implements the retry loop internally.
     pub fn increment_via_builtin(&self) -> u64 {
-        self.value.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| Some(v + 1)).unwrap() + 1
+        self.value
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| Some(v + 1))
+            .unwrap()
+            + 1
     }
 
     /// The manual form of exactly what [`increment_via_builtin`](Self::increment_via_builtin) does.
@@ -23,7 +28,11 @@ impl CasCounter {
         loop {
             let old = self.value.load(Ordering::SeqCst);
             let updated = old + 1;
-            if self.value.compare_exchange(old, updated, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            if self
+                .value
+                .compare_exchange(old, updated, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 return updated;
             }
             // else: someone else moved it first — retry
@@ -81,7 +90,11 @@ mod tests {
         let handles: Vec<_> = (0..4)
             .map(|_| {
                 let c = Arc::clone(&counter);
-                thread::spawn(move || { for _ in 0..iterations { c.increment_manually(); } })
+                thread::spawn(move || {
+                    for _ in 0..iterations {
+                        c.increment_manually();
+                    }
+                })
             })
             .collect();
         for h in handles {

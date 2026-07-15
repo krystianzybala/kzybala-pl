@@ -112,3 +112,34 @@ announces the change.
   container), optional `[data-lab-filter="topic|difficulty|status"]` inputs,
   and optionally `[data-lab-registry-empty]` (shown when a filter matches
   nothing).
+
+## Unified content contract (plab-011-unified-lab-framework)
+
+Enforced for every lab by `scripts/validate-labs.js` (a new lab must ship
+these from day one):
+
+- `theory.md` opens with `## Performance question and hypothesis` — the
+  question, a falsifiable hypothesis, and what would disprove it, before
+  any result is shown.
+- `exercises.md` exists with at least one diagnosis exercise and one
+  implementation exercise, each stating success criteria, hints/solutions
+  collapsed in `<details>` blocks separate from the statement.
+- When `lab.json#/benchmark` is true: `benchmark.md` carries a
+  `## Raw data and reproduction` section and a fenced block of runnable
+  reproduction commands.
+
+## Per-lab verification checklist and maturity badge
+
+Result maturity is **derived, never stored** (`scripts/benchmark-platform/
+results/evidence-maturity.js`); rendering surfaces call `deriveMaturity`/
+`badgeFor` per record. The states a lab's evidence moves through, and what
+each requires, are defined in `docs/measurement-environments.md`
+(implemented → awaiting-native-linux-measurement → measured → reproduced →
+reviewed → verified → published). The per-lab verification checklist before
+any "verified" claim is the review checklist in
+`docs/linux-evidence-runner.md`: intact hashes, physical-host environment,
+passing correctness gate, worker placement within policy, fork-coherent
+JMH distributions, repetition-consistent counters, and profiler evidence
+supporting the mechanism claim. Developer-workstation results are labeled
+"Illustrative development run" in internal artifacts and never render on
+canonical public lab pages (`scripts/check-public-content.js`).

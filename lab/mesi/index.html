@@ -56,6 +56,13 @@
   </header>
 
   <section class="prose section">
+    <h2>Performance question and hypothesis</h2>
+    <p><strong>Question:</strong> how do CPU caches stay coherent across cores, and what does <code>perf c2c</code> actually reveal about it?</p>
+    <p><strong>Hypothesis:</strong> a write requires exclusive ownership of its cache line, so concurrently write-sharing a line forces invalidations and cache-to-cache transfers — and those transfers, not the write instructions themselves, dominate the cost of cross-core write sharing. <code>perf c2c</code>'s HITM report is the direct hardware signature of exactly those transfers.</p>
+    <p><strong>What would disprove it:</strong> if writes to a line another core holds cost the same as writes to a line only this core caches, or if a workload known to write-share a line produced no HITM concentration on that line in <code>perf c2c</code>, the ownership-cost model taught here would be wrong. This lab is conceptual-first and deliberately publishes no benchmark numbers; its claims are calibrated against the false-sharing lab's measurements and evidence workflow.</p>
+  </section>
+
+  <section class="prose section">
     <h2>Learning objective</h2>
     <p>Explain why a write to a cache line requires exclusive ownership of that line, distinguish cache coherence from memory consistency and memory ordering, and follow a line's state transitions across two cores through read misses, write misses, read-for-ownership, invalidation, cache-to-cache transfer, write-back, and eviction — while clearly separating this conceptual MESI teaching model from what any specific real processor implements.</p>
   </section>
@@ -216,7 +223,7 @@
 }</code></pre>
       <p><strong>Not synchronized, and correct anyway</strong> — because only one thread ever touches <code>total</code>. This is the software-level analogue of the model's Exclusive/Modified single-owner path: no other core contends for the line, so there is no invalidation traffic to pay for. Contrast with <code>SharedWriterExample</code>, where two threads writing the same field is what produces cross-core invalidation.</p>
       <p><strong>These examples do not, and cannot, directly control which MESI state a line is in.</strong> The JVM and JIT give no API for observing or forcing coherence states — <code>perf c2c</code> (see "Diagnostic methodology" below) is how you observe the resulting traffic on Linux, not the source code.</p>
-      <p>The runnable Maven project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/mesi/code/java" rel="noopener"><code>content/labs/mesi/code/java/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
 
     <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" hidden>
@@ -254,7 +261,7 @@ impl SingleOwner {
     pub fn total(&amp;self) -&gt; u64 { self.total }
 }</code></pre>
       <p>As with the Java example, neither struct here lets you directly observe or force a MESI state from source code — <code>perf c2c</code> (Linux) is the tool for observing the resulting cross-core traffic, described below.</p>
-      <p>The runnable Cargo project is at <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/mesi/code/rust" rel="noopener"><code>content/labs/mesi/code/rust/</code></a> in this site's repository.</p>
+      <p> The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
     </div>
   </section>
 
@@ -313,7 +320,7 @@ perf c2c report --stdio</code></pre>
 
   <section class="prose section">
     <h2>Investigation task</h2>
-    <p>Using the Java or Rust project in <code>code/</code>, and a Linux machine with <code>perf</code> available:</p>
+    <p>Using the lab's Java or Rust implementation and a Linux machine with <code>perf</code> available:</p>
     <ol>
       <li>Run two threads concurrently calling the shared-writer example's increment method on the same instance, and separately run the single-owner example on one thread only.</li>
       <li>Record <code>perf c2c record</code>/<code>perf c2c report</code> output for the shared-writer run and look for HITM (cache-to-cache, dirty-line) events on the counter's address.</li>
@@ -347,6 +354,16 @@ perf c2c report --stdio</code></pre>
   <section class="section">
     <h2>Quiz</h2>
     <div data-lab-quiz id="quiz"></div>
+  </section>
+
+  <section class="prose section">
+    <h2>Exercises</h2>
+    <p>One diagnosis exercise and one implementation exercise, each with success criteria. Hints and solutions are collapsed — attempt the exercise first. The executable benchmark and correctness suite are used internally to produce the evidence shown by this laboratory.</p>
+    <h3>1. Diagnosis — trace the states or find the lie</h3>
+    <p>In a narrated two-core MESI sequence, one step claims: "core 0's copy becomes Modified; core 1's copy stays Shared — reads don't need to change, only writes do." Exactly one transition violates a MESI invariant. Find it, state the invariant, and give the corrected sequence. <strong>Success criteria:</strong> you name the Modified-is-exclusive invariant, your correction includes the invalidation the write must broadcast, and you can say what the other core's next read actually costs (a miss served by a cache-to-cache transfer — the HITM <code>perf c2c</code> counts).</p>
+    <details><summary>Solution sketch</summary><p>Modified may coexist only with Invalid copies elsewhere — never Shared. The write must first broadcast an invalidation (RFO/upgrade); the other core's next read then misses and is served by a cache-to-cache transfer from the Modified copy, downgrading it — that transfer is the cost the "no bus traffic" claim hid.</p></details>
+    <h3>2. Implementation — make the invalidation visible</h3>
+    <p>Extend the companion code with a <code>ReadMostlyExample</code>: one writer at a fixed low rate, N readers in a tight loop. Predict in writing, then measure, where it lands between the single-owner and write-shared variants. <strong>Success criteria:</strong> readers always observe genuinely written values; your committed-in-advance prediction reasons from Shared-copy reads being local and each write invalidating all copies; your measured <em>ordering</em> matches; and hardware-counter confirmation is explicitly deferred to the dedicated native-Linux host workflow rather than guessed.</p>
   </section>
 
   <section class="prose section">

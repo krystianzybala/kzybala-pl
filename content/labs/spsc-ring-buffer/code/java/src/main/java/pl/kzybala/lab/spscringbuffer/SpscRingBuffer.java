@@ -37,6 +37,12 @@ public final class SpscRingBuffer {
 
     private final long[] slots;
     private final int mask;
+    // Evidence scenario knob: when false, every produce/consume acquires the
+    // opposite cursor instead of using the owner-local cached view — the
+    // "uncached cursor reads" variant the benchmark matrix compares against
+    // the cached baseline. Final and constant per instance, so the branch is
+    // perfectly predicted and folds after JIT compilation.
+    private final boolean cachedCursors;
 
     // Published cursor: producer releases after writing a payload, consumer
     // acquires before reading one. Accessed only through HEAD (VarHandle).
@@ -56,11 +62,16 @@ public final class SpscRingBuffer {
     private long readIndex = 0;
 
     public SpscRingBuffer(int capacity) {
+        this(capacity, true);
+    }
+
+    public SpscRingBuffer(int capacity, boolean cachedCursors) {
         if (Integer.bitCount(capacity) != 1) {
             throw new IllegalArgumentException("capacity must be a power of two, was " + capacity);
         }
         this.slots = new long[capacity];
         this.mask = capacity - 1;
+        this.cachedCursors = cachedCursors;
     }
 
     /**
@@ -70,7 +81,7 @@ public final class SpscRingBuffer {
      */
     public boolean tryProduce(long value) {
         int capacity = slots.length;
-        if (reserveIndex - cachedTail == capacity) {
+        if (!cachedCursors || reserveIndex - cachedTail == capacity) {
             cachedTail = (long) TAIL.getAcquire(this);
             if (reserveIndex - cachedTail == capacity) {
                 return false; // genuinely full
@@ -88,7 +99,7 @@ public final class SpscRingBuffer {
      * unpublished slot content. {@code out} avoids boxing a return value.
      */
     public boolean tryConsume(long[] out) {
-        if (readIndex == cachedHead) {
+        if (!cachedCursors || readIndex == cachedHead) {
             cachedHead = (long) HEAD.getAcquire(this);
             if (readIndex == cachedHead) {
                 return false; // genuinely empty
@@ -98,5 +109,30 @@ public final class SpscRingBuffer {
         readIndex++;
         TAIL.setRelease(this, readIndex); // consumption acknowledgement
         return true;
+    }
+
+    /**
+     * Consumer-only: drains up to {@code max} available items into
+     * {@code out} and publishes ONE tail update for the whole batch —
+     * the batched-acknowledgement variant of the benchmark matrix. Returns
+     * the number of items consumed (0 when empty). Same ownership and
+     * release/acquire discipline as {@link #tryConsume(long[])}; exactly
+     * one cursor read and at most one cursor publish per call, regardless
+     * of batch size.
+     */
+    public int tryConsumeBatch(long[] out, int max) {
+        if (!cachedCursors || readIndex == cachedHead) {
+            cachedHead = (long) HEAD.getAcquire(this);
+            if (readIndex == cachedHead) {
+                return 0; // genuinely empty
+            }
+        }
+        int available = (int) Math.min(cachedHead - readIndex, Math.min(max, out.length));
+        for (int i = 0; i < available; i++) {
+            out[i] = slots[(int) ((readIndex + i) & mask)];
+        }
+        readIndex += available;
+        TAIL.setRelease(this, readIndex); // one acknowledgement for the batch
+        return available;
     }
 }

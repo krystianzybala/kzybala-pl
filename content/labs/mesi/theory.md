@@ -1,5 +1,25 @@
 # Cache coherence and MESI — theory
 
+## Performance question and hypothesis
+
+**Question:** how do CPU caches stay coherent across cores, and what does
+`perf c2c` actually reveal about it?
+
+**Hypothesis:** a write requires exclusive ownership of its cache line, so
+concurrently write-sharing a line forces invalidations and cache-to-cache
+transfers — and those transfers, not the write instructions themselves,
+dominate the cost of cross-core write sharing. `perf c2c`'s HITM report is
+the direct hardware signature of exactly those transfers.
+
+**What would disprove it:** if writes to a line another core holds cost
+the same as writes to a line only this core caches (ownership transfer
+free), or if a workload known to write-share a line produced no HITM
+concentration on that line in `perf c2c` (the tool not measuring what
+this lab claims it measures), the ownership-cost model taught here would
+be wrong. This lab is conceptual-first: it deliberately publishes no
+benchmark numbers, and its claims are calibrated against the false-sharing
+lab's measurements and evidence workflow.
+
 ## Learning objective
 
 Explain why a write to a cache line requires exclusive ownership of that

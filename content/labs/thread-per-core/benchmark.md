@@ -79,6 +79,16 @@ mechanism's raw cost, not a deployable system's expected speedup.
 
 ## Raw data and reproduction
 
+```sh
+# Correctness gate — run before trusting any timing:
+node scripts/benchmark-platform/run-correctness-gate.js thread-per-core
+
+# Smoke run (wiring check only — zero statistical value):
+cd content/labs/thread-per-core/code/java && mvn -q -DskipTests package && \
+  java -jar target/benchmarks.jar -f 1 -wi 0 -i 1 -r 200ms -w 200ms
+cd content/labs/thread-per-core/code/rust && cargo bench -- --quick --noplot
+```
+
 The runnable projects are committed at `code/java/` (Maven + JMH) and
 `code/rust/` (Cargo + Criterion) next to this file. JMH emits per-iteration
 raw samples (`-rf json`); Criterion writes `target/criterion/**/new/raw.csv`

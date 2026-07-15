@@ -1,5 +1,26 @@
 # Memory ordering in Java and Rust — theory
 
+## Performance question and hypothesis
+
+**Question:** what can compiler and CPU reordering do to program order,
+and how do VarHandles and Rust atomics constrain it?
+
+**Hypothesis:** without an ordering constraint, two writes to different
+locations may become visible to another thread out of program order — and
+a release/acquire pair on the publishing flag restores exactly the edge a
+publication pattern needs, at lower cost than full sequential consistency
+on weakly-ordered hardware.
+
+**What would disprove it:** observing even one stale read through a
+correctly release/acquire-published pointer would falsify the model's
+central guarantee. The reverse is deliberately asymmetric: a
+plain/relaxed publication test that never happens to fail does **not**
+prove it correct — absence of an observed reordering is not evidence of
+ordering, which is itself one of this lab's core lessons. On the cost
+side: if release/acquire and sequentially-consistent operations compiled
+to identical instructions and identical cost on every tier of hardware,
+the "pay only for the ordering you need" guidance would be empty.
+
 ## Learning objective
 
 Explain why the order two threads observe each other's writes is not the

@@ -1,11 +1,55 @@
-# Native-Linux evidence runner (false-sharing lab)
+# Native-Linux evidence runner
 
 `scripts/performance-lab/run-linux-evidence.sh` is the only source of
-publication hardware-counter evidence for the false-sharing reference lab.
+publication measurements and hardware-counter evidence for the Performance
+Lab. One common runner, configured per lab by
+`scripts/performance-lab/labs/<lab-id>.conf` (currently: `false-sharing`,
+`spsc-ring-buffer`, `cas-contention`) — unsupported lab ids are rejected.
 The repository-wide environment classification and evidence-state policy
 this runner implements is `docs/measurement-environments.md` — native
 physical Linux (the dedicated benchmark host) is mandatory for publication
 evidence.
+
+## Worker affinity (blocking placement policy)
+
+Process-level `taskset -c A,B` confines the whole JVM but cannot decide
+which allowed CPU a specific benchmark worker runs on, and the process's
+aggregate `cpu-migrations` counter mixes benchmark workers with compiler/
+GC/service threads. Since the first real Precision 5810 run was rejected
+on exactly that conflation, placement is now enforced at the worker level:
+
+- each benchmark worker pins **itself** with `sched_setaffinity` (pid 0 =
+  calling thread) via the FFM API (`CpuAffinity`/`WorkerPin` in each lab's
+  Java project; the Rust harnesses use `libc::sched_setaffinity`), during
+  trial setup — never in a measured operation. Pinning failure aborts the
+  run; the observed CPU is verified after pinning and again at teardown,
+  and the kernel's own per-thread `se.nr_migrations` counter is sampled at
+  both points;
+- CPU assignment comes from immutable JVM properties the runner sets
+  (`-Dplab.cpuA/-Dplab.cpuB` for two-role labs, `-Dplab.workerCpus=<csv>`
+  for N contenders — worker *i* takes the i-th entry, a deterministic
+  prefix of the validated `--cpus` list);
+- every fork writes `worker-placement-<pid>-<role>.json`; the runner
+  merges them into `<variant>/worker-placement.json` and **rejects the
+  run** (`run-status.json: rejected`, diagnostic only, never imported) if
+  any worker was unpinned, off its intended CPU, migrated during the
+  trial, or shared a CPU with another worker of the same fork;
+- the aggregate process `cpu-migrations` (from `jmh-placement.csv`) is
+  retained as host/JVM-noise evidence in `placement-policy.json` with its
+  own bound (50/s of task-clock); it is blocking **only** when worker
+  placement is unavailable — auxiliary JVM-thread migrations are never
+  classified as worker migrations, and the counter is never discarded;
+- `taskset` remains as secondary containment only.
+
+JVM profile for evidence runs: `-Xms1g -Xmx1g -XX:+UseSerialGC
+-XX:ActiveProcessorCount=<pinned cpu count>
+--enable-native-access=ALL-UNNAMED`. SerialGC is chosen because the
+measured paths allocate nothing and it minimizes auxiliary GC worker
+threads (less process-level migration noise); heap safety is demonstrated
+by the correctness gate running under the same fixed heap, and the
+resolved `CICompilerCount`/`ActiveProcessorCount` are captured in
+toolchain.json — the GC was not changed to prettify results, and worker
+placement (not GC choice) is what gates publication.
 
 ## Editorial policy
 
@@ -29,14 +73,25 @@ evidence.
 ## Usage (on the dedicated Linux host)
 
 ```sh
-sudo ./scripts/performance-lab/run-linux-evidence.sh \
-  false-sharing \
-  --profile publication \
-  --cpus 2,4
+# preflight first on a new host (validates everything, measures nothing):
+sudo ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
+  --profile publication --cpus 2,4 --preflight-only
+
+# publication runs:
+sudo ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
+  --profile publication --cpus 2,4
+sudo ./scripts/performance-lab/run-linux-evidence.sh spsc-ring-buffer \
+  --profile publication --cpus 2,4
+sudo ./scripts/performance-lab/run-linux-evidence.sh cas-contention \
+  --profile publication --cpus 1,2,3,4,5,6,7,8
 ```
 
-`--cpus A,B` is required — publication runs never silently choose CPUs.
-The pair is validated against `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE`:
+`--cpus` is required — publication runs never silently choose CPUs. Pick
+logical CPU ids from `lscpu -e` (two distinct physical cores for the
+two-worker labs; CAS derives its 1/2/4/8-contender scenarios from however
+many validated CPUs you pass, and per-scenario subsets are deterministic
+prefixes recorded in benchmark-profile.json). Every pair in the set is
+validated against `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE`:
 
 - both CPUs must exist and be online,
 - they must be different logical CPUs,

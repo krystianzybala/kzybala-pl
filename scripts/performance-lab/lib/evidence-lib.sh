@@ -136,8 +136,9 @@ check_load() {
 # resolves once (and tests set directly):
 #   EV_JAR              path to benchmarks.jar
 #   EV_SELECTOR         JMH benchmark selector regexp
-#   EV_CPUS             "A,B" explicit CPU list
-#   EV_JVM_ARGS         resolved JVM args (heap, GC)
+#   EV_CPUS             explicit CPU list for this scenario ("A,B", or more)
+#   EV_JVM_ARGS         resolved JVM args (heap, GC, worker pin properties)
+#   EV_JMH_EXTRA        lab-config JMH parameter selection (e.g. "-p layout=shared")
 #   EV_THREADS EV_FORKS EV_WI EV_W EV_I EV_R    resolved profile values
 #   EV_PERF_EVENTS      comma-separated perf stat event list
 
@@ -150,7 +151,7 @@ build_taskset_prefix() {
 # overhead; used to enforce the migration policy on the timing run itself).
 build_jmh_evidence_command() {
   local variant="$1" outdir="$2"
-  echo "perf stat -x, -e cpu-migrations,context-switches,task-clock -o ${outdir}/jmh-placement.csv -- $(build_taskset_prefix) java ${EV_JVM_ARGS} -jar ${EV_JAR} '${EV_SELECTOR}' -p layout=${variant} -t ${EV_THREADS} -f ${EV_FORKS} -wi ${EV_WI} -w ${EV_W} -i ${EV_I} -r ${EV_R} -rf json -rff ${outdir}/jmh.json"
+  echo "perf stat -x, -e cpu-migrations,context-switches,task-clock -o ${outdir}/jmh-placement.csv -- $(build_taskset_prefix) java ${EV_JVM_ARGS} -jar ${EV_JAR} '${EV_SELECTOR}' ${EV_JMH_EXTRA} -t ${EV_THREADS} -f ${EV_FORKS} -wi ${EV_WI} -w ${EV_W} -i ${EV_I} -r ${EV_R} -rf json -rff ${outdir}/jmh.json"
 }
 
 # One perf stat counter repetition for one variant: single JMH fork inside,
@@ -165,12 +166,12 @@ build_perf_stat_command() {
     csv="${outdir}/perf-stat-r${rep}.csv"
     jmh_json="${outdir}/perf-stat-jmh-r${rep}.json"
   fi
-  echo "perf stat -x, -e ${EV_PERF_EVENTS} -o ${csv} -- $(build_taskset_prefix) java ${EV_JVM_ARGS} -jar ${EV_JAR} '${EV_SELECTOR}' -p layout=${variant} -t ${EV_THREADS} -f 1 -wi ${EV_WI} -w ${EV_W} -i ${EV_I} -r ${EV_R} -rf json -rff ${jmh_json}"
+  echo "perf stat -x, -e ${EV_PERF_EVENTS} -o ${csv} -- $(build_taskset_prefix) java ${EV_JVM_ARGS} -jar ${EV_JAR} '${EV_SELECTOR}' ${EV_JMH_EXTRA} -t ${EV_THREADS} -f 1 -wi ${EV_WI} -w ${EV_W} -i ${EV_I} -r ${EV_R} -rf json -rff ${jmh_json}"
 }
 
 build_c2c_record_command() {
   local variant="$1" outdir="$2"
-  echo "perf c2c record -o ${outdir}/perf-c2c.data -- $(build_taskset_prefix) java ${EV_JVM_ARGS} -jar ${EV_JAR} '${EV_SELECTOR}' -p layout=${variant} -t ${EV_THREADS} -f 1 -wi ${EV_WI} -w ${EV_W} -i ${EV_I} -r ${EV_R}"
+  echo "perf c2c record -o ${outdir}/perf-c2c.data -- $(build_taskset_prefix) java ${EV_JVM_ARGS} -jar ${EV_JAR} '${EV_SELECTOR}' ${EV_JMH_EXTRA} -t ${EV_THREADS} -f 1 -wi ${EV_WI} -w ${EV_W} -i ${EV_I} -r ${EV_R}"
 }
 
 build_c2c_report_command() {
@@ -205,6 +206,59 @@ check_migrations() {
     return 1
   fi
   echo "migrations=${migrations} taskClockMs=${task_clock_ms}"
+}
+
+# --- Worker placement ---------------------------------------------------------
+# merge_worker_placement <variant-dir>
+#
+# Merges the per-fork worker-placement-<pid>-<role>.json files the
+# benchmark's pin states wrote into <variant-dir>/worker-placement.json and
+# validates the BLOCKING worker policy: every worker pinned, observed on
+# its intended CPU at teardown, zero migrations during the trial, and no
+# two workers of one fork sharing a CPU. Prints a summary on success;
+# prints the violations and returns 1 on failure. Requires python3 (present
+# on any Ubuntu host this runner supports).
+merge_worker_placement() {
+  local vdir="$1"
+  python3 - "$vdir" <<'PYEOF'
+import glob, json, os, sys
+vdir = sys.argv[1]
+files = sorted(glob.glob(os.path.join(vdir, "worker-placement-*.json")))
+if not files:
+    print("worker-placement: no per-worker placement files found", file=sys.stderr)
+    sys.exit(1)
+entries, violations = [], []
+for path in files:
+    with open(path) as fh:
+        entry = json.load(fh)
+    entry["file"] = os.path.basename(path)
+    entries.append(entry)
+    name = f'{entry["file"]} ({entry.get("role")})'
+    if entry.get("pinned") is not True:
+        violations.append(f"{name}: not pinned")
+    if entry.get("observedCpuAtTeardown") != entry.get("intendedCpu"):
+        violations.append(f'{name}: intended CPU {entry.get("intendedCpu")} but at teardown on {entry.get("observedCpuAtTeardown")}')
+    if entry.get("migrationsDuringTrial") != 0:
+        violations.append(f'{name}: {entry.get("migrationsDuringTrial")} migration(s) during the measured trial')
+# same-fork workers must not share a CPU (pid prefix groups a fork)
+byfork = {}
+for e in entries:
+    pid = e["file"].split("-")[2]
+    byfork.setdefault(pid, []).append(e)
+for pid, group in byfork.items():
+    cpus = [e.get("intendedCpu") for e in group]
+    if len(set(cpus)) != len(cpus):
+        violations.append(f"fork {pid}: two workers assigned the same CPU ({cpus})")
+with open(os.path.join(vdir, "worker-placement.json"), "w") as fh:
+    json.dump({"workers": entries, "violations": violations, "policy": "blocking"}, fh, indent=2)
+    fh.write("\n")
+if violations:
+    print("worker-placement: BLOCKING violations:", file=sys.stderr)
+    for v in violations:
+        print(f"  - {v}", file=sys.stderr)
+    sys.exit(1)
+print(f"worker-placement: {len(entries)} worker record(s), all pinned, zero migrations")
+PYEOF
 }
 
 # --- Hashing ----------------------------------------------------------------

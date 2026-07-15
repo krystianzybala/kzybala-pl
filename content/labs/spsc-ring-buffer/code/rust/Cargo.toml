@@ -9,6 +9,10 @@ publish = false
 name = "spsc_ring_buffer_lab"
 path = "src/lib.rs"
 
+[dependencies]
+# Worker affinity for the native-Linux evidence harness (src/bin/spsc_evidence.rs).
+libc = "0.2"
+
 [dev-dependencies]
 criterion = "0.5"
 

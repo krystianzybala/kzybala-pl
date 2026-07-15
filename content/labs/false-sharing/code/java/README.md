@@ -47,4 +47,4 @@ java --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED \
 Add `-rf json -rff results.json` to get raw per-iteration samples instead of
 just the summary table.
 
-Requires JDK 21+. Uses JMH 1.37 (see `pom.xml`). `mvn` enforces this floor at build time (`maven-enforcer-plugin`, plab-002) — an older JDK fails fast with a clear error instead of a confusing compile failure.
+Requires JDK 22+ (the evidence benchmark pins workers via the FFM API, final since 22). Uses JMH 1.37 (see `pom.xml`). `mvn` enforces this floor at build time (`maven-enforcer-plugin`, plab-002) — an older JDK fails fast with a clear error instead of a confusing compile failure.

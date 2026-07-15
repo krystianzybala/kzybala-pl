@@ -36,9 +36,39 @@ const environment = readJson(join(RUN_DIR, "environment.json"));
 const profile = readJson(join(RUN_DIR, "benchmark-profile.json"));
 const correctness = readJson(join(RUN_DIR, "correctness.json"));
 
+// A rejected run is diagnostic only — it can never become canonical
+// evidence, enter regression history, or change public lab status.
+const statusPath = join(RUN_DIR, "run-status.json");
+const runStatus = existsSync(statusPath) ? readJson(statusPath) : null;
+if (!runStatus || runStatus.runStatus !== "collected" || runStatus.canonicalEvidenceEligible !== true) {
+  console.error(
+    `import-linux-evidence: run-status is "${runStatus?.runStatus ?? "missing"}"`
+      + (runStatus?.rejectionReason ? ` (${runStatus.rejectionReason})` : "")
+      + " — rejected/partial runs are diagnostic only and are never imported as canonical evidence");
+  process.exit(1);
+}
+
 if (correctness.status !== "passed") {
   console.error(`import-linux-evidence: correctness gate status is "${correctness.status}" — refusing to import measurements collected without a passing gate`);
   process.exit(1);
+}
+
+// Worker placement is the blocking placement evidence: every variant with
+// placement data must show zero violations; a variant without placement
+// data imports with an explicit warning (which alone blocks "verified").
+const placementWarnings = {};
+for (const variant of Object.keys(manifest.variants ?? {})) {
+  const placementPath = join(RUN_DIR, variant, "worker-placement.json");
+  if (!existsSync(placementPath)) {
+    placementWarnings[variant] = ["worker placement evidence unavailable — workers were not pinned for this run"];
+    continue;
+  }
+  const placement = readJson(placementPath);
+  if ((placement.violations ?? []).length > 0) {
+    console.error(`import-linux-evidence: ${variant}/worker-placement.json records blocking violations:\n  ${placement.violations.join("\n  ")}`);
+    process.exit(1);
+  }
+  placementWarnings[variant] = [];
 }
 
 // "native-controlled" is only claimed when the captured environment shows a
@@ -59,7 +89,10 @@ const commonMeta = {
   toolchainManifest: hashRef(join(RUN_DIR, "toolchain.json")),
   benchmarkProfile: hashRef(join(RUN_DIR, "benchmark-profile.json")),
   correctnessGate: hashRef(join(RUN_DIR, "correctness.json")),
-  semanticFixture: hashRef(join(REPO_ROOT, "content/labs/false-sharing/code/fixtures/false-sharing-fixtures.json")),
+  ...(existsSync(join(REPO_ROOT, "content/labs", manifest.labId, "code/fixtures"))
+    ? { semanticFixture: hashRef(join(REPO_ROOT, "content/labs", manifest.labId, "code/fixtures",
+        readdirSync(join(REPO_ROOT, "content/labs", manifest.labId, "code/fixtures"))[0])) }
+    : {}),
   evidence: {
     correctness: "passed",
     environment: environmentLabel,
@@ -70,19 +103,34 @@ const commonMeta = {
   architecture: environment.kernel,
 };
 
-const VARIANTS = ["shared", "padded"];
+const VARIANTS = Object.keys(manifest.variants ?? {});
+if (VARIANTS.length === 0) {
+  console.error("import-linux-evidence: manifest lists no variants");
+  process.exit(1);
+}
 const allRecords = [];
 const jmhByVariant = {};
 
 for (const variant of VARIANTS) {
   const vdir = join(RUN_DIR, variant);
+  const c2cReport = join(vdir, "perf-c2c-report.txt");
+  const hasC2c = existsSync(c2cReport);
+  const placementPath = join(vdir, "worker-placement.json");
+  const variantMeta = {
+    ...commonMeta,
+    evidence: {
+      ...commonMeta.evidence,
+      profiling: hasC2c ? "present" : "absent",
+      warnings: placementWarnings[variant] ?? [],
+    },
+  };
 
   // --- JMH -----------------------------------------------------------------
   const jmhPath = join(vdir, "jmh.json");
   const jmhRecords = importJmhResults(readJson(jmhPath), {
-    ...commonMeta,
+    ...variantMeta,
     rawArtifact: rawRef(jmhPath),
-    profilingArtifact: hashRef(join(vdir, "perf-c2c-report.txt")),
+    profilingArtifact: hasC2c ? hashRef(c2cReport) : existsSync(placementPath) ? hashRef(placementPath) : undefined,
     command: `run-linux-evidence.sh ${manifest.labId} --profile ${manifest.profile} (variant ${variant}, cpus ${profile.placement.cpus})`,
   });
   jmhByVariant[variant] = { records: jmhRecords, document: readJson(jmhPath) };
@@ -103,12 +151,12 @@ for (const variant of VARIANTS) {
       process.exit(1);
     }
     const records = importPerfCounterCsv(readFileSync(csvPath, "utf8"), {
-      ...commonMeta,
+      ...variantMeta,
       variant,
       language: "java",
-      parameters: { layout: variant, repetition: String(repetition) },
+      parameters: { scenario: variant, repetition: String(repetition) },
       rawArtifact: rawRef(csvPath),
-      profilingArtifact: hashRef(join(vdir, "perf-c2c-report.txt")),
+      profilingArtifact: hasC2c ? hashRef(c2cReport) : undefined,
       command: `perf stat -x, (single-fork JMH inside; exact command in benchmark-profile.json) — variant ${variant}, repetition ${repetition}`,
     });
     counterRecords.push(...records);
@@ -270,13 +318,23 @@ for (const variant of VARIANTS) {
   };
 }
 
-comparison.throughputRatio =
-  comparison.variants.padded.operationsPerSecond / comparison.variants.shared.operationsPerSecond;
-comparison.displayRounded = {
-  throughputRatio: Number(comparison.throughputRatio.toFixed(2)),
-  sharedOpsPerSecond: Number(comparison.variants.shared.operationsPerSecond.toPrecision(4)),
-  paddedOpsPerSecond: Number(comparison.variants.padded.operationsPerSecond.toPrecision(4)),
-};
+// Headline ratio only where the lab's variant pair defines one (the
+// false-sharing shared/padded contract); other labs get per-variant
+// metrics without an invented cross-variant headline.
+if (comparison.variants.shared && comparison.variants.padded) {
+  comparison.throughputRatio =
+    comparison.variants.padded.operationsPerSecond / comparison.variants.shared.operationsPerSecond;
+  comparison.displayRounded = {
+    throughputRatio: Number(comparison.throughputRatio.toFixed(2)),
+    sharedOpsPerSecond: Number(comparison.variants.shared.operationsPerSecond.toPrecision(4)),
+    paddedOpsPerSecond: Number(comparison.variants.padded.operationsPerSecond.toPrecision(4)),
+  };
+} else {
+  comparison.throughputRatio = null;
+  comparison.displayRounded = Object.fromEntries(
+    Object.entries(comparison.variants).map(([name, v]) => [name, Number(v.operationsPerSecond.toPrecision(4))]),
+  );
+}
 
 writeFileSync(join(RUN_DIR, "comparison.json"), `${JSON.stringify(comparison, null, 2)}\n`);
 

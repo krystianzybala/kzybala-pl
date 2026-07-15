@@ -33,6 +33,11 @@ sides agree.
   measured-data disclosure component (`docs/components.md`) and name your
   tool, environment, and method.
 - `sources.md` — required. Use the sources component (`docs/components.md`).
+- `exercises.md` — required (unified framework contract, `docs/lab-framework.md`):
+  at least one diagnosis and one implementation exercise with success
+  criteria and collapsed hints/solutions. `theory.md` must open with a
+  `## Performance question and hypothesis` section stating what would
+  disprove the hypothesis.
 
 ## 4. Follow the design contracts
 
