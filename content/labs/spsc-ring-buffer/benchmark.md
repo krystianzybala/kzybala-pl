@@ -1,19 +1,34 @@
 # SPSC ring buffer — benchmark methodology
 
 <div class="disclosure measured">
-  <p class="disclosure-kind">Measured</p>
-  <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E),
-  64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc
-  1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations
-  of 1 second each, <code>Mode.Throughput</code>, <code>@Group</code> with
-  one producer thread and one consumer thread pinned to a 1024-slot buffer
-  for the whole run. Rust: default Criterion sampling (100 samples), each
-  sample spawning a fresh producer thread and consumer thread over a
-  1024-slot buffer moving 200,000 items, then joining both. Single
-  developer machine with ordinary desktop load running alongside — not a
-  dedicated, thermally-stable rig, no CPU affinity pinning, no control over
-  performance- vs. efficiency-core scheduling.</p>
+  <p class="disclosure-kind">Illustrative development run</p>
+  <p>These preliminary values were captured on an Apple M1 Max developer
+  workstation under uncontrolled desktop conditions. They are retained only
+  to illustrate the likely shape of the effect and are not
+  publication-grade performance evidence. Canonical results for this
+  laboratory are collected separately on the dedicated native-Linux
+  benchmark host with explicit CPU placement, environment capture,
+  correctness gates, independent JVM forks, and profiler evidence where
+  required (<code>docs/measurement-environments.md</code>).</p>
+  <p>Run details: JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10
+  cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust:
+  Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10
+  measurement iterations of 1 second each, <code>Mode.Throughput</code>,
+  <code>@Group</code> with one producer thread and one consumer thread
+  pinned to a 1024-slot buffer for the whole run. Rust: default Criterion
+  sampling (100 samples), each sample spawning a fresh producer thread and
+  consumer thread over a 1024-slot buffer moving 200,000 items, then
+  joining both. Ordinary desktop load alongside, no CPU affinity pinning,
+  no control over performance- vs. efficiency-core scheduling.</p>
 </div>
+
+## Canonical results
+
+**Awaiting native-Linux measurement.** The implementation and correctness
+gates exist, but no canonical evidence from the dedicated native-Linux
+benchmark host has been imported for this laboratory yet — no verified
+performance conclusion is available, and the development numbers below are
+not a substitute.
 
 ## Method
 
@@ -28,7 +43,7 @@ brand-new producer/consumer pair — on every one of its 100 samples, so its
 reported time necessarily includes thread creation/teardown overhead that
 the Java number does not.
 
-## Measured data (this run — not a portable claim)
+## Illustrative development data (this run — not a portable claim)
 
 **Java (JMH, `@Group("spsc")`, ops/ms per side, higher is better):**
 

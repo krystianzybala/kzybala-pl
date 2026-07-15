@@ -265,7 +265,8 @@ fn run_owned_partitions() {
   <section class="prose section">
     <h2>Benchmark methodology</h2>
     <div class="disclosure measured">
-      <p class="disclosure-kind">Measured</p>
+      <p class="disclosure-kind">Illustrative development run</p>
+      <p>These preliminary values were captured on an Apple M1 Max developer workstation under uncontrolled desktop conditions. They are retained only to illustrate the likely shape of the effect and are not publication-grade performance evidence. Canonical results for this laboratory are collected separately on the dedicated native-Linux benchmark host with explicit CPU placement, environment capture, correctness gates, independent JVM forks, and profiler evidence where required. <strong>Canonical results: awaiting native-Linux measurement</strong> — the implementation and correctness gates exist, but no canonical host evidence has been imported yet, so no verified performance conclusion is available and the development numbers below are not a substitute.</p>
       <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations of 1 second each, <code>Mode.Throughput</code>, 4 threads. Rust: default Criterion sampling (100 samples), each sample spawning 4 real threads doing 20,000 increments each, then joining. Single developer machine with ordinary desktop load running alongside — not a dedicated, thermally-stable rig, no CPU affinity pinning.</p>
     </div>
     <p>Method: 4 threads, two architectures, otherwise identical work. <strong>Shared pool:</strong> all 4 threads increment a randomly chosen partition (0–3) in one array guarded by a single lock. <strong>Owned partitions:</strong> each thread increments only its own, unshared counter.</p>

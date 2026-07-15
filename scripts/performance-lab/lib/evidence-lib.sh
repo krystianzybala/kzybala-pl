@@ -73,6 +73,45 @@ topo_scenario() {
   fi
 }
 
+# --- Virtualization detection ----------------------------------------------
+# detect_virtualization
+#
+# Exit status is the source of truth, never stdout text: on a physical host
+# `systemd-detect-virt` prints "none" AND exits 1, and the literal value
+# "none" must never be classified as virtualization. VM and container
+# detection are queried separately (--vm / --container) with --quiet for
+# the status check, then re-queried for the type label.
+#
+# Semantics:
+#   physical host             -> prints nothing, returns 1
+#   VM (kvm, vmware, ...)     -> prints "vm=<type> container=none", returns 0
+#   container (docker, ...)   -> prints "vm=none container=<type>", returns 0
+detect_virtualization() {
+  local vm_type=""
+  local container_type=""
+
+  if command -v systemd-detect-virt >/dev/null 2>&1; then
+    if systemd-detect-virt --vm --quiet 2>/dev/null; then
+      vm_type="$(systemd-detect-virt --vm 2>/dev/null || true)"
+    fi
+    if systemd-detect-virt --container --quiet 2>/dev/null; then
+      container_type="$(systemd-detect-virt --container 2>/dev/null || true)"
+    fi
+  elif [ -r /proc/cpuinfo ] && grep -q '^flags.*hypervisor' /proc/cpuinfo 2>/dev/null; then
+    vm_type="hypervisor-flag"
+  fi
+
+  # A tool that exits 0 while printing "none" is still a physical host.
+  [ "$vm_type" = "none" ] && vm_type=""
+  [ "$container_type" = "none" ] && container_type=""
+
+  if [ -n "$vm_type" ] || [ -n "$container_type" ]; then
+    printf 'vm=%s container=%s\n' "${vm_type:-none}" "${container_type:-none}"
+    return 0
+  fi
+  return 1
+}
+
 # --- Load check -----------------------------------------------------------
 # check_load <loadavg-file> <nproc> <max-load-per-core-x100>
 # Reads the 1-minute load average; fails when load/nproc exceeds the policy

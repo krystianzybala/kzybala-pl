@@ -1,18 +1,32 @@
 # CAS contention and backoff — benchmark methodology
 
 <div class="disclosure measured">
-  <p class="disclosure-kind">Measured</p>
-  <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E),
-  64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc
-  1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations
-  of 1 second each, <code>Mode.Throughput</code>. Rust: default Criterion
-  sampling (100 samples, ~5 s target per benchmark). Single developer
-  machine with ordinary desktop load running alongside — not a dedicated,
-  thermally-stable rig, no CPU affinity pinning, no control over
-  performance- vs. efficiency-core scheduling. Treat absolute numbers as
-  illustrative of the effect's <em>shape</em> (contention collapse as
-  thread count grows), not a portable performance claim.</p>
+  <p class="disclosure-kind">Illustrative development run</p>
+  <p>These preliminary values were captured on an Apple M1 Max developer
+  workstation under uncontrolled desktop conditions. They are retained only
+  to illustrate the likely shape of the effect (contention collapse as
+  thread count grows) and are not publication-grade performance evidence.
+  Canonical results for this laboratory are collected separately on the
+  dedicated native-Linux benchmark host with explicit CPU placement,
+  environment capture, correctness gates, independent JVM forks, and
+  profiler evidence where required
+  (<code>docs/measurement-environments.md</code>).</p>
+  <p>Run details: JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10
+  cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust:
+  Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10
+  measurement iterations of 1 second each, <code>Mode.Throughput</code>.
+  Rust: default Criterion sampling (100 samples, ~5 s target per
+  benchmark). Ordinary desktop load alongside, no CPU affinity pinning, no
+  control over performance- vs. efficiency-core scheduling.</p>
 </div>
+
+## Canonical results
+
+**Awaiting native-Linux measurement.** The implementation and correctness
+gates exist, but no canonical evidence from the dedicated native-Linux
+benchmark host has been imported for this laboratory yet — no verified
+performance conclusion is available, and the development numbers below are
+not a substitute.
 
 ## Method
 
@@ -23,7 +37,7 @@ aggregate throughput as thread count grows. Contrasted against
 `SingleWriterCounter`, a plain (non-atomic) counter touched by exactly one
 thread, run single-threaded.
 
-## Measured data (this run — not a portable claim)
+## Illustrative development data (this run — not a portable claim)
 
 **Java (JMH, ops/ms, higher is better):**
 

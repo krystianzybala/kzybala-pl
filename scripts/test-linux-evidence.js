@@ -14,6 +14,10 @@ import { join } from "node:path";
 import { IMPORTER_CAPABILITIES } from "./benchmark-platform/results/capability-registry.js";
 import { importPerfCounterCsv } from "./benchmark-platform/results/perf-counter-importer.js";
 import { deriveMaturity } from "./benchmark-platform/results/evidence-maturity.js";
+import { canCompare, environmentClassOf } from "./benchmark-platform/results/comparison-guard.js";
+import { renderTable } from "./benchmark-platform/results/render.js";
+import { compareToHistory } from "./benchmark-platform/results/regression.js";
+import { legacyResultsFor } from "./benchmark-platform/results/legacy-data.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const LIB = join(ROOT, "scripts", "performance-lab", "lib", "evidence-lib.sh");
@@ -323,11 +327,352 @@ test("runner: dry-run produces the artifact skeleton and fully separated per-var
   }
 });
 
+// --- virtualization detection (exit status is the source of truth) ---------------
+
+// systemd-detect-virt stub factory: behavior per flag, with controlled
+// stdout AND exit codes — physical hosts print "none" while exiting 1.
+function virtStub({ vm, container }) {
+  // vm/container: { out: string|null, code: number }
+  return `case "$*" in
+  *--vm*--quiet*) exit ${vm.code} ;;
+  *--container*--quiet*) exit ${container.code} ;;
+  *--vm*) ${vm.out === null ? ":" : `echo ${vm.out}`}; exit ${vm.code} ;;
+  *--container*) ${container.out === null ? ":" : `echo ${container.out}`}; exit ${container.code} ;;
+  *) ${vm.out === null ? ":" : `echo ${vm.out}`}; exit ${vm.code} ;;
+esac`;
+}
+
+function detectWith(stubBody) {
+  const stubs = makeStubDir({ "systemd-detect-virt": stubBody });
+  try {
+    return libCall("detect_virtualization", { PATH: `${stubs}:/usr/bin:/bin` });
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+  }
+}
+
+test("virt: VM check printing 'none' with exit 1 is a physical host, accepted", () => {
+  const r = detectWith(virtStub({ vm: { out: "none", code: 1 }, container: { out: null, code: 1 } }));
+  assert.notEqual(r.status, 0);
+  assert.equal(r.stdout.trim(), "");
+});
+
+test("virt: container check printing 'none' with exit 1 is a physical host, accepted", () => {
+  const r = detectWith(virtStub({ vm: { out: null, code: 1 }, container: { out: "none", code: 1 } }));
+  assert.notEqual(r.status, 0);
+  assert.equal(r.stdout.trim(), "");
+});
+
+test("virt: both checks printing 'none' with exit 1 are a physical host, accepted", () => {
+  const r = detectWith(virtStub({ vm: { out: "none", code: 1 }, container: { out: "none", code: 1 } }));
+  assert.notEqual(r.status, 0);
+  assert.equal(r.stdout.trim(), "");
+});
+
+test("virt: the literal 'none' is never classified as virtualization even with exit 0", () => {
+  const r = detectWith(virtStub({ vm: { out: "none", code: 0 }, container: { out: "none", code: 0 } }));
+  assert.notEqual(r.status, 0);
+  assert.equal(r.stdout.trim(), "");
+});
+
+test("virt: 'kvm' with exit 0 is detected as a VM", () => {
+  const r = detectWith(virtStub({ vm: { out: "kvm", code: 0 }, container: { out: null, code: 1 } }));
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout.trim(), "vm=kvm container=none");
+});
+
+test("virt: 'docker' with exit 0 is detected as a container", () => {
+  const r = detectWith(virtStub({ vm: { out: null, code: 1 }, container: { out: "docker", code: 0 } }));
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout.trim(), "vm=none container=docker");
+});
+
+// --- runner-level virtualization policy + preflight-only --------------------------
+
+const PHYSICAL_VIRT = virtStub({ vm: { out: "none", code: 1 }, container: { out: "none", code: 1 } });
+const KVM_VIRT = virtStub({ vm: { out: "kvm", code: 0 }, container: { out: null, code: 1 } });
+const DOCKER_VIRT = virtStub({ vm: { out: null, code: 1 }, container: { out: "docker", code: 0 } });
+const PERF_OK = `case "$1" in
+  --version) echo "perf version 6.8"; exit 0 ;;
+  stat) exit 0 ;;
+  c2c) echo "ldlat-loads, ldlat-stores"; exit 0 ;;
+esac
+exit 0`;
+
+function preflightStubs(virtBody) {
+  return makeStubDir({
+    uname: `echo Linux`,
+    "systemd-detect-virt": virtBody,
+    lscpu: LSCPU_STUB,
+    perf: PERF_OK,
+    mvn: `exit 0`,
+    java: `exit 0`,
+    nproc: `echo 8`,
+  });
+}
+
+test("runner: physical host (none/exit-1) passes preflight for the publication profile", () => {
+  const stubs = preflightStubs(PHYSICAL_VIRT);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "publication", "--cpus", "0,1", "--preflight-only"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Preflight passed\./);
+    assert.match(r.stdout, /Host type: physical/);
+    assert.match(r.stdout, /Publication profile eligible: yes/);
+    assert.match(r.stdout, /Selected CPUs: 0,1/);
+    assert.match(r.stdout, /Measurement was not started because --preflight-only was supplied\./);
+    const runDir = execSync(`find '${out}/false-sharing' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+    const caps = JSON.parse(readFileSync(join(runDir, "capabilities.json"), "utf8"));
+    assert.deepEqual(caps.virtualization, {
+      detected: false, vmType: null, containerType: null, environmentKind: "physical", publicationEligible: true,
+    });
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: VM (kvm, exit 0) is rejected for publication", () => {
+  const stubs = preflightStubs(KVM_VIRT);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "publication", "--cpus", "0,1"], stubs, out);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /virtualization\/emulation detected \(vm=kvm container=none\)/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: container (docker, exit 0) is rejected for publication", () => {
+  const stubs = preflightStubs(DOCKER_VIRT);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "publication", "--cpus", "0,1"], stubs, out);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /virtualization\/emulation detected \(vm=none container=docker\)/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: --allow-virtualized with smoke profile is allowed but never publication eligible", () => {
+  const stubs = preflightStubs(KVM_VIRT);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "smoke", "--cpus", "0,1", "--allow-virtualized", "--preflight-only"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Host type: virtualized/);
+    assert.match(r.stdout, /Publication profile eligible: no/);
+    const runDir = execSync(`find '${out}/false-sharing' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+    const caps = JSON.parse(readFileSync(join(runDir, "capabilities.json"), "utf8"));
+    assert.equal(caps.virtualization.publicationEligible, false);
+    assert.equal(caps.virtualization.environmentKind, "virtualized");
+    assert.equal(caps.virtualization.vmType, "kvm");
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: --allow-virtualized is rejected with the publication profile", () => {
+  const stubs = preflightStubs(KVM_VIRT);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "publication", "--cpus", "0,1", "--allow-virtualized"], stubs, out);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /--allow-virtualized cannot be used with profile 'publication'/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: --preflight-only runs validation but starts no JMH/perf collection and writes no archive", () => {
+  const stubs = preflightStubs(PHYSICAL_VIRT);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--profile", "publication", "--cpus", "0,1", "--preflight-only"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    // no measurement artifacts of any kind
+    assert.equal(execSync(`find '${out}' -name 'jmh*.json' -o -name 'perf-*'`, { encoding: "utf8" }).trim(), "");
+    // no evidence archive
+    assert.equal(execSync(`find '${out}' -name '*.tar.zst' -o -name '*.tar.gz'`, { encoding: "utf8" }).trim(), "");
+    // and no claim of performance validation — only preflight
+    assert.doesNotMatch(r.stdout, /DONE|Evidence archive/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner: unknown options still fail", () => {
+  const stubs = preflightStubs(PHYSICAL_VIRT);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runRunner(["--bogus"], stubs, out);
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /unknown option: --bogus/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
 // --- evidence-maturity invariants ------------------------------------------------
 
 test("capability: perf and jmh importers remain fixture-only until real-host artifacts pass review", () => {
   assert.equal(IMPORTER_CAPABILITIES["perf-counter-importer"], "fixture-only");
   assert.equal(IMPORTER_CAPABILITIES["jmh-importer"], "fixture-only");
+});
+
+// --- measurement-environment policy (docs/measurement-environments.md) -----------
+
+// A canonical-record factory shaped like a real import, with evidence
+// dimensions controllable per test.
+function madeRecord(evidenceOverrides = {}, provenanceOverrides = {}) {
+  const [record] = importPerfCounterCsv("100,,cycles,1000,100.00,,\n", {
+    labId: "false-sharing",
+    variant: "shared",
+    language: "java",
+    sourceRevision: "b".repeat(40),
+    environmentManifest: { ref: "results/x/environment.json", hash: "c".repeat(64) },
+    evidence: {
+      correctness: "passed",
+      profiling: "present",
+      comparability: "not-applicable",
+      reproduction: { required: 1, completed: 0 },
+      environment: "native-uncontrolled",
+      ...evidenceOverrides,
+    },
+    ...provenanceOverrides,
+  });
+  return record;
+}
+
+// Scalar-record factory (render/regression only accept metricKind
+// "scalar"): a legacy record cloned into a fresh, non-legacy shape with
+// controllable evidence.
+function madeScalarRecord(evidenceOverrides = {}) {
+  const record = structuredClone(legacyResultsFor("false-sharing")[0]);
+  record.evidence = {
+    legacy: false,
+    correctness: "passed",
+    environment: "native-uncontrolled",
+    reproduction: { required: 1, completed: 0 },
+    profiling: "present",
+    comparability: "not-applicable",
+    reviewer: null,
+    importerCapability: "fixture-only",
+    warnings: [],
+    ...evidenceOverrides,
+  };
+  record.provenance.environmentManifest = { ref: "results/x/environment.json", hash: "c".repeat(64) };
+  record.provenance.capturedAt = "2026-07-15T00:00:00Z";
+  return record;
+}
+
+test("policy: a developer-workstation result never renders a canonical Measured/Verified badge", () => {
+  const devRecord = madeScalarRecord({ environment: "native-uncontrolled" });
+  const [row] = renderTable([devRecord]);
+  assert.equal(row.evidenceMaturity, "draft");
+  assert.equal(row.isPublishable, false);
+  assert.doesNotMatch(row.badge, /^(measured|verified)/i);
+
+  const [legacyRow] = renderTable([legacyResultsFor("false-sharing")[0]]);
+  assert.equal(legacyRow.evidenceMaturity, "legacy-unprovenanced");
+  assert.doesNotMatch(legacyRow.badge, /^(measured|verified)/i);
+  assert.match(legacyRow.badge, /cannot be a regression baseline/);
+});
+
+test("policy: a developer-workstation result can never become verified", () => {
+  const devRecord = madeRecord({
+    environment: "native-uncontrolled",
+    reproduction: { required: 1, completed: 5 },
+    reviewer: { name: "someone", reviewedAt: "2026-07-15T00:00:00Z" },
+  });
+  const maturity = deriveMaturity(devRecord);
+  assert.notEqual(maturity.level, "verified");
+  assert.equal(maturity.checks.environment, false);
+});
+
+test("policy: a developer-workstation result is never selected as a regression baseline", () => {
+  const baselineCandidate = madeScalarRecord({ environment: "native-uncontrolled", reproduction: { required: 1, completed: 2 } });
+  baselineCandidate.provenance.capturedAt = "2026-07-10T00:00:00Z";
+  const newRecord = madeScalarRecord({ environment: "native-uncontrolled", reproduction: { required: 1, completed: 2 } });
+  const result = compareToHistory(newRecord, [baselineCandidate]);
+  assert.equal(result.baseline, null);
+  assert.equal(result.status, "insufficient-history");
+});
+
+test("policy: Mac and Linux results cannot be directly compared", () => {
+  const mac = madeRecord({ environment: "native-uncontrolled" });
+  const linux = madeRecord({ environment: "native-controlled" });
+  assert.equal(environmentClassOf(mac), "developer-workstation");
+  assert.equal(environmentClassOf(linux), "native-linux-host");
+  const verdict = canCompare(mac, linux);
+  assert.equal(verdict.allowed, false);
+  assert.ok(verdict.reasons.some((r) => r.includes("environment classes differ")));
+});
+
+test("policy: legacy records and different environment manifests are rejected from comparisons", () => {
+  const legacy = legacyResultsFor("false-sharing")[0];
+  const fresh = madeRecord({ environment: "native-controlled" });
+  assert.equal(canCompare(legacy, fresh).allowed, false);
+
+  const runA = madeRecord({ environment: "native-controlled" }, { environmentManifest: { ref: "a", hash: "d".repeat(64) } });
+  const runB = madeRecord({ environment: "native-controlled" }, { environmentManifest: { ref: "b", hash: "e".repeat(64) } });
+  const verdict = canCompare(runA, runB);
+  assert.equal(verdict.allowed, false);
+  assert.ok(verdict.reasons.some((r) => r.includes("environment manifests differ")));
+
+  const sameManifest = madeRecord({ environment: "native-controlled" });
+  const sameManifest2 = madeRecord({ environment: "native-controlled" });
+  assert.equal(canCompare(sameManifest, sameManifest2).allowed, true);
+});
+
+test("policy: no lab page or manifest still carries a bare Measured status for Mac results", () => {
+  for (const lab of ["cache-hierarchy", "cas-contention", "false-sharing", "spsc-ring-buffer", "thread-per-core"]) {
+    const md = readFileSync(join(ROOT, "content", "labs", lab, "benchmark.md"), "utf8");
+    assert.ok(!md.includes('disclosure-kind">Measured<'), `${lab}/benchmark.md still renders a bare Measured badge`);
+    assert.match(md, /Illustrative development run/, `${lab}/benchmark.md missing the canonical development-run label`);
+    assert.match(md, /Awaiting native-Linux measurement/, `${lab}/benchmark.md missing the awaiting state`);
+    const page = readFileSync(join(ROOT, "lab", lab, "index.html"), "utf8");
+    assert.ok(!page.includes('disclosure-kind">Measured<'), `lab/${lab} page still renders a bare Measured badge`);
+    assert.match(page, /Illustrative development run/);
+    assert.match(page, /awaiting native-Linux measurement/i);
+  }
+});
+
+test("policy: the awaiting state renders no placeholder canonical numbers", () => {
+  for (const lab of ["cache-hierarchy", "cas-contention", "false-sharing", "spsc-ring-buffer", "thread-per-core"]) {
+    const md = readFileSync(join(ROOT, "content", "labs", lab, "benchmark.md"), "utf8");
+    const section = md.split("## Canonical results")[1]?.split(/\n## /)[0] ?? "";
+    assert.ok(section.length > 0, `${lab}: no Canonical results section`);
+    assert.match(section, /Awaiting native-Linux measurement/);
+    assert.ok(!/\|\s*[\d,.]+\s*\|/.test(section), `${lab}: canonical section must not contain placeholder result tables`);
+  }
+});
+
+test("policy: importing one valid Linux run advances only to measured — reproduction and review still required for verified", () => {
+  // Shaped like import-linux-evidence.mjs output for a first controlled run:
+  // correctness passed, profiling present, native-controlled, but zero
+  // completed reproductions, no reviewer, fixture-only importer capability.
+  const firstImport = madeRecord({ environment: "native-controlled", reproduction: { required: 1, completed: 0 } });
+  const maturity = deriveMaturity(firstImport);
+  assert.equal(maturity.level, "draft");
+  assert.notEqual(maturity.level, "verified");
+
+  // Even with reproduction satisfied, review + importer capability are
+  // still unmet — a run count alone can never produce verified.
+  const reproduced = madeRecord({ environment: "native-controlled", reproduction: { required: 1, completed: 2 } });
+  const maturity2 = deriveMaturity(reproduced);
+  assert.notEqual(maturity2.level, "verified");
+  assert.equal(maturity2.checks.reviewer, false);
+  assert.equal(maturity2.checks.importerCapability, false);
 });
 
 test("maturity: a fixture-derived record can never reach verified, even with every other box checked", () => {

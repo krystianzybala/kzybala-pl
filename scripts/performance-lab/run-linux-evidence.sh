@@ -5,6 +5,17 @@
 #   sudo ./scripts/performance-lab/run-linux-evidence.sh \
 #     false-sharing --profile publication --cpus 2,4
 #
+# Options: --profile publication|full|development|smoke, --cpus A,B
+# (required), --allow-cross-socket, --preflight-only (run every preflight
+# check, then stop before any measurement), --allow-virtualized
+# (smoke|development wiring checks only — never publication|full),
+# --out <dir>, --dry-run, --skip-load-check.
+#
+# Physical hosts are accepted: systemd-detect-virt exiting 1 (typically
+# printing the literal "none") means no virtualization — detection is by
+# exit status, never by stdout text (detect_virtualization in
+# lib/evidence-lib.sh).
+#
 # Collects, per variant (shared / padded, each in its own JVM invocation,
 # its own perf session and its own output directory):
 #   - JMH -rf json evidence (multi-fork publication profile),
@@ -32,6 +43,8 @@ LAB_ID="${1:-}"; shift || true
 PROFILE="publication"
 CPUS=""
 ALLOW_CROSS_SOCKET=0
+ALLOW_VIRTUALIZED=0
+PREFLIGHT_ONLY=0
 DRY_RUN=0
 SKIP_LOAD_CHECK=0
 OUT_ROOT="${REPO_ROOT}/results"
@@ -41,6 +54,8 @@ while [ $# -gt 0 ]; do
     --profile) PROFILE="$2"; shift 2 ;;
     --cpus) CPUS="$2"; shift 2 ;;
     --allow-cross-socket) ALLOW_CROSS_SOCKET=1; shift ;;
+    --allow-virtualized) ALLOW_VIRTUALIZED=1; shift ;;
+    --preflight-only) PREFLIGHT_ONLY=1; shift ;;
     --out) OUT_ROOT="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --skip-load-check) SKIP_LOAD_CHECK=1; shift ;;
@@ -70,7 +85,13 @@ case "$PROFILE" in
   full)
     EV_FORKS=2; EV_WI=3; EV_W="1s"; EV_I=5; EV_R="1s"
     ;;
-  *) fail "unsupported profile '${PROFILE}' (publication|full)" ;;
+  development)
+    EV_FORKS=1; EV_WI=2; EV_W="500ms"; EV_I=3; EV_R="500ms"
+    ;;
+  smoke)
+    EV_FORKS=1; EV_WI=0; EV_W="200ms"; EV_I=1; EV_R="200ms"
+    ;;
+  *) fail "unsupported profile '${PROFILE}' (publication|full|development|smoke)" ;;
 esac
 EV_THREADS=2
 EV_JVM_ARGS="-Xms1g -Xmx1g -XX:+UseParallelGC"
@@ -123,15 +144,36 @@ if [ "$KERNEL" != "Linux" ] && [ "$DRY_RUN" != "1" ]; then
   fail "this runner collects publication evidence on native Linux only (uname -s: ${KERNEL}). On macOS use the smoke workflow in content/labs/false-sharing/benchmark.md."
 fi
 
-# 2. Not emulated / virtualized.
-VIRT="none"
-if command -v systemd-detect-virt >/dev/null 2>&1; then
-  VIRT="$(systemd-detect-virt 2>/dev/null || echo none)"
-elif [ -r /proc/cpuinfo ] && grep -q '^flags.*hypervisor' /proc/cpuinfo 2>/dev/null; then
-  VIRT="hypervisor-flag"
-fi
-if [ "$VIRT" != "none" ] && [ "$DRY_RUN" != "1" ]; then
-  fail "virtualization/emulation detected ('${VIRT}') — VMs, containers on foreign architectures and emulators are never publication evidence"
+# 2. Virtualization/container detection. Exit status is the source of
+#    truth (detect_virtualization, lib/evidence-lib.sh): on a physical host
+#    systemd-detect-virt prints "none" AND exits 1 — the literal "none" is
+#    never classified as virtualization. Physical hosts are accepted.
+VIRT_DETECTED="false"
+VM_TYPE=""
+CONTAINER_TYPE=""
+ENV_KIND="physical"
+PUBLICATION_ELIGIBLE="true"
+if VIRT_INFO="$(detect_virtualization)"; then
+  VIRT_DETECTED="true"
+  ENV_KIND="virtualized"
+  PUBLICATION_ELIGIBLE="false"
+  VM_TYPE="$(printf '%s' "$VIRT_INFO" | sed -n 's/^vm=\([^ ]*\).*/\1/p')"
+  CONTAINER_TYPE="$(printf '%s' "$VIRT_INFO" | sed -n 's/.*container=\(.*\)$/\1/p')"
+  [ "$VM_TYPE" = "none" ] && VM_TYPE=""
+  [ "$CONTAINER_TYPE" = "none" ] && CONTAINER_TYPE=""
+  if [ "$ALLOW_VIRTUALIZED" = "1" ]; then
+    # Smoke/development wiring checks only — a virtualized environment can
+    # never produce publication evidence, so publication-grade profiles are
+    # rejected outright even with the flag.
+    case "$PROFILE" in
+      smoke|development) echo "   virtualization detected (${VIRT_INFO}) — continuing in ${PROFILE} smoke mode; NOT publication eligible" ;;
+      *) fail "--allow-virtualized cannot be used with profile '${PROFILE}' — virtualized environments are never publication evidence (smoke|development only)" ;;
+    esac
+  elif [ "$DRY_RUN" != "1" ]; then
+    fail "virtualization/emulation detected (${VIRT_INFO}) — VMs, containers and emulators are never publication evidence (--allow-virtualized permits smoke|development wiring checks only)"
+  fi
+else
+  VIRT_INFO="none"
 fi
 
 # 3. perf capabilities.
@@ -199,7 +241,13 @@ fi
 mkdir -p "$RUN_DIR" 2>/dev/null || fail "cannot create output directory ${RUN_DIR}"
 [ -w "$RUN_DIR" ] || fail "output directory ${RUN_DIR} is not writable"
 
-# 8. Correctness gate — measurement never starts on a failing suite.
+# 8. Java/Maven toolchain present.
+if [ "$DRY_RUN" != "1" ]; then
+  command -v java >/dev/null 2>&1 || fail "java is not installed"
+  command -v mvn >/dev/null 2>&1 || fail "mvn (Maven) is not installed"
+fi
+
+# 9. Correctness gate — measurement never starts on a failing suite.
 echo "== correctness gate (mvn test)"
 CORRECTNESS_STATUS="skipped-dry-run"
 if [ "$DRY_RUN" != "1" ]; then
@@ -210,10 +258,12 @@ if [ "$DRY_RUN" != "1" ]; then
     tail -40 "${RUN_DIR}/correctness-console.log" >&2
     fail "correctness gate failed — no measurement is collected on a failing suite"
   fi
-  echo "== build benchmarks.jar"
-  (cd "$JAVA_DIR" && mvn -q -DskipTests package) >> "${RUN_DIR}/correctness-console.log" 2>&1 \
-    || fail "mvn package failed"
-  [ -f "$EV_JAR" ] || fail "benchmarks.jar missing after build"
+  if [ "$PREFLIGHT_ONLY" != "1" ]; then
+    echo "== build benchmarks.jar"
+    (cd "$JAVA_DIR" && mvn -q -DskipTests package) >> "${RUN_DIR}/correctness-console.log" 2>&1 \
+      || fail "mvn package failed"
+    [ -f "$EV_JAR" ] || fail "benchmarks.jar missing after build"
+  fi
 fi
 
 # =============================================================================
@@ -249,6 +299,8 @@ LOAD_SNAPSHOT="$(capture_or_unavailable cat /proc/loadavg)"
 JAVA_VERSION="$(capture_or_unavailable bash -c 'java -version 2>&1 | head -3')"
 MVN_VERSION="$(capture_or_unavailable bash -c 'mvn --version 2>/dev/null | head -1')"
 JMH_VERSION="$(grep -o '<jmh.version>[^<]*</jmh.version>' "${JAVA_DIR}/pom.xml" | sed 's/<[^>]*>//g' || echo unavailable)"
+RUSTC_VERSION="$(capture_or_unavailable rustc --version)"
+CARGO_VERSION="$(capture_or_unavailable cargo --version)"
 
 cat > "${RUN_DIR}/environment.json" <<ENVEOF
 {
@@ -257,7 +309,7 @@ cat > "${RUN_DIR}/environment.json" <<ENVEOF
   "runId": "${RUN_ID}",
   "capturedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "kernel": $(json_escape "$(capture_or_unavailable uname -a)"),
-  "virtualization": $(json_escape "$VIRT"),
+  "virtualization": { "detected": ${VIRT_DETECTED}, "vmType": $(if [ -n "$VM_TYPE" ]; then json_escape "$VM_TYPE"; else printf 'null'; fi), "containerType": $(if [ -n "$CONTAINER_TYPE" ]; then json_escape "$CONTAINER_TYPE"; else printf 'null'; fi), "environmentKind": "${ENV_KIND}", "publicationEligible": ${PUBLICATION_ELIGIBLE} },
   "selectedCpus": { "cpuA": "${CPU_A}", "cpuB": "${CPU_B}", "validation": $(json_escape "$TOPO_RESULT"), "scenario": $(json_escape "$SCENARIO") },
   "governorCpuA": $(json_escape "$(governor_for "$CPU_A")"),
   "governorCpuB": $(json_escape "$(governor_for "$CPU_B")"),
@@ -285,6 +337,8 @@ cat > "${RUN_DIR}/toolchain.json" <<TOOLEOF
   "java": $(json_escape "$JAVA_VERSION"),
   "maven": $(json_escape "$MVN_VERSION"),
   "jmh": $(json_escape "$JMH_VERSION"),
+  "rustc": $(json_escape "$RUSTC_VERSION"),
+  "cargo": $(json_escape "$CARGO_VERSION"),
   "jvmArgs": $(json_escape "$EV_JVM_ARGS"),
   "benchmarkSelector": $(json_escape "$EV_SELECTOR")
 }
@@ -297,7 +351,7 @@ cat > "${RUN_DIR}/capabilities.json" <<CAPEOF
   "perfC2c": ${PERF_C2C_OK},
   "perfC2cEventList": $(json_escape "$PERF_MEM_EVENTS"),
   "perfEventParanoid": $(json_escape "$PERF_PARANOID"),
-  "virtualization": $(json_escape "$VIRT"),
+  "virtualization": { "detected": ${VIRT_DETECTED}, "vmType": $(if [ -n "$VM_TYPE" ]; then json_escape "$VM_TYPE"; else printf 'null'; fi), "containerType": $(if [ -n "$CONTAINER_TYPE" ]; then json_escape "$CONTAINER_TYPE"; else printf 'null'; fi), "environmentKind": "${ENV_KIND}", "publicationEligible": ${PUBLICATION_ELIGIBLE} },
   "symbolization": "jvm-symbols-not-guaranteed (recorded separately; source-line attribution is not required for HITM evidence)",
   "requestedEvents": $(json_escape "$EV_PERF_EVENTS"),
   "notes": "unsupported counters appear as <not supported> rows in the perf-stat CSVs — recorded, never discarded"
@@ -331,6 +385,26 @@ cat > "${RUN_DIR}/correctness.json" <<COREOF
   "console": "correctness-console.log"
 }
 COREOF
+
+# =============================================================================
+# Preflight-only stop point: every check above has run (OS, virtualization,
+# topology, load, perf capabilities, toolchain, revision, correctness gate,
+# output permissions); nothing below (JMH, perf stat, perf c2c, archive)
+# executes. Metadata files stay in place for inspection.
+# =============================================================================
+if [ "$PREFLIGHT_ONLY" = "1" ]; then
+  echo
+  echo "Preflight passed."
+  echo "Host type: ${ENV_KIND}"
+  if [ "$PUBLICATION_ELIGIBLE" = "true" ]; then
+    echo "Publication profile eligible: yes"
+  else
+    echo "Publication profile eligible: no (virtualized — smoke/development wiring checks only)"
+  fi
+  echo "Selected CPUs: ${CPUS}"
+  echo "Measurement was not started because --preflight-only was supplied."
+  exit 0
+fi
 
 # =============================================================================
 # Measurement — one variant at a time, fully separated.
@@ -370,6 +444,8 @@ cat > "${RUN_DIR}/evidence-manifest.json" <<MANEOF
   "runIdScheme": "linux-<utc-timestamp> (runner-side; plab-002 hash run-ids require node, which is not assumed on the measurement host)",
   "profile": "${PROFILE}",
   "scenario": $(json_escape "$SCENARIO"),
+  "environmentKind": "${ENV_KIND}",
+  "publicationEligible": ${PUBLICATION_ELIGIBLE},
   "sourceCommit": "${GIT_REVISION}",
   "dirtyTree": ${GIT_DIRTY},
   "diffHash": ${GIT_DIFF_HASH},

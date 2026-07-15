@@ -1,16 +1,31 @@
 # Thread-per-core architecture — benchmark methodology
 
 <div class="disclosure measured">
-  <p class="disclosure-kind">Measured</p>
-  <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores: 8P + 2E),
-  64 GB unified memory, macOS 26.5.1, arm64. Rust: Criterion 0.5.1, rustc
-  1.88.0, same machine. Java: 1 fork, 5 warmup + 10 measurement iterations
-  of 1 second each, <code>Mode.Throughput</code>, 4 threads. Rust: default
-  Criterion sampling (100 samples), each sample spawning 4 real threads
-  doing 20,000 increments each, then joining. Single developer machine
-  with ordinary desktop load running alongside — not a dedicated,
-  thermally-stable rig, no CPU affinity pinning.</p>
+  <p class="disclosure-kind">Illustrative development run</p>
+  <p>These preliminary values were captured on an Apple M1 Max developer
+  workstation under uncontrolled desktop conditions. They are retained only
+  to illustrate the likely shape of the effect and are not
+  publication-grade performance evidence. Canonical results for this
+  laboratory are collected separately on the dedicated native-Linux
+  benchmark host with explicit CPU placement, environment capture,
+  correctness gates, independent JVM forks, and profiler evidence where
+  required (<code>docs/measurement-environments.md</code>).</p>
+  <p>Run details: JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10
+  cores: 8P + 2E), 64 GB unified memory, macOS 26.5.1, arm64. Rust:
+  Criterion 0.5.1, rustc 1.88.0, same machine. Java: 1 fork, 5 warmup + 10
+  measurement iterations of 1 second each, <code>Mode.Throughput</code>, 4
+  threads. Rust: default Criterion sampling (100 samples), each sample
+  spawning 4 real threads doing 20,000 increments each, then joining.
+  Ordinary desktop load alongside, no CPU affinity pinning.</p>
 </div>
+
+## Canonical results
+
+**Awaiting native-Linux measurement.** The implementation and correctness
+gates exist, but no canonical evidence from the dedicated native-Linux
+benchmark host has been imported for this laboratory yet — no verified
+performance conclusion is available, and the development numbers below are
+not a substitute.
 
 ## Method
 
@@ -22,7 +37,7 @@ single lock. <strong>Owned partitions:</strong> each thread increments
 only its own, unshared counter — no lock, no shared memory at all between
 threads.
 
-## Measured data (this run — not a portable claim)
+## Illustrative development data (this run — not a portable claim)
 
 **Java (JMH, ops/ms, 4 threads, higher is better):**
 

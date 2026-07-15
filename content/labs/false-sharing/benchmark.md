@@ -1,21 +1,37 @@
 # False sharing — benchmark methodology
 
 <div class="disclosure measured">
-  <p class="disclosure-kind">Measured</p>
-  <p>JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10 cores, no SMT,
-  single socket), macOS, arm64. Rust: Criterion 0.5, rustc 1.88.0, same
-  machine, pinned release profile. Profile: the repository's
-  <code>full</code> profile (JMH: 2 forks, 3×1 s warmup + 5×1 s measurement;
-  Criterion: 3 s warm-up, 5 s measurement, 100 samples). Single developer
-  machine — not a dedicated, thermally-stable benchmark rig; treat absolute
-  numbers as illustrative of the effect's <em>shape</em>, not a portable
-  performance claim. Raw harness output, environment metadata and the exact
-  commands are preserved in the run artifact
-  <code>results/false-sharing/99a8cb189d18d569/</code> and were imported
-  through the canonical result schema
+  <p class="disclosure-kind">Illustrative development run</p>
+  <p>These preliminary values were captured on an Apple M1 Max developer
+  workstation under uncontrolled desktop conditions. They are retained only
+  to illustrate the likely shape of the effect and are not
+  publication-grade performance evidence. Canonical results for this
+  laboratory are collected separately on the dedicated native-Linux
+  benchmark host with explicit CPU placement, environment capture,
+  correctness gates, independent JVM forks, and profiler evidence where
+  required (<code>docs/measurement-environments.md</code>,
+  <code>docs/linux-evidence-runner.md</code>).</p>
+  <p>Run details: JMH 1.37, OpenJDK 26.0.1 (HotSpot), Apple M1 Max (10
+  cores, no SMT, single socket), macOS, arm64. Rust: Criterion 0.5, rustc
+  1.88.0, same machine, pinned release profile. Profile: the repository's
+  <code>full</code> profile (JMH: 2 forks, 3×1 s warmup + 5×1 s
+  measurement; Criterion: 3 s warm-up, 5 s measurement, 100 samples). Raw
+  harness output, environment metadata and the exact commands are preserved
+  in the run artifact <code>results/false-sharing/99a8cb189d18d569/</code>
+  and were imported through the canonical result schema
   (<code>imported-canonical-records.json</code> in the same directory) —
   no number in this file was typed from memory.</p>
 </div>
+
+## Canonical results
+
+**Awaiting native-Linux measurement.** The implementation, correctness
+gates and the publication evidence runner exist, but no canonical evidence
+from the dedicated native-Linux benchmark host has been imported for this
+laboratory yet — no verified performance conclusion is available, and the
+development numbers below are not a substitute. Collection workflow:
+`scripts/performance-lab/run-linux-evidence.sh` (see "Reproduction
+commands").
 
 ## Semantic equivalence contract
 
@@ -121,7 +137,7 @@ sudo ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
 ./scripts/performance-lab/import-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst
 ```
 
-## Measured data (full profile, run `99a8cb189d18d569` — not a portable claim)
+## Illustrative development data (full profile, run `99a8cb189d18d569` — not a portable claim)
 
 **Java (JMH, ops/ms, higher is better, 99.9% CI):**
 

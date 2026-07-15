@@ -2,6 +2,10 @@
 
 `scripts/performance-lab/run-linux-evidence.sh` is the only source of
 publication hardware-counter evidence for the false-sharing reference lab.
+The repository-wide environment classification and evidence-state policy
+this runner implements is `docs/measurement-environments.md` — native
+physical Linux (the dedicated benchmark host) is mandatory for publication
+evidence.
 
 ## Editorial policy
 
@@ -41,9 +45,48 @@ The pair is validated against `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE`:
 - same socket and same NUMA node by default; `--allow-cross-socket` runs
   the explicitly separate `cross-socket` scenario.
 
-Other flags: `--profile publication|full`, `--out <dir>`, `--dry-run`
-(prints every planned command, creates the metadata skeleton, executes no
-measurement), `--skip-load-check` (non-publication runs only).
+Other flags: `--profile publication|full|development|smoke`, `--out <dir>`,
+`--preflight-only`, `--allow-virtualized`, `--dry-run` (prints every
+planned command, creates the metadata skeleton, executes no measurement),
+`--skip-load-check` (non-publication runs only).
+
+### Virtualization detection (exit status, never stdout text)
+
+Physical hosts are **accepted**: `systemd-detect-virt` exiting `1` —
+typically while printing the literal `none` — means no virtualization. The
+string `none` is never classified as virtualization. Detection
+(`detect_virtualization`, `lib/evidence-lib.sh`) queries `--vm --quiet` and
+`--container --quiet` separately and uses their exit codes as the source of
+truth; the type labels (`kvm`, `vmware`, `docker`, `podman`, …) are only
+read after a positive exit status. The result is recorded in
+`capabilities.json` as:
+
+```json
+"virtualization": { "detected": false, "vmType": null, "containerType": null,
+                    "environmentKind": "physical", "publicationEligible": true }
+```
+
+### `--preflight-only`
+
+Runs **every** preflight check — OS, virtualization/container detection,
+CPU topology (existence, online status, physical-core distinction,
+SMT-sibling rejection, socket/NUMA policy), host load, required commands,
+`perf stat` and `perf c2c` capability, Java/Maven toolchain, repository
+revision and dirty state, the full benchmark correctness suite, and
+output-directory permissions — then stops. It executes no JMH measurement,
+no full `perf stat` runs, no `perf c2c record`, creates no evidence
+archive, and never claims native performance validation succeeded. On
+success it prints `Preflight passed.` with the host type, publication
+eligibility and selected CPUs. Run it once on a new host before the first
+publication run.
+
+### `--allow-virtualized` (smoke only)
+
+Permits command-construction and wiring validation on a VM or container
+**only** with `--profile smoke` or `--profile development`; combined with
+`publication` or `full` it fails. Such runs always record
+`"publicationEligible": false, "environmentKind": "virtualized"`. There is
+no option that allows virtualized publication evidence.
 
 ## What must hold before measurement starts (all enforced)
 
