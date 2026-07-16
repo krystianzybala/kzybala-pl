@@ -75,8 +75,9 @@ for (const variant of Object.keys(manifest.variants ?? {})) {
 // pinned performance governor on both selected CPUs; anything else stays
 // native-uncontrolled. Turbo/SMT state is captured and reviewable but does
 // not upgrade the label automatically.
+const cpuDetails = Array.isArray(environment.cpuDetails) ? environment.cpuDetails : [];
 const controlled =
-  environment.governorCpuA === "performance" && environment.governorCpuB === "performance";
+  cpuDetails.length > 0 && cpuDetails.every((cpu) => cpu.governor === "performance");
 const environmentLabel = controlled ? "native-controlled" : "native-uncontrolled";
 
 const commonMeta = {

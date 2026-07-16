@@ -658,6 +658,126 @@ test("rejected runs: results/ and evidence archives are ignored by git", () => {
   assert.match(ignored, /linux-evidence\.tar\.zst/);
 });
 
+// --- single-core cardinality (real-host preflight regression) ---------------------
+// The first Precision 5810 preflight blocked cache-hierarchy/jit-pipeline
+// on an unconditional CPU_LIST[1] access. These tests run the REAL runner
+// against the REAL shipped lab configs with a 5810-like topology fixture
+// and stubbed tooling — fixture results, never a real-host success claim.
+
+const LSCPU_5810 = join(FIXTURES, "lscpu-e-precision5810-like.txt");
+const PREFLIGHT_STUBS_5810 = () => makeStubDir({
+  uname: `echo Linux`,
+  "systemd-detect-virt": `echo none`,
+  lscpu: `cat '${LSCPU_5810}'`,
+  perf: GATE_PERF_STUB,
+  mvn: `exit 0`,
+  java: `exit 0`,
+  nproc: `echo 14`,
+});
+
+function runRealLab(lab, cpus, extraArgs, stubs, out) {
+  try {
+    const stdout = execFileSync("bash", [RUNNER, lab, "--profile", "publication", "--cpus", cpus, ...extraArgs, "--out", out], {
+      env: { ...process.env, PATH: `${stubs}:/usr/bin:/bin` },
+      encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+  }
+}
+
+test("single-core: cache-hierarchy and jit-pipeline preflight with exactly one CPU, no CPU_LIST[1], no cpuB, single topology kind", () => {
+  const stubs = PREFLIGHT_STUBS_5810();
+  const out = mkdtempSync(join(tmpdir(), "ev-single-"));
+  try {
+    for (const lab of ["cache-hierarchy", "jit-pipeline"]) {
+      const r = runRealLab(lab, "2", ["--preflight-only"], stubs, out);
+      assert.equal(r.status, 0, `${lab}: ${r.stderr}`);
+      assert.match(r.stdout, /Preflight passed\./);
+      assert.doesNotMatch(r.stderr + r.stdout, /unbound variable/);
+      // pair-topology validation never ran; single validation did
+      assert.match(r.stdout, /kind=single cpu=2/);
+      assert.doesNotMatch(r.stdout, /coreA=|SMT siblings|cross-socket/);
+      const runDir = execSync(`find '${out}/${lab}' -mindepth 1 -maxdepth 1 -type d | tail -1`, { encoding: "utf8" }).trim();
+      const envJson = readFileSync(join(runDir, "environment.json"), "utf8");
+      assert.ok(!envJson.includes("cpuB"), `${lab}: environment.json must not carry a cpuB field`);
+      const parsed = JSON.parse(envJson);
+      assert.equal(parsed.selectedCpus.kind, "single");
+      assert.equal(parsed.selectedCpus.list, "2");
+      assert.equal(parsed.cpuDetails.length, 1, "exactly one selected CPU recorded");
+      assert.equal(parsed.cpuDetails[0].cpu, 2);
+    }
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("single-core: command construction pins exactly 'taskset -c 2' with no trailing comma and no second worker", () => {
+  const stubs = PREFLIGHT_STUBS_5810();
+  const out = mkdtempSync(join(tmpdir(), "ev-single-dry-"));
+  try {
+    const r = runRealLab("cache-hierarchy", "2", ["--dry-run"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    const planLines = r.stdout.split("\n").filter((l) => l.includes("[plan]") && l.includes("taskset"));
+    assert.ok(planLines.length > 0);
+    for (const line of planLines) {
+      assert.match(line, /taskset -c 2 /, line);
+      assert.doesNotMatch(line, /taskset -c 2,/, "no fake second CPU, no trailing comma");
+      assert.doesNotMatch(line, /plab\.cpuB/, "no second-worker affinity property");
+    }
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("cardinality: every lab requires its exact CPU count — under- and over-supply fail with a clear error", () => {
+  const stubs = PREFLIGHT_STUBS_5810();
+  const out = mkdtempSync(join(tmpdir(), "ev-card-"));
+  try {
+    const cases = [
+      // [lab, wrong cpus, expected exact]
+      ["false-sharing", "2", 2],          // pair lab, one CPU
+      ["spsc-ring-buffer", "2", 2],       // pair lab, one CPU
+      ["thread-per-core", "2,3", 4],      // quad lab, two CPUs
+      ["cas-contention", "2,3", 8],       // octet lab, two CPUs
+      ["cache-hierarchy", "2,3", 1],      // single lab, two CPUs
+      ["jit-pipeline", "2,3", 1],         // single lab, two CPUs
+    ];
+    for (const [lab, cpus, exact] of cases) {
+      const r = runRealLab(lab, cpus, ["--preflight-only"], stubs, out);
+      assert.notEqual(r.status, 0, `${lab} must reject --cpus ${cpus}`);
+      assert.match(r.stderr, new RegExp(`cardinality error: lab ${lab} requires exactly ${exact} CPU`), r.stderr);
+    }
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("cardinality: all eight real lab configurations pass the full simulated live preflight at their exact cardinality", () => {
+  const stubs = PREFLIGHT_STUBS_5810();
+  const out = mkdtempSync(join(tmpdir(), "ev-all8-"));
+  try {
+    const cpusFor = {
+      "cache-hierarchy": "2", "jit-pipeline": "2",
+      "false-sharing": "2,3", "spsc-ring-buffer": "2,3", "mesi": "2,3", "memory-ordering": "2,3",
+      "thread-per-core": "2,3,4,5",
+      "cas-contention": "2,3,4,5,6,7,8,9",
+    };
+    for (const [lab, cpus] of Object.entries(cpusFor)) {
+      const r = runRealLab(lab, cpus, ["--preflight-only"], stubs, out);
+      assert.equal(r.status, 0, `${lab} (--cpus ${cpus}): ${r.stderr || r.stdout}`);
+      assert.match(r.stdout, /Preflight passed\./, lab);
+    }
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
 // --- evidence-maturity invariants ------------------------------------------------
 
 test("capability: perf and jmh importers remain fixture-only until real-host artifacts pass review", () => {

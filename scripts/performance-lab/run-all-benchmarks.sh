@@ -69,12 +69,19 @@ cfg_flat() { # cfg_flat <key>
   awk -v key="$1" '/^[a-z_0-9]+:/ { split($0, kv, ": *"); if (kv[1] == key) { print kv[2]; exit } }' "$HOST_CONFIG" | tr -d '"'
 }
 cfg_section() { # cfg_section <section> <key>
+  # Value normalization accepts the three natural ways to write a CPU set —
+  # quoted CSV ("2,3"), bare CSV (2,3) and a YAML flow list ([2, 3]) — and
+  # canonicalizes all of them to a space-free CSV.
   awk -v section="$1" -v key="$2" '
     /^[a-z_0-9]+:$/ { current = substr($0, 1, length($0) - 1); next }
     /^  [a-zA-Z0-9_-]+:/ {
       if (current == section) {
         line = $0; sub(/^  /, "", line); split(line, kv, ": *")
-        if (kv[1] == key) { gsub(/"/, "", kv[2]); print kv[2]; exit }
+        if (kv[1] == key) {
+          value = kv[2]
+          gsub(/["\[\] ]/, "", value)
+          print value; exit
+        }
       }
     }' "$HOST_CONFIG"
 }
@@ -126,7 +133,7 @@ inspect_lab() {
     declare -f lab_variants lab_jmh_args lab_threads lab_cpu_count lab_worker_props lab_rust_evidence_cmd >/dev/null || { echo 'incomplete evidence configuration (missing required functions)'; exit 3; }
     [ -d '${REPO_ROOT}/'\"\$LAB_JAVA_DIR\" ] || { echo 'missing benchmark code ('\"\$LAB_JAVA_DIR\"')'; exit 3; }
     ls '${REPO_ROOT}/'\"\$LAB_JAVA_DIR\"/src/test/java/**/*.java >/dev/null 2>&1 || find '${REPO_ROOT}/'\"\$LAB_JAVA_DIR\"/src/test -name '*.java' 2>/dev/null | grep -q . || { echo 'missing correctness tests'; exit 3; }
-    echo \"\${LAB_MIN_CPUS:-2} \${LAB_COOLDOWN_CLASS:-standard}\"" 2>&1)"; then
+    echo \"\${LAB_CPUS_EXACT:-\${LAB_MIN_CPUS:-2}} \${LAB_COOLDOWN_CLASS:-standard}\"" 2>&1)"; then
     lab_set "$lab" state BLOCKED; lab_set "$lab" reason "$meta"; return
   fi
   local min_cpus cooldown_class
@@ -142,8 +149,8 @@ inspect_lab() {
   fi
   local count
   count="$(awk -F',' '{print NF}' <<<"$cpus")"
-  if [ "$count" -lt "$min_cpus" ]; then
-    lab_set "$lab" state BLOCKED; lab_set "$lab" reason "cpu_set '${set_name}' has ${count} CPU(s), lab needs >= ${min_cpus}"; return
+  if [ "$count" -ne "$min_cpus" ]; then
+    lab_set "$lab" state BLOCKED; lab_set "$lab" reason "cardinality error: cpu_set '${set_name}' has ${count} CPU(s), lab requires exactly ${min_cpus}"; return
   fi
   lab_set "$lab" state READY; lab_set "$lab" cpuset "$cpus"; lab_set "$lab" cooldown "$cooldown_class"
 }

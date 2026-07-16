@@ -267,7 +267,7 @@ test("batch: CPU mappings are validated against the lab's requirements", () => {
     writeFileSync(env.host, cfg);
     const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
     assert.notEqual(r.status, 0);
-    assert.match(r.stdout, /lab-b\s+BLOCKED: cpu_set 'single' has 1 CPU\(s\), lab needs >= 2/);
+    assert.match(r.stdout, /lab-b\s+BLOCKED: cardinality error: cpu_set 'single' has 1 CPU\(s\), lab requires exactly 2/);
   } finally {
     rmSync(env.base, { recursive: true, force: true });
   }
@@ -599,11 +599,15 @@ test("host config: the shipped Precision 5810 template conforms to its schema sh
     assert.match(yaml, new RegExp(`^${key}: `, "m"));
   }
   for (const set of ["core_single", "core_pair", "core_quad", "core_octet"]) {
-    assert.match(yaml, new RegExp(`^  ${set}: `, "m"));
+    const m = yaml.match(new RegExp(`^  ${set}: (.*)$`, "m"));
+    assert.ok(m, `${set} must be present`);
+    // accepted forms: "" (unfilled), "2,3" quoted, 2,3 bare, [2, 3] flow
+    // list — the batch parser canonicalizes all of them; values come from
+    // live lscpu, never guessed from the host model.
+    const normalized = m[1].replace(/["\[\] ]/g, "");
+    assert.match(normalized, /^$|^[0-9]+(,[0-9]+)*$/,
+      `${set} value "${m[1]}" must normalize to an empty string or a digits-only CSV`);
   }
-  // the template ships with EMPTY cpu sets — CPU ids are never assumed from
-  // the host model
-  assert.match(yaml, /core_pair: ""/);
   for (const lab of ["false-sharing", "spsc-ring-buffer", "cas-contention"]) {
     assert.match(yaml, new RegExp(`^  ${lab}: `, "m"));
   }
