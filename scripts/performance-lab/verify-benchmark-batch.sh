@@ -41,7 +41,7 @@ const manifest = JSON.parse(readFileSync(join(batchDir, "batch-manifest.json"), 
 for (const key of ["batchId", "hostName", "profile", "repetitions", "sourceCommit", "executionOrder", "labs", "state"]) {
   if (!(key in manifest)) problems.push(`manifest missing "${key}"`);
 }
-if (!["complete", "partial", "rejected", "failed-preflight"].includes(manifest.state)) {
+if (!["complete", "partial", "rejected", "failed-preflight", "failed-infrastructure"].includes(manifest.state)) {
   problems.push(`manifest state "${manifest.state}" is not a known final state`);
 }
 

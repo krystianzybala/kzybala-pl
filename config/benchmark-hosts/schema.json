@@ -2,35 +2,91 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "pl.kzybala.benchmark-host-config",
   "title": "Benchmark host configuration (constrained-YAML subset)",
-  "description": "Schema for config/benchmark-hosts/*.yaml. The files use a deliberately constrained YAML subset — flat `key: value` pairs plus one-level sections with two-space-indented `key: value` entries — so the measurement host can parse them without a YAML library. This JSON Schema describes the logical structure after parsing; scripts/test-benchmark-batch.js validates the shipped template against it.",
+  "description": "Schema for config/benchmark-hosts/*.yaml. The files use a deliberately constrained YAML subset \u2014 flat `key: value` pairs plus one-level sections with two-space-indented `key: value` entries \u2014 so the measurement host can parse them without a YAML library. This JSON Schema describes the logical structure after parsing; scripts/test-benchmark-batch.js validates the shipped template against it.",
   "type": "object",
-  "required": ["schema_version", "host_name", "max_load_per_core_x100", "stability_timeout_seconds", "cooldown_seconds", "cpu_sets", "labs"],
+  "required": [
+    "schema_version",
+    "host_name",
+    "max_load_per_core_x100",
+    "stability_timeout_seconds",
+    "cooldown_seconds",
+    "cpu_sets",
+    "labs"
+  ],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": 1 },
-    "host_name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-    "max_load_per_core_x100": { "type": "integer", "minimum": 1, "maximum": 100 },
-    "stability_timeout_seconds": { "type": "integer", "minimum": 30 },
+    "schema_version": {
+      "const": 1
+    },
+    "host_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "max_load_per_core_x100": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "stability_timeout_seconds": {
+      "type": "integer",
+      "minimum": 30
+    },
     "cooldown_seconds": {
       "type": "object",
-      "required": ["short", "standard", "long"],
+      "required": [
+        "short",
+        "standard",
+        "long"
+      ],
       "additionalProperties": false,
       "properties": {
-        "short": { "type": "integer", "minimum": 0 },
-        "standard": { "type": "integer", "minimum": 0 },
-        "long": { "type": "integer", "minimum": 0 }
+        "short": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "standard": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "long": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "cpu_sets": {
       "type": "object",
       "description": "Named CPU sets. Values are comma-separated logical CPU ids with no spaces, chosen from live `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE` output: distinct physical cores, no SMT siblings, same socket/NUMA node by default. Empty string = not yet filled (batch refuses to run).",
-      "required": ["core_single", "core_pair", "core_quad", "core_octet"],
-      "additionalProperties": { "type": "string", "pattern": "^$|^[0-9]+(,[0-9]+)*$" }
+      "required": [
+        "core_single",
+        "core_pair",
+        "core_quad",
+        "core_octet"
+      ],
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^$|^[0-9]+(,[0-9]+)*$"
+      }
     },
     "labs": {
       "type": "object",
-      "description": "Lab id → cpu_set name. Every enabled lab must be mapped; the referenced set must exist and satisfy the lab's LAB_CPU_SET_REQUIREMENT / LAB_MIN_CPUS.",
-      "additionalProperties": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+      "description": "Lab id \u2192 cpu_set name. Every enabled lab must be mapped; the referenced set must exist and satisfy the lab's LAB_CPU_SET_REQUIREMENT / LAB_MIN_CPUS.",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z0-9_]+$"
+      }
+    },
+    "stability_consecutive_samples": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3,
+      "description": "Number of consecutive stable samples required before measurement continues."
+    },
+    "stability_sample_interval_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 5,
+      "description": "Seconds between stability samples."
     }
   }
 }

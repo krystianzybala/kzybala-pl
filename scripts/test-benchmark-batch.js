@@ -93,11 +93,30 @@ echo "$(date +%s%N) MEASURE-END \${lab} rep\${n}" >> "${log}"
   chmodSync(join(bin, "stub-runner.sh"), 0o755);
   writeFileSync(join(bin, "stub-verify.sh"), `#!/usr/bin/env bash\nexit 0\n`);
   chmodSync(join(bin, "stub-verify.sh"), 0o755);
+  // clean-tree git (publication gate) — dirty-tree tests override this stub
+  writeFileSync(join(bin, "git"), `#!/bin/sh
+case "$*" in
+  *status*--porcelain*) exit 0 ;;
+  *rev-parse*) echo "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; exit 0 ;;
+  *log*) echo "{}"; exit 0 ;;
+esac
+exit 0
+`);
+  chmodSync(join(bin, "git"), 0o755);
+  // Linux-faithful pgrep: no match prints "0" AND exits 1 (the real-host
+  // double-zero regression source)
+  writeFileSync(join(bin, "pgrep"), `#!/bin/sh\necho 0\nexit 1\n`);
+  chmodSync(join(bin, "pgrep"), 0o755);
+  writeFileSync(join(bin, "nproc"), `#!/bin/sh\necho 14\n`);
+  chmodSync(join(bin, "nproc"), 0o755);
+  writeFileSync(join(base, "loadavg-stable.txt"), "1.52 0.43 0.15 1/500 12345\n");
 
   writeFileSync(join(base, "host.yaml"), `schema_version: 1
 host_name: test-host
-max_load_per_core_x100: 99
-stability_timeout_seconds: 2
+max_load_per_core_x100: 20
+stability_timeout_seconds: 30
+stability_consecutive_samples: 3
+stability_sample_interval_seconds: 0
 
 cooldown_seconds:
   short: 0
@@ -126,12 +145,13 @@ function runBatch(env, args, extraEnv = {}) {
     const stdout = execFileSync("bash", [BATCH, ...args], {
       env: {
         ...process.env,
+        PATH: `${env.bin}:${process.env.PATH}`,
         PLAB_RUNNER_OVERRIDE: join(env.bin, "stub-runner.sh"),
         PLAB_VERIFY_OVERRIDE: join(env.bin, "stub-verify.sh"),
         PLAB_CONTENT_ROOT: env.content,
         PLAB_CONF_DIR: env.confs,
         PLAB_BATCH_ROOT: env.batches,
-        PLAB_STABILITY_POLL_SECONDS: "1",
+        PLAB_PROC_LOADAVG: join(env.base, "loadavg-stable.txt"),
         ...extraEnv,
       },
       encoding: "utf8",
@@ -243,12 +263,10 @@ test("batch: rejected runs do not count toward repetitions and the batch is labe
 test("batch: host instability blocks execution instead of measuring under load", () => {
   const env = makeEnv();
   try {
-    // a stubbed pgrep that always reports an active benchmark process
+    // a stubbed pgrep that always reports active benchmark processes
     writeFileSync(join(env.bin, "pgrep"), "#!/bin/sh\necho 3\nexit 0\n");
     chmodSync(join(env.bin, "pgrep"), 0o755);
-    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host], {
-      PATH: `${env.bin}:${process.env.PATH}`,
-    });
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
     assert.notEqual(r.status, 0);
     const manifest = latestManifest(env);
     assert.equal(manifest.state, "partial");
@@ -292,9 +310,7 @@ test("batch: whole-script sudo is rejected and no built command uses sudo", () =
   try {
     writeFileSync(join(env.bin, "id"), "#!/bin/sh\necho 0\n");
     chmodSync(join(env.bin, "id"), 0o755);
-    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host], {
-      PATH: `${env.bin}:${process.env.PATH}`,
-    });
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /do not run this script with sudo\/as root/);
     assert.equal(readLog(env).length, 0);
@@ -474,6 +490,193 @@ test("import-batch: never derives reviewed/verified and never touches public con
   assert.ok(!/lab\/[a-z-]+\/index\.html/.test(src), "batch import must never touch public pages");
   const perLab = readFileSync(join(ROOT, "scripts/performance-lab/import-linux-evidence.mjs"), "utf8");
   assert.match(perLab, /reproduction: \{ required: 1, completed: 0 \}/, "fresh imports start below reproduced; reviewer fields are never auto-set");
+});
+
+// --- host-stability checker (real-5810 batch-20260716T101409Z regression) ---------
+// The first real batch classified all 16 runs blocked-unstable-host on a
+// host whose load was 1.52/14 cores = 0.109 < 0.20 — because
+// `pgrep -fc ... || echo 0` double-printed "0\n0" (Linux pgrep prints 0 AND
+// exits 1), corrupting both the JSON and the stability compare.
+
+function libWithStubs(script, stubs, extraEnv = {}) {
+  const bin = mkdtempSync(join(tmpdir(), "plab-stub-"));
+  try {
+    for (const [name, body] of Object.entries(stubs)) {
+      writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
+      chmodSync(join(bin, name), 0o755);
+    }
+    try {
+      const stdout = execFileSync("bash", ["-c", `source '${LIB}'; ${script}`], {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...extraEnv },
+        encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { status: 0, stdout, stderr: "" };
+    } catch (err) {
+      return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+    }
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
+}
+
+test("stability: pgrep printing 0 with exit 1 yields exactly one numeric zero, never 0\\n0", () => {
+  const r = libWithStubs("count_benchmark_processes", { pgrep: `echo 0\nexit 1` });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "0\n", "exactly one non-negative integer + one newline");
+});
+
+test("stability: empty pgrep output (macOS semantics) also yields exactly one zero", () => {
+  const r = libWithStubs("count_benchmark_processes", { pgrep: `exit 1` });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "0\n");
+});
+
+test("stability: multiple process categories are summed numerically, never concatenated", () => {
+  const r = libWithStubs("count_benchmark_processes", {
+    pgrep: `case "$*" in
+  *run-linux*) echo 1; exit 0 ;;
+  *benchmarks*) echo 2; exit 0 ;;
+  *evidence*) echo 3; exit 0 ;;
+esac
+echo 0; exit 1`,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "6\n", "2+3+1 summed, not concatenated");
+});
+
+test("stability: non-numeric or multiline counter output is rejected as an infrastructure error", () => {
+  for (const body of [`printf '0\\n0\\n'; exit 0`, `echo garbage; exit 0`]) {
+    const r = libWithStubs("count_benchmark_processes", { pgrep: body });
+    assert.notEqual(r.status, 0, `stub body ${body} must be rejected`);
+    assert.match(r.stderr, /invalid output/);
+  }
+});
+
+test("stability: a 14-core host at load 1.52 (0.109/core) passes the 0.20 threshold; 0.00 passes; overload fails with explicit reasons", () => {
+  const load = mkdtempSync(join(tmpdir(), "plab-load-"));
+  try {
+    writeFileSync(join(load, "l152"), "1.52 0.43 0.15 1/512 40941\n");
+    writeFileSync(join(load, "l000"), "0.00 0.00 0.00 1/512 40941\n");
+    writeFileSync(join(load, "l650"), "6.50 5.90 5.10 8/900 23456\n");
+    const ok = libWithStubs(`evaluate_stability_sample '${join(load, "l152")}' 14 20 0`, {});
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+    const sample = JSON.parse(ok.stdout);
+    assert.equal(sample.stable, true);
+    assert.equal(sample.load1, 1.52);
+    assert.equal(sample.logicalCpus, 14);
+    assert.ok(Math.abs(sample.loadPerCore - 0.1086) < 0.001);
+    assert.equal(sample.maxLoadPerCore, 0.2);
+    assert.equal(sample.benchmarkProcesses, 0);
+
+    const idle = libWithStubs(`evaluate_stability_sample '${join(load, "l000")}' 14 20 0`, {});
+    assert.equal(idle.status, 0);
+    assert.equal(JSON.parse(idle.stdout).stable, true);
+
+    const busy = libWithStubs(`evaluate_stability_sample '${join(load, "l650")}' 14 20 5`, {});
+    assert.notEqual(busy.status, 0);
+    const rejected = JSON.parse(busy.stdout);
+    assert.equal(rejected.stable, false);
+    assert.equal(rejected.reasons.length, 2, "every failing condition listed");
+    assert.match(rejected.reasons[0], /loadPerCore 0\.4643 > max 0\.20/);
+    assert.match(rejected.reasons[1], /benchmarkProcesses 5 != 0/);
+  } finally {
+    rmSync(load, { recursive: true, force: true });
+  }
+});
+
+test("stability: generated before/after environment files parse as JSON with integer benchmarkProcesses", () => {
+  const env = makeEnv();
+  try {
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
+    assert.equal(r.status, 0, r.stderr);
+    const batchDir = join(env.batches, readdirSync(env.batches).sort().pop());
+    for (const f of ["before-batch.json", "after-batch.json"]) {
+      const parsed = JSON.parse(readFileSync(join(batchDir, "host-environment", f), "utf8"));
+      assert.equal(typeof parsed.benchmarkProcesses, "number", `${f}: benchmarkProcesses must be a JSON integer`);
+      assert.equal(parsed.benchmarkProcesses, 0);
+    }
+    // consecutive-sample evidence: the samples artifact exists with >= 3
+    // stable samples for the first gate, and measurement proceeded
+    // immediately (no 600s wait)
+    const samples = readFileSync(join(batchDir, "host-stability-samples.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.ok(samples.length >= 3);
+    assert.ok(samples.every((s) => s.stable === true));
+    const manifest = latestManifest(env);
+    assert.equal(manifest.state, "complete");
+    assert.equal(manifest.publicationEligible, true);
+    assert.equal(manifest.stabilityPolicy.consecutiveSamples, 3);
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("stability: malformed metrics abort the ENTIRE batch as infrastructure failure, not host instability", () => {
+  const env = makeEnv();
+  try {
+    // pgrep emits the historical double-zero garbage with exit 0 —
+    // an invalid metric, not a busy host
+    writeFileSync(join(env.bin, "pgrep"), `#!/bin/sh\nprintf '0\\n0\\n'\nexit 0\n`);
+    chmodSync(join(env.bin, "pgrep"), 0o755);
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /failed-environment-capture|invalid-stability-metric/);
+    assert.doesNotMatch(r.stderr, /did not become stable/);
+    // aborted at first occurrence: no measurement ran at all
+    assert.equal(readLog(env).filter((l) => l.includes("MEASURE-START")).length, 0);
+    const manifest = latestManifest(env);
+    assert.equal(manifest.state, "failed-infrastructure");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("stability: --stability-check-only validates and reports without any benchmark, build or archive", () => {
+  const env = makeEnv();
+  try {
+    const r = runBatch(env, ["--profile", "publication", "--repetitions", "2", "--host-config", env.host, "--stability-check-only"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.match(r.stdout, /thresholds: maxLoadPerCore=0\.20 consecutiveSamples=3/);
+    assert.match(r.stdout, /Host stable \(3 consecutive good samples\)\./);
+    assert.match(r.stdout, /"benchmarkProcesses": 0/);
+    assert.equal(readLog(env).length, 0, "no per-lab runner invocation");
+    assert.equal(existsSync(env.batches), false, "no batch artifacts, no archive");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("stability: a dirty tree blocks the publication profile before measurement, with paths listed; smoke stays publication-ineligible", () => {
+  const env = makeEnv();
+  try {
+    writeFileSync(join(env.bin, "git"), `#!/bin/sh
+case "$*" in
+  *status*--porcelain*) echo " M content/labs/false-sharing/theory.md"; echo "?? scratch.txt"; exit 0 ;;
+  *rev-parse*) echo "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; exit 0 ;;
+  *log*) echo "{}"; exit 0 ;;
+esac
+exit 0
+`);
+    chmodSync(join(env.bin, "git"), 0o755);
+    const pub = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
+    assert.notEqual(pub.status, 0);
+    assert.match(pub.stderr, /dirty working tree/);
+    assert.match(pub.stderr, /content\/labs\/false-sharing\/theory\.md/);
+    assert.match(pub.stderr, /scratch\.txt/);
+    assert.equal(readLog(env).filter((l) => l.includes("MEASURE-START")).length, 0);
+
+    const smoke = runBatch(env, ["--profile", "smoke", "--repetitions", "1", "--diagnostic", "--host-config", env.host]);
+    assert.equal(smoke.status, 0, smoke.stderr);
+    const manifest = latestManifest(env);
+    assert.equal(manifest.publicationEligible, false, "a dirty smoke batch is permanently publication-ineligible");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("stability: the real malformed environment fixture is rejected by JSON validation", () => {
+  const fixture = join(ROOT, "scripts", "performance-lab", "__fixtures__", "malformed-environment.json");
+  const r = libWithStubs(`validate_json_file '${fixture}'`, {});
+  assert.notEqual(r.status, 0, "the double-zero environment document must fail structural validation");
 });
 
 // --- reference-tier discovery against the REAL repository -------------------------

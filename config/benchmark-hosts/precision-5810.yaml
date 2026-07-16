@@ -14,6 +14,11 @@ schema_version: 1
 host_name: precision-5810
 max_load_per_core_x100: 20
 stability_timeout_seconds: 600
+# Consecutive-sample policy: N good samples, M seconds apart, allow the
+# batch to continue immediately — the timeout above is an upper bound,
+# never a mandatory delay.
+stability_consecutive_samples: 3
+stability_sample_interval_seconds: 5
 
 cooldown_seconds:
   short: 60

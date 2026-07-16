@@ -26,7 +26,7 @@ source "${SCRIPT_DIR}/lib/evidence-lib.sh"
 # without duplicating orchestration logic in fixtures.
 LAB_RUNNER="${PLAB_RUNNER_OVERRIDE:-${SCRIPT_DIR}/run-linux-evidence.sh}"
 VERIFY_EVIDENCE="${PLAB_VERIFY_OVERRIDE:-${SCRIPT_DIR}/verify-evidence.sh}"
-STABILITY_POLL="${PLAB_STABILITY_POLL_SECONDS:-10}"
+
 # Further test hooks (never needed in real use): fixture content/conf roots
 # and a batch output root override.
 CONTENT_ROOT="${PLAB_CONTENT_ROOT:-${REPO_ROOT}/content/labs}"
@@ -43,6 +43,7 @@ PROFILE="publication"
 HOST_CONFIG=""
 REPETITIONS=2
 PREFLIGHT_ONLY=0
+STABILITY_CHECK_ONLY=0
 DRY_RUN=0
 DIAGNOSTIC=0
 while [ $# -gt 0 ]; do
@@ -52,6 +53,7 @@ while [ $# -gt 0 ]; do
     --repetitions) REPETITIONS="$2"; shift 2 ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --stability-check-only) STABILITY_CHECK_ONLY=1; shift ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
     *) fail "unknown option: $1" ;;
   esac
@@ -90,6 +92,13 @@ cfg_section() { # cfg_section <section> <key>
 HOST_NAME="$(cfg_flat host_name)"
 MAX_LOAD_X100="$(cfg_flat max_load_per_core_x100)"
 STABILITY_TIMEOUT="$(cfg_flat stability_timeout_seconds)"
+# Consecutive-sample stability policy (explicit in the host config; the
+# 600s timeout is an upper bound, never a mandatory delay — a stable host
+# passes after N samples × interval seconds).
+STABILITY_CONSECUTIVE="$(cfg_flat stability_consecutive_samples)"
+STABILITY_CONSECUTIVE="${STABILITY_CONSECUTIVE:-3}"
+STABILITY_INTERVAL="${PLAB_STABILITY_POLL_SECONDS:-$(cfg_flat stability_sample_interval_seconds)}"
+STABILITY_INTERVAL="${STABILITY_INTERVAL:-5}"
 [ -n "$HOST_NAME" ] && [ -n "$MAX_LOAD_X100" ] && [ -n "$STABILITY_TIMEOUT" ] || fail "host config is missing host_name/max_load_per_core_x100/stability_timeout_seconds"
 
 cooldown_for_class() {
@@ -97,6 +106,95 @@ cooldown_for_class() {
   seconds="$(cfg_section cooldown_seconds "${1:-standard}")"
   echo "${seconds:-120}"
 }
+
+# --- Host state + stability ---------------------------------------------------
+# JSON is generated STRUCTURALLY (capture_host_state_json in
+# evidence-lib.sh, python3 json.dumps) and validated before the batch
+# continues — the first real 5810 batch failed because a
+# `pgrep -c || echo 0` double-printed "0\n0" into hand-concatenated JSON
+# and the string compare in the stability loop then never matched.
+# Malformed metrics are INFRASTRUCTURE errors (abort the whole batch),
+# never "host instability".
+write_host_state() { # <file>
+  local file="$1"
+  if ! capture_host_state_json > "$file"; then
+    return 1
+  fi
+  validate_json_file "$file"
+}
+
+STABILITY_SAMPLES_FILE=""
+
+# wait_for_stability <cooldown-seconds>
+# returns: 0 = stable (N consecutive good samples)
+#          1 = genuinely unstable until the timeout (blocked-unstable-host)
+#          2 = infrastructure error (invalid metric — abort the batch)
+# Every sample is appended, with all measured values, thresholds and
+# explicit rejection reasons, to host-stability-samples.jsonl.
+wait_for_stability() {
+  local cooldown="$1"
+  sleep "$cooldown"
+  local waited=0
+  local consecutive=0
+  local nproc
+  nproc="$(nproc 2>/dev/null || echo 1)"
+  while :; do
+    local procs sample
+    if ! procs="$(count_benchmark_processes)"; then
+      echo "run-all-benchmarks: invalid-stability-metric — the process counter itself failed; aborting (this is an infrastructure error, not host instability)" >&2
+      return 2
+    fi
+    if sample="$(evaluate_stability_sample "${PLAB_PROC_LOADAVG:-/proc/loadavg}" "$nproc" "$MAX_LOAD_X100" "$procs")"; then
+      consecutive=$((consecutive + 1))
+    else
+      # evaluate exits 1 for unstable, but a python failure yields no JSON:
+      if [ -z "$sample" ]; then
+        echo "run-all-benchmarks: invalid-stability-metric — sample evaluation failed; aborting" >&2
+        return 2
+      fi
+      consecutive=0
+    fi
+    if [ -n "$STABILITY_SAMPLES_FILE" ]; then
+      printf '%s\n' "$sample" >> "$STABILITY_SAMPLES_FILE"
+    fi
+    echo "   stability sample: ${sample}"
+    if [ "$consecutive" -ge "$STABILITY_CONSECUTIVE" ]; then
+      return 0
+    fi
+    # the timeout must advance even with a zero sample interval — the
+    # upper bound is wall-clock-ish, never an infinite loop
+    local step="$STABILITY_INTERVAL"
+    [ "$step" -ge 1 ] || step=1
+    waited=$((waited + step))
+    if [ "$waited" -ge "$STABILITY_TIMEOUT" ]; then
+      echo "run-all-benchmarks: host not stable within ${STABILITY_TIMEOUT}s — every rejected sample and its reasons are in host-stability-samples.jsonl" >&2
+      return 1
+    fi
+    sleep "$STABILITY_INTERVAL"
+  done
+}
+
+# --- Stability-only mode --------------------------------------------------------
+# Captures/validates environment metadata and evaluates the consecutive-
+# sample policy with every threshold printed — no inventory, no build, no
+# JMH/harness/perf, no archive. Finishes in
+# (consecutive × interval) seconds on an already-stable host.
+if [ "$STABILITY_CHECK_ONLY" = "1" ]; then
+  echo "Stability check (no benchmark, no profiler, no archive)"
+  echo "  thresholds: maxLoadPerCore=$(LC_ALL=C awk -v m="$MAX_LOAD_X100" 'BEGIN{printf "%.2f", m/100}') consecutiveSamples=${STABILITY_CONSECUTIVE} sampleIntervalSeconds=${STABILITY_INTERVAL} timeoutSeconds=${STABILITY_TIMEOUT}"
+  if ! HOST_STATE="$(capture_host_state_json)"; then
+    echo "run-all-benchmarks: failed-environment-capture — see stderr above" >&2
+    exit 3
+  fi
+  printf '%s
+' "$HOST_STATE"
+  wait_for_stability 0
+  case $? in
+    0) echo "Host stable (${STABILITY_CONSECUTIVE} consecutive good samples)."; exit 0 ;;
+    1) echo "Host NOT stable within ${STABILITY_TIMEOUT}s — see the rejected samples above." >&2; exit 1 ;;
+    *) echo "run-all-benchmarks: invalid-stability-metric — infrastructure error, not host instability." >&2; exit 3 ;;
+  esac
+fi
 
 # --- Enabled-lab inventory ---------------------------------------------------
 # Canonical sources only: content/labs/*/lab.json (benchmark: true) names
@@ -212,6 +310,8 @@ write_batch_manifest() { # <state>
     echo "  \"hostName\": \"${HOST_NAME}\","
     echo "  \"profile\": \"${PROFILE}\","
     echo "  \"repetitions\": ${REPETITIONS},"
+    echo "  \"publicationEligible\": ${PUBLICATION_ELIGIBLE_BATCH:-false},"
+    echo "  \"stabilityPolicy\": { \"consecutiveSamples\": ${STABILITY_CONSECUTIVE}, \"sampleIntervalSeconds\": ${STABILITY_INTERVAL}, \"timeoutSeconds\": ${STABILITY_TIMEOUT}, \"maxLoadPerCoreX100\": ${MAX_LOAD_X100} },"
     echo "  \"sourceCommit\": \"$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)\","
     echo "  \"dirtyTree\": $([ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ] && echo true || echo false),"
     echo "  \"startedAt\": \"${BATCH_STARTED_AT:-}\","
@@ -263,52 +363,34 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# --- Host state + stability ---------------------------------------------------
-host_state_json() {
-  local governor="unavailable" temp="unavailable"
-  [ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ] && governor="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
-  if ls /sys/class/thermal/thermal_zone*/temp >/dev/null 2>&1; then
-    temp="$(cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -n | tail -1)"
+# --- Clean publication source ---------------------------------------------------
+# Publication evidence must trace to an exact commit: a dirty tree blocks
+# the batch BEFORE the first lab, with the offending paths listed. There is
+# deliberately no override that could produce publication-eligible evidence
+# from uncommitted state. Smoke/development batches may proceed dirty but
+# are permanently publication-ineligible.
+GIT_DIRTY_PATHS="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)"
+PUBLICATION_ELIGIBLE_BATCH="true"
+if [ -n "$GIT_DIRTY_PATHS" ]; then
+  if [ "$PROFILE" = "publication" ] || [ "$PROFILE" = "full" ]; then
+    echo "run-all-benchmarks: dirty working tree — publication measurements require an exact, committed source state. Modified/untracked paths:" >&2
+    printf '%s\n' "$GIT_DIRTY_PATHS" >&2
+    exit 1
   fi
-  printf '{ "capturedAt": "%s", "loadavg": "%s", "governorCpu0": "%s", "maxThermalZone": "%s", "memAvailableKb": "%s", "swapFreeKb": "%s", "benchmarkProcesses": %s }' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    "$(cat /proc/loadavg 2>/dev/null || echo unavailable)" \
-    "$governor" "$temp" \
-    "$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null || echo unavailable)" \
-    "$(awk '/SwapFree/ {print $2}' /proc/meminfo 2>/dev/null || echo unavailable)" \
-    "$(pgrep -fc 'benchmarks.jar|spsc_evidence|cas_evidence' 2>/dev/null || echo 0)"
-}
-
-wait_for_stability() { # <cooldown-seconds>
-  local cooldown="$1"
-  sleep "$cooldown"
-  local waited=0
-  local nproc
-  nproc="$(nproc 2>/dev/null || echo 1)"
-  while :; do
-    local procs load_ok
-    procs="$(pgrep -fc 'benchmarks.jar|spsc_evidence|cas_evidence' 2>/dev/null || echo 0)"
-    load_ok=1
-    # Load/memory checks apply on the real (Linux) host; the per-lab runner
-    # separately refuses to measure anywhere else.
-    if [ -r /proc/loadavg ]; then
-      check_load /proc/loadavg "$nproc" "$MAX_LOAD_X100" >/dev/null 2>&1 || load_ok=0
-    fi
-    if [ "$procs" = "0" ] && [ "$load_ok" = "1" ]; then
-      return 0
-    fi
-    waited=$((waited + STABILITY_POLL))
-    if [ "$waited" -ge "$STABILITY_TIMEOUT" ]; then
-      return 1
-    fi
-    sleep "$STABILITY_POLL"
-  done
-}
+  PUBLICATION_ELIGIBLE_BATCH="false"
+  echo "   dirty tree permitted for profile '${PROFILE}' — this batch is permanently publicationEligible=false"
+fi
+[ "$PROFILE" = "publication" ] || PUBLICATION_ELIGIBLE_BATCH="false"
 
 # --- Sequential execution -------------------------------------------------------
 mkdir -p "$BATCH_DIR/host-environment" "$BATCH_DIR/failed-runs"
+STABILITY_SAMPLES_FILE="${BATCH_DIR}/host-stability-samples.jsonl"
+: > "$STABILITY_SAMPLES_FILE"
 BATCH_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-host_state_json > "${BATCH_DIR}/host-environment/before-batch.json"
+if ! write_host_state "${BATCH_DIR}/host-environment/before-batch.json"; then
+  write_batch_manifest "failed-infrastructure"
+  fail "failed-environment-capture: before-batch host state is invalid — aborting (infrastructure error, not host instability)"
+fi
 git -C "$REPO_ROOT" log -1 --format='{ "commit": "%H", "subject": "%s", "committedAt": "%cI" }' > "${BATCH_DIR}/source-revision.json" 2>/dev/null || echo '{}' > "${BATCH_DIR}/source-revision.json"
 cp "$HOST_CONFIG" "${BATCH_DIR}/host-config.resolved.yaml"
 {
@@ -330,13 +412,26 @@ for rep in $(seq 1 "$REPETITIONS"); do
   for lab in $ORDERED_LABS; do
     echo
     echo "== repetition ${rep}/${REPETITIONS}, lab ${lab} (sequential — nothing else measures)"
-    if ! wait_for_stability "$(cooldown_for_class "$(lab_get "$lab" cooldown)")"; then
-      echo "run-all-benchmarks: host did not become stable within ${STABILITY_TIMEOUT}s — refusing to measure under uncontrolled load" >&2
+    STABILITY_RC=0
+    wait_for_stability "$(cooldown_for_class "$(lab_get "$lab" cooldown)")" || STABILITY_RC=$?
+    if [ "$STABILITY_RC" = "2" ]; then
+      # An invariant/parser failure repeats identically for every lab and
+      # repetition — abort the whole batch on first occurrence.
+      lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"invalid-stability-metric\"}"
+      write_batch_manifest "failed-infrastructure"
+      fail "invalid-stability-metric on ${lab} — aborting the entire batch (infrastructure error, not host instability)"
+    fi
+    if [ "$STABILITY_RC" = "1" ]; then
+      echo "run-all-benchmarks: host did not become stable within ${STABILITY_TIMEOUT}s — refusing to measure under uncontrolled load (rejected samples with reasons: host-stability-samples.jsonl)" >&2
       lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"blocked-unstable-host\"}"
       BATCH_STATE="partial"
       continue
     fi
-    PRE_STATE="$(host_state_json)"
+    if ! PRE_STATE="$(capture_host_state_json)"; then
+      lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"failed-environment-capture\"}"
+      write_batch_manifest "failed-infrastructure"
+      fail "failed-environment-capture on ${lab} — aborting the entire batch"
+    fi
     if "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --out "$REP_DIR" \
         > "${REP_DIR}/${lab}.console.log" 2>&1; then
       ARCHIVE="$(ls "${REP_DIR}/${lab}-"*"-linux-evidence.tar."* 2>/dev/null | head -1 || true)"
@@ -357,7 +452,10 @@ for rep in $(seq 1 "$REPETITIONS"); do
   done
 done
 
-host_state_json > "${BATCH_DIR}/host-environment/after-batch.json"
+if ! write_host_state "${BATCH_DIR}/host-environment/after-batch.json"; then
+  write_batch_manifest "failed-infrastructure"
+  fail "failed-environment-capture: after-batch host state is invalid"
+fi
 write_batch_manifest "$BATCH_STATE"
 write_sha256sums "$BATCH_DIR" || fail "batch hashing failed"
 # Built outside BATCH_DIR first (tar must never add an archive to itself),

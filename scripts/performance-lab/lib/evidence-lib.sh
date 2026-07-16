@@ -277,6 +277,134 @@ print(f"worker-placement: {len(entries)} worker record(s), all pinned, zero migr
 PYEOF
 }
 
+# --- Host state and stability ---------------------------------------------------
+# count_benchmark_processes
+#
+# Emits exactly ONE non-negative integer + newline. Linux pgrep -c prints
+# "0" AND exits 1 when nothing matches — `pgrep -c ... || echo 0` therefore
+# double-prints ("0\n0"), which is exactly the real-host bug this replaces:
+# capture with `|| true`, default empty→0, validate, and SUM the category
+# counts numerically (never concatenate command outputs). A malformed count
+# is an infrastructure error (return 1), never host instability.
+count_benchmark_processes() {
+  local java_count rust_count runner_count category
+  java_count="$(pgrep -fc 'benchmarks\.jar' 2>/dev/null || true)"
+  rust_count="$(pgrep -fc 'spsc_evidence|cas_evidence|tpc_evidence|cache_evidence|aot_baseline' 2>/dev/null || true)"
+  runner_count="$(pgrep -fc 'run-linux-evidence\.sh' 2>/dev/null || true)"
+  java_count="${java_count:-0}"
+  rust_count="${rust_count:-0}"
+  runner_count="${runner_count:-0}"
+  for category in "$java_count" "$rust_count" "$runner_count"; do
+    if ! [[ "$category" =~ ^[0-9]+$ ]]; then
+      echo "benchmark process counter produced invalid output: $(printf %q "$category")" >&2
+      return 1
+    fi
+  done
+  printf '%d\n' "$((java_count + rust_count + runner_count))"
+}
+
+# capture_host_state_json
+#
+# Structured JSON via python3 (never string concatenation) — every value
+# passes through json.dumps, so a stray newline in an input can never
+# corrupt the document. Returns 1 (infrastructure error) when the process
+# counter is invalid. Load-average file is overridable for tests
+# (PLAB_PROC_LOADAVG).
+capture_host_state_json() {
+  local procs
+  procs="$(count_benchmark_processes)" || return 1
+  local loadavg_file="${PLAB_PROC_LOADAVG:-/proc/loadavg}"
+  local governor="unavailable" temp="unavailable" loadavg="unavailable"
+  [ -r "$loadavg_file" ] && loadavg="$(cat "$loadavg_file")"
+  [ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ] && governor="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
+  if ls /sys/class/thermal/thermal_zone*/temp >/dev/null 2>&1; then
+    temp="$(cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -n | tail -1)"
+  fi
+  PLAB_J_CAPTURED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  PLAB_J_LOADAVG="$loadavg" \
+  PLAB_J_GOVERNOR="$governor" \
+  PLAB_J_THERMAL="$temp" \
+  PLAB_J_MEM="$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null || echo unavailable)" \
+  PLAB_J_SWAP="$(awk '/SwapFree/ {print $2}' /proc/meminfo 2>/dev/null || echo unavailable)" \
+  PLAB_J_PROCS="$procs" \
+  python3 - <<'PYEOF'
+import json, os
+def maybe_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+print(json.dumps({
+    "capturedAt": os.environ["PLAB_J_CAPTURED_AT"],
+    "loadavg": os.environ["PLAB_J_LOADAVG"],
+    "governorCpu0": os.environ["PLAB_J_GOVERNOR"],
+    "maxThermalZone": maybe_int(os.environ["PLAB_J_THERMAL"]),
+    "memAvailableKb": maybe_int(os.environ["PLAB_J_MEM"]),
+    "swapFreeKb": maybe_int(os.environ["PLAB_J_SWAP"]),
+    "benchmarkProcesses": int(os.environ["PLAB_J_PROCS"]),
+}, indent=2))
+PYEOF
+}
+
+# validate_json_file <file> — structural validation (jq -e equivalent);
+# invalid metadata is an infrastructure error, never host instability.
+validate_json_file() {
+  python3 -m json.tool "$1" >/dev/null 2>&1
+}
+
+# evaluate_stability_sample <loadavg-file> <nproc> <max-load-per-core-x100> <benchmark-process-count>
+#
+# Prints ONE structured JSON line (for host-stability-samples.jsonl) with
+# every measured value, every threshold, the verdict and — when rejected —
+# every failing condition explicitly. Returns 0 stable / 1 unstable.
+evaluate_stability_sample() {
+  local loadavg_file="$1" nproc="$2" max_x100="$3" procs="$4"
+  local load1="unavailable"
+  [ -r "$loadavg_file" ] && load1="$(awk '{print $1}' "$loadavg_file")"
+  local governor="unavailable" temp="unavailable"
+  [ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ] && governor="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
+  if ls /sys/class/thermal/thermal_zone*/temp >/dev/null 2>&1; then
+    temp="$(cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -n | tail -1)"
+  fi
+  PLAB_S_LOAD1="$load1" PLAB_S_NPROC="$nproc" PLAB_S_MAX="$max_x100" \
+  PLAB_S_PROCS="$procs" PLAB_S_GOV="$governor" PLAB_S_TEMP="$temp" \
+  python3 - <<'PYEOF'
+import json, os, sys
+reasons = []
+nproc = int(os.environ["PLAB_S_NPROC"])
+max_per_core = int(os.environ["PLAB_S_MAX"]) / 100.0
+procs = int(os.environ["PLAB_S_PROCS"])
+load_raw = os.environ["PLAB_S_LOAD1"]
+load_per_core = None
+if load_raw == "unavailable":
+    # No loadavg source (non-Linux development host): the load condition
+    # does not apply — the per-lab runner separately refuses to measure
+    # anywhere but native Linux.
+    load1 = None
+else:
+    load1 = float(load_raw)
+    load_per_core = load1 / nproc
+    if load_per_core > max_per_core:
+        reasons.append(f"loadPerCore {load_per_core:.4f} > max {max_per_core:.2f}")
+if procs != 0:
+    reasons.append(f"benchmarkProcesses {procs} != 0 (another benchmark is running)")
+stable = not reasons
+print(json.dumps({
+    "capturedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "load1": load1,
+    "logicalCpus": nproc,
+    "loadPerCore": round(load_per_core, 4) if load_per_core is not None else None,
+    "maxLoadPerCore": max_per_core,
+    "benchmarkProcesses": procs,
+    "governor": os.environ["PLAB_S_GOV"],
+    "maxThermalMilliC": os.environ["PLAB_S_TEMP"],
+    "stable": stable,
+    "reasons": reasons,
+}))
+sys.exit(0 if stable else 1)
+PYEOF
+}
+
 # --- Hashing ----------------------------------------------------------------
 # write_sha256sums <run-dir>
 # Writes SHA256SUMS at the top of <run-dir> covering every regular file in
