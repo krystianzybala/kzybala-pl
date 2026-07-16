@@ -94,10 +94,25 @@ source "$LAB_CONF"
 
 [ -n "$CPUS" ] || fail "--cpus is required: publication runs never silently choose CPUs"
 IFS=',' read -r -a CPU_LIST <<<"$CPUS"
-[ "${#CPU_LIST[@]}" -ge "${LAB_MIN_CPUS:-2}" ] \
-  || fail "lab ${LAB_ID} needs at least ${LAB_MIN_CPUS:-2} explicitly selected CPUs (--cpus), got ${#CPU_LIST[@]}"
+CPU_COUNT="${#CPU_LIST[@]}"
+# Cardinality is EXACT per lab (single=1, pair=2, quad=4, octet=8): too few
+# CPUs cannot host the workers, and extra CPUs would silently change the
+# placement scenario — both are cardinality errors, never adjusted.
+LAB_CPUS_EXACT="${LAB_CPUS_EXACT:-${LAB_MIN_CPUS:-2}}"
+[ "$CPU_COUNT" -eq "$LAB_CPUS_EXACT" ] \
+  || fail "cardinality error: lab ${LAB_ID} requires exactly ${LAB_CPUS_EXACT} CPU(s) (--cpus), got ${CPU_COUNT} (${CPUS})"
+case "$CPU_COUNT" in
+  1) CPU_KIND="single" ;;
+  2) CPU_KIND="pair" ;;
+  4) CPU_KIND="quad" ;;
+  8) CPU_KIND="octet" ;;
+  *) CPU_KIND="set-${CPU_COUNT}" ;;
+esac
 CPU_A="${CPU_LIST[0]}"
-CPU_B="${CPU_LIST[1]}"
+# CPU_B exists only for pair-or-larger labs — single-core labs never read
+# or define a second CPU (and never invoke pair-specific code paths).
+CPU_B=""
+[ "$CPU_COUNT" -ge 2 ] && CPU_B="${CPU_LIST[1]}"
 
 # --- Resolved publication profile -------------------------------------------
 # Explicit values, stored verbatim in benchmark-profile.json. Multiple
@@ -264,8 +279,16 @@ if [ -s "$LSCPU_E_FILE" ]; then
         || fail "CPU selection rejected (pair ${CPU_LIST[ti]},${CPU_LIST[tj]})"
     done
   done
-  TOPO_RESULT="$(topo_validate_cpus "$LSCPU_E_FILE" "$CPU_A" "$CPU_B" "$ALLOW_CROSS_SOCKET")"
-  SCENARIO="$(topo_scenario "$LSCPU_E_FILE" "$CPU_A" "$CPU_B")"
+  if [ "$CPU_KIND" = "single" ]; then
+    # Single-core lab: only existence/online validation — pair topology
+    # (distinct cores, SMT siblings, socket/NUMA policy) does not apply
+    # and is never invoked.
+    TOPO_RESULT="$(topo_validate_single "$LSCPU_E_FILE" "$CPU_A")" || fail "CPU selection rejected"
+    SCENARIO="single"
+  else
+    TOPO_RESULT="$(topo_validate_cpus "$LSCPU_E_FILE" "$CPU_A" "$CPU_B" "$ALLOW_CROSS_SOCKET")"
+    SCENARIO="$(topo_scenario "$LSCPU_E_FILE" "$CPU_A" "$CPU_B")"
+  fi
   echo "   topology: ${TOPO_RESULT} (scenario: ${SCENARIO})"
 else
   TOPO_RESULT="unavailable (dry-run on non-Linux host)"
@@ -373,15 +396,16 @@ cat > "${RUN_DIR}/environment.json" <<ENVEOF
   "capturedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "kernel": $(json_escape "$(capture_or_unavailable uname -a)"),
   "virtualization": { "detected": ${VIRT_DETECTED}, "vmType": $(if [ -n "$VM_TYPE" ]; then json_escape "$VM_TYPE"; else printf 'null'; fi), "containerType": $(if [ -n "$CONTAINER_TYPE" ]; then json_escape "$CONTAINER_TYPE"; else printf 'null'; fi), "environmentKind": "${ENV_KIND}", "publicationEligible": ${PUBLICATION_ELIGIBLE} },
-  "selectedCpus": { "cpuA": "${CPU_A}", "cpuB": "${CPU_B}", "validation": $(json_escape "$TOPO_RESULT"), "scenario": $(json_escape "$SCENARIO") },
-  "governorCpuA": $(json_escape "$(governor_for "$CPU_A")"),
-  "governorCpuB": $(json_escape "$(governor_for "$CPU_B")"),
-  "freqMinCpuA": $(json_escape "$(freq_for "$CPU_A" scaling_min_freq)"),
-  "freqMaxCpuA": $(json_escape "$(freq_for "$CPU_A" scaling_max_freq)"),
-  "freqCurCpuA": $(json_escape "$(freq_for "$CPU_A" scaling_cur_freq)"),
-  "freqMinCpuB": $(json_escape "$(freq_for "$CPU_B" scaling_min_freq)"),
-  "freqMaxCpuB": $(json_escape "$(freq_for "$CPU_B" scaling_max_freq)"),
-  "freqCurCpuB": $(json_escape "$(freq_for "$CPU_B" scaling_cur_freq)"),
+  "selectedCpus": { "kind": "${CPU_KIND}", "list": "${CPUS}", "validation": $(json_escape "$TOPO_RESULT"), "scenario": $(json_escape "$SCENARIO") },
+  "cpuDetails": [$(FIRST=1; for C in "${CPU_LIST[@]}"; do
+    [ "$FIRST" = "1" ] || printf ', '
+    FIRST=0
+    printf '{ "cpu": %s, "governor": %s, "freqMin": %s, "freqMax": %s, "freqCur": %s }' \
+      "$C" "$(json_escape "$(governor_for "$C")")" \
+      "$(json_escape "$(freq_for "$C" scaling_min_freq)")" \
+      "$(json_escape "$(freq_for "$C" scaling_max_freq)")" \
+      "$(json_escape "$(freq_for "$C" scaling_cur_freq)")"
+  done)],
   "turbo": $(json_escape "$TURBO"),
   "smt": $(json_escape "$SMT_STATE"),
   "numaTopology": $(json_escape "$NUMA_TOPOLOGY"),

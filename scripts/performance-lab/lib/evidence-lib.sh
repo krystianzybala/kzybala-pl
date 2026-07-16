@@ -57,6 +57,22 @@ topo_validate_cpus() {
   echo "cpuA=${cpu_a} coreA=${core_a} socketA=${socket_a} nodeA=${node_a} cpuB=${cpu_b} coreB=${core_b} socketB=${socket_b} nodeB=${node_b}"
 }
 
+# topo_validate_single <lscpu-e-file> <cpu>
+# Single-core labs: only existence and online state apply — pair topology
+# (distinct physical cores, SMT siblings, socket/NUMA policy) is
+# deliberately NOT validated because there is no second CPU to compare
+# against. Prints "kind=single cpu=<c> core=<core> socket=<s> node=<n>".
+topo_validate_single() {
+  local file="$1" cpu="$2"
+  local row
+  row=$(awk -v cpu="$cpu" 'NR>1 && $1==cpu {print; exit}' "$file")
+  if [ -z "$row" ]; then echo "topology: CPU ${cpu} does not exist on this host" >&2; return 1; fi
+  local core socket node online
+  read -r _ core socket node online <<<"$row"
+  if [ "$online" != "yes" ]; then echo "topology: CPU ${cpu} is offline" >&2; return 1; fi
+  echo "kind=single cpu=${cpu} core=${core} socket=${socket} node=${node}"
+}
+
 # topo_scenario <lscpu-e-file> <cpuA> <cpuB> — prints "same-socket" or
 # "cross-socket" (assumes topo_validate_cpus already passed).
 topo_scenario() {
