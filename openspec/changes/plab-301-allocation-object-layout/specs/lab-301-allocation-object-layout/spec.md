@@ -114,3 +114,10 @@ The conclusion SHALL distinguish observed evidence, mechanism-based interpretati
 - GIVEN the result set changes materially
 - WHEN the laboratory is built, executed or reviewed
 - THEN the conclusion is marked for re-verification before retaining verified status
+### Requirement: Native-Linux publication evidence
+Publication measurements SHALL be collected exclusively on the dedicated native-Linux benchmark host through the unified evidence runner and its per-lab configuration, and the laboratory SHALL render an awaiting-native-linux-measurement state until such evidence is imported and reviewed.
+
+#### Scenario: Native-Linux publication evidence is satisfied
+- GIVEN the laboratory displays a measured result or renders before evidence import
+- WHEN the laboratory is built, executed or reviewed
+- THEN every displayed measurement traces to imported native-Linux evidence and pre-import builds show the awaiting state instead of numbers

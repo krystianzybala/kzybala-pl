@@ -148,3 +148,77 @@ Unsupported architecture features, missing profilers or restricted host tuning m
 ## Rollback and Migration
 
 For existing labs, keep old routes and assets until the shared-framework version passes parity review. For new labs, changes are additive and can be removed without affecting the reference labs or result schema.
+
+
+## Measurement and evidence contract
+
+Normalized 2026-07-15 against the canonical framework
+(`docs/measurement-environments.md`, `docs/linux-evidence-runner.md`,
+`docs/lab-framework.md`); framework mechanics are referenced, not repeated.
+
+1. **Phenomenon under measurement** — How much latency and allocation are spent turning in-memory state into bytes and back?
+2. **Primary hypothesis** — Schema-driven fixed layouts and flyweights reduce allocation and copies compared with generic object serialization, at the cost of evolution discipline.
+3. **Controlled variables** — the variant axis (generic object codec, ByteBuffer/manual codec, FFM flyweight codec, Rust owned decode, Rust borrowed decode) and the
+   dataset/profile axis (small command, medium event, repeated fields, versioned optional field) are varied one at a time; toolchain,
+   heap/allocator settings, CPU placement and dataset bytes are held fixed
+   within any compared set.
+4. **Java operation definition (contract)** — the implementation change
+   must define exactly one benchmark operation per variant — a single unit
+   of the variant's work over the declared dataset, with setup, dataset
+   generation and validation outside the timed region — and record the
+   exact definition in the lab's `benchmark.md`. JMH group/thread layout
+   and any per-worker pinning follow the unified runner conventions.
+5. **Rust operation definition (contract)** — identical unit of work,
+   dataset bytes, payload widths, batching and worker lifecycle as the
+   Java definition (persistent workers where Java uses persistent JMH
+   threads — never spawn/join inside a measured sample compared against
+   persistent workers); differences that cannot be reconciled must be
+   published as separate scenarios, never merged into one comparison.
+6. **Correctness oracle** — deterministic expected outputs for every
+   variant (exact counts/results/invariants appropriate to this lab's
+   operations), asserted by both languages' test suites before any timing
+   is trusted; the unified correctness gate blocks measurement on failure.
+7. **Semantic-equivalence fixture** — one shared fixture
+   (`content/labs/<id>/code/fixtures/`, per
+   `docs/benchmark-correctness-fixtures.md`) hard-coded identically by the
+   Java and Rust suites; any intentional semantic difference is documented
+   in the equivalence contract and excludes the affected pair from
+   cross-language comparison (`comparison-guard.js`).
+8. **Benchmark scenarios** — generic object codec, ByteBuffer/manual codec, FFM flyweight codec, Rust owned decode, Rust borrowed decode × small command, medium event, repeated fields, versioned optional field, each scenario
+   selected per process invocation (never mixed in one run), named and
+   recorded in the run's provenance.
+9. **Expected canonical metrics** — encode/decode ns/message, B/message, wire bytes, bytes copied, branch misses; imported through the
+   plab-003 canonical schema with units, uncertainty and provenance.
+10. **Profiler evidence** — repository-supported subset of: JMH, Criterion, JFR allocation, perf, perfasm, cargo asm;
+    unavailable tools are recorded as unavailable, never substituted.
+11. **Common benchmark traps (must be taught and avoided)** —
+- comparing incompatible schemas
+- excluding validation
+- using compressed generic formats without reporting CPU
+- hardcoding endianness silently
+12. **Invalid conclusions this laboratory must never publish** —
+- any Java-versus-Rust winner claim (non-goal by policy)
+- any publication-grade claim from a developer-workstation run
+- any claim derived from a rejected or partial evidence run
+- concluding anything from a run that exhibits: comparing incompatible schemas
+- concluding anything from a run that exhibits: excluding validation
+- concluding anything from a run that exhibits: using compressed generic formats without reporting CPU
+- concluding anything from a run that exhibits: hardcoding endianness silently
+13. **Native-Linux host requirements** — publication evidence is collected
+    exclusively by `scripts/performance-lab/run-linux-evidence.sh` on the
+    dedicated physical Linux host (explicit CPU sets validated against
+    live topology; worker affinity where topology matters; unprivileged
+    perf; normal-user execution) and batched via
+    `run-all-benchmarks.sh`. Until imported and reviewed, the lab renders
+    `awaiting-native-linux-measurement`.
+14. **Public content outline** — performance question and hypothesis;
+    theory/mechanism; visualization with textual fallback; Java track;
+    Rust track; benchmark methodology (awaiting state pre-import);
+    profiler evidence; traps/limitations; exercises (diagnosis +
+    implementation with success criteria); sources — per the unified
+    content contract enforced by `scripts/validate-labs.js`.
+15. **Completion and verification gates** — the tasks.md completion gate
+    plus: correctness suites green in both languages, runner configuration
+    accepted by the batch preflight, `openspec validate plab-501-fixed-binary-serialization --strict`,
+    and evidence maturity claimed no higher than derived
+    (`docs/evidence-maturity.md`). Learning outcomes: design stable fixed layouts; measure encode/decode separately; support version evolution explicitly.

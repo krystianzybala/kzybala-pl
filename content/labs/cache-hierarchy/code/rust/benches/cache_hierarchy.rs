@@ -22,22 +22,30 @@ fn chase(next: &[u64], steps: usize) -> u64 {
 
 fn bench_sequential_small(c: &mut Criterion) {
     let table = sequential_cycle(SMALL_SIZE);
-    c.bench_function("sequential_small", |b| b.iter(|| chase(black_box(&table), CHASES)));
+    c.bench_function("sequential_small", |b| {
+        b.iter(|| chase(black_box(&table), CHASES))
+    });
 }
 
 fn bench_random_small(c: &mut Criterion) {
     let table = random_cycle(SMALL_SIZE, 1);
-    c.bench_function("random_small", |b| b.iter(|| chase(black_box(&table), CHASES)));
+    c.bench_function("random_small", |b| {
+        b.iter(|| chase(black_box(&table), CHASES))
+    });
 }
 
 fn bench_sequential_large(c: &mut Criterion) {
     let table = sequential_cycle(LARGE_SIZE);
-    c.bench_function("sequential_large", |b| b.iter(|| chase(black_box(&table), CHASES)));
+    c.bench_function("sequential_large", |b| {
+        b.iter(|| chase(black_box(&table), CHASES))
+    });
 }
 
 fn bench_random_large(c: &mut Criterion) {
     let table = random_cycle(LARGE_SIZE, 2);
-    c.bench_function("random_large", |b| b.iter(|| chase(black_box(&table), CHASES)));
+    c.bench_function("random_large", |b| {
+        b.iter(|| chase(black_box(&table), CHASES))
+    });
 }
 
 criterion_group!(

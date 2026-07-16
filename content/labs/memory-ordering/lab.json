@@ -5,11 +5,22 @@
   "level": 2,
   "difficulty": "advanced",
   "durationMinutes": 30,
-  "topics": ["concurrency", "memory-model", "coherence"],
-  "prerequisites": ["mesi"],
-  "unlocks": ["cas-contention"],
-  "languages": ["java", "rust"],
+  "topics": [
+    "concurrency",
+    "memory-model",
+    "coherence"
+  ],
+  "prerequisites": [
+    "mesi"
+  ],
+  "unlocks": [
+    "cas-contention"
+  ],
+  "languages": [
+    "java",
+    "rust"
+  ],
   "interactive": true,
-  "benchmark": false,
+  "benchmark": true,
   "conceptualModel": true
 }

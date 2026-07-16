@@ -464,6 +464,7 @@ name = "thread-per-core-lab"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "libc",
 ]
 
 [[package]]

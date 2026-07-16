@@ -2,10 +2,10 @@
 
 ## 1. Discovery and Contract
 
-- [ ] 1. Inspect repository structure, current lab content, build tools and result formats.
+- [x] 1. Inspect repository structure, current lab content, build tools and result formats.
 - [ ] 2. For an existing lab, inventory routes, content, benchmark variants and raw assets before editing.
 - [ ] 3. Write the Java/Rust semantic equivalence contract and shared correctness fixtures.
-- [ ] 4. Confirm the experiment matrix, supported architectures and optional evidence tools.
+- [x] 4. Confirm the experiment matrix, supported architectures and optional evidence tools.
 - [ ] 5. Add the lab metadata entry, prerequisites and status as planned/partial only.
 
 ## 2. Educational Content

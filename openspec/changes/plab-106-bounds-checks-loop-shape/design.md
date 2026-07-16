@@ -147,3 +147,77 @@ Unsupported architecture features, missing profilers or restricted host tuning m
 ## Rollback and Migration
 
 For existing labs, keep old routes and assets until the shared-framework version passes parity review. For new labs, changes are additive and can be removed without affecting the reference labs or result schema.
+
+
+## Measurement and evidence contract
+
+Normalized 2026-07-15 against the canonical framework
+(`docs/measurement-environments.md`, `docs/linux-evidence-runner.md`,
+`docs/lab-framework.md`); framework mechanics are referenced, not repeated.
+
+1. **Phenomenon under measurement** — When can compilers eliminate bounds checks, and when does a harmless-looking loop shape prevent it?
+2. **Primary hypothesis** — Canonical loops with stable limits enable range-check elimination, while aliasing, opaque calls and irregular indexing may retain checks or inhibit vectorization.
+3. **Controlled variables** — the variant axis (canonical indexed loop, opaque limit provider, irregular index array, safe iterator, isolated unchecked access) and the
+   dataset/profile axis (primitive arrays, slices/subranges, strided access) are varied one at a time; toolchain,
+   heap/allocator settings, CPU placement and dataset bytes are held fixed
+   within any compared set.
+4. **Java operation definition (contract)** — the implementation change
+   must define exactly one benchmark operation per variant — a single unit
+   of the variant's work over the declared dataset, with setup, dataset
+   generation and validation outside the timed region — and record the
+   exact definition in the lab's `benchmark.md`. JMH group/thread layout
+   and any per-worker pinning follow the unified runner conventions.
+5. **Rust operation definition (contract)** — identical unit of work,
+   dataset bytes, payload widths, batching and worker lifecycle as the
+   Java definition (persistent workers where Java uses persistent JMH
+   threads — never spawn/join inside a measured sample compared against
+   persistent workers); differences that cannot be reconciled must be
+   published as separate scenarios, never merged into one comparison.
+6. **Correctness oracle** — deterministic expected outputs for every
+   variant (exact counts/results/invariants appropriate to this lab's
+   operations), asserted by both languages' test suites before any timing
+   is trusted; the unified correctness gate blocks measurement on failure.
+7. **Semantic-equivalence fixture** — one shared fixture
+   (`content/labs/<id>/code/fixtures/`, per
+   `docs/benchmark-correctness-fixtures.md`) hard-coded identically by the
+   Java and Rust suites; any intentional semantic difference is documented
+   in the equivalence contract and excludes the affected pair from
+   cross-language comparison (`comparison-guard.js`).
+8. **Benchmark scenarios** — canonical indexed loop, opaque limit provider, irregular index array, safe iterator, isolated unchecked access × primitive arrays, slices/subranges, strided access, each scenario
+   selected per process invocation (never mixed in one run), named and
+   recorded in the run's provenance.
+9. **Expected canonical metrics** — ns/element, instructions, branches, assembly checks, vector width; imported through the
+   plab-003 canonical schema with units, uncertainty and provenance.
+10. **Profiler evidence** — repository-supported subset of: JMH, Criterion, perfasm, -XX diagnostics where supported, cargo asm, LLVM optimization remarks;
+    unavailable tools are recorded as unavailable, never substituted.
+11. **Common benchmark traps (must be taught and avoided)** —
+- using unsafe as the default answer
+- out-of-bounds UB in Rust
+- assuming MemorySegment is automatically slower
+- benchmarking different validation guarantees
+12. **Invalid conclusions this laboratory must never publish** —
+- any Java-versus-Rust winner claim (non-goal by policy)
+- any publication-grade claim from a developer-workstation run
+- any claim derived from a rejected or partial evidence run
+- concluding anything from a run that exhibits: using unsafe as the default answer
+- concluding anything from a run that exhibits: out-of-bounds UB in Rust
+- concluding anything from a run that exhibits: assuming MemorySegment is automatically slower
+- concluding anything from a run that exhibits: benchmarking different validation guarantees
+13. **Native-Linux host requirements** — publication evidence is collected
+    exclusively by `scripts/performance-lab/run-linux-evidence.sh` on the
+    dedicated physical Linux host (explicit CPU sets validated against
+    live topology; worker affinity where topology matters; unprivileged
+    perf; normal-user execution) and batched via
+    `run-all-benchmarks.sh`. Until imported and reviewed, the lab renders
+    `awaiting-native-linux-measurement`.
+14. **Public content outline** — performance question and hypothesis;
+    theory/mechanism; visualization with textual fallback; Java track;
+    Rust track; benchmark methodology (awaiting state pre-import);
+    profiler evidence; traps/limitations; exercises (diagnosis +
+    implementation with success criteria); sources — per the unified
+    content contract enforced by `scripts/validate-labs.js`.
+15. **Completion and verification gates** — the tasks.md completion gate
+    plus: correctness suites green in both languages, runner configuration
+    accepted by the batch preflight, `openspec validate plab-106-bounds-checks-loop-shape --strict`,
+    and evidence maturity claimed no higher than derived
+    (`docs/evidence-maturity.md`). Learning outcomes: write optimizer-friendly loops; prove when checks disappear; keep unsafe code narrow and justified.

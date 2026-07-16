@@ -3,8 +3,10 @@
 `scripts/performance-lab/run-linux-evidence.sh` is the only source of
 publication measurements and hardware-counter evidence for the Performance
 Lab. One common runner, configured per lab by
-`scripts/performance-lab/labs/<lab-id>.conf` (currently: `false-sharing`,
-`spsc-ring-buffer`, `cas-contention`) — unsupported lab ids are rejected.
+`scripts/performance-lab/labs/<lab-id>.conf` (the full reference tier:
+`false-sharing`, `spsc-ring-buffer`, `cas-contention`, `cache-hierarchy`,
+`mesi`, `memory-ordering`, `thread-per-core`, `jit-pipeline`) —
+unsupported lab ids are rejected.
 The repository-wide environment classification and evidence-state policy
 this runner implements is `docs/measurement-environments.md` — native
 physical Linux (the dedicated benchmark host) is mandatory for publication
@@ -72,18 +74,29 @@ placement (not GC choice) is what gates publication.
 
 ## Usage (on the dedicated Linux host)
 
+Run everything as the NORMAL user (never sudo — the runner refuses root).
+Select CPU ids from `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE`: distinct
+physical cores, no SMT siblings, same socket/NUMA node by default.
+
 ```sh
 # preflight first on a new host (validates everything, measures nothing):
-sudo ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
-  --profile publication --cpus 2,4 --preflight-only
+./scripts/performance-lab/run-linux-evidence.sh false-sharing \
+  --profile publication --cpus <CPU_A>,<CPU_B> --preflight-only
 
-# publication runs:
-sudo ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
-  --profile publication --cpus 2,4
-sudo ./scripts/performance-lab/run-linux-evidence.sh spsc-ring-buffer \
-  --profile publication --cpus 2,4
-sudo ./scripts/performance-lab/run-linux-evidence.sh cas-contention \
-  --profile publication --cpus 1,2,3,4,5,6,7,8
+# per-lab publication runs:
+./scripts/performance-lab/run-linux-evidence.sh false-sharing \
+  --profile publication --cpus <CPU_A>,<CPU_B>
+./scripts/performance-lab/run-linux-evidence.sh spsc-ring-buffer \
+  --profile publication --cpus <CPU_A>,<CPU_B>
+./scripts/performance-lab/run-linux-evidence.sh cas-contention \
+  --profile publication --cpus <CPU0>,<CPU1>,<CPU2>,<CPU3>,<CPU4>,<CPU5>,<CPU6>,<CPU7>
+
+# or the whole reference tier in one batch (fill the cpu_sets in the host
+# config from lscpu first):
+./scripts/performance-lab/run-all-benchmarks.sh \
+  --profile publication \
+  --host-config config/benchmark-hosts/precision-5810.yaml \
+  --repetitions 2
 ```
 
 `--cpus` is required — publication runs never silently choose CPUs. Pick

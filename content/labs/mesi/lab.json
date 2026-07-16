@@ -5,11 +5,20 @@
   "level": 1,
   "difficulty": "intermediate",
   "durationMinutes": 25,
-  "topics": ["cpu-cache", "coherence", "concurrency"],
+  "topics": [
+    "cpu-cache",
+    "coherence",
+    "concurrency"
+  ],
   "prerequisites": [],
-  "unlocks": ["memory-ordering"],
-  "languages": ["java", "rust"],
+  "unlocks": [
+    "memory-ordering"
+  ],
+  "languages": [
+    "java",
+    "rust"
+  ],
   "interactive": true,
-  "benchmark": false,
+  "benchmark": true,
   "conceptualModel": true
 }

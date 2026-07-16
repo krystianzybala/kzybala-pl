@@ -130,8 +130,8 @@ cargo bench --bench false_sharing -- --warm-up-time 3 --measurement-time 5 --sam
 
 # 4. Publication + hardware-counter evidence: on the dedicated native Linux
 #    host, with explicit physical CPU ids (see docs/linux-evidence-runner.md):
-sudo ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
-  --profile publication --cpus 2,4
+./scripts/performance-lab/run-linux-evidence.sh false-sharing \
+  --profile publication --cpus <CPU_A>,<CPU_B>
 # then copy the printed archive to the repository machine and:
 ./scripts/performance-lab/verify-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst
 ./scripts/performance-lab/import-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst

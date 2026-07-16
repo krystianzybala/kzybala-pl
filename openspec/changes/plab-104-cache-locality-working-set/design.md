@@ -148,3 +148,77 @@ Unsupported architecture features, missing profilers or restricted host tuning m
 ## Rollback and Migration
 
 For existing labs, keep old routes and assets until the shared-framework version passes parity review. For new labs, changes are additive and can be removed without affecting the reference labs or result schema.
+
+
+## Measurement and evidence contract
+
+Normalized 2026-07-15 against the canonical framework
+(`docs/measurement-environments.md`, `docs/linux-evidence-runner.md`,
+`docs/lab-framework.md`); framework mechanics are referenced, not repeated.
+
+1. **Phenomenon under measurement** — Why does the same loop collapse when the working set moves from L1 to L2, L3 and DRAM?
+2. **Primary hypothesis** — Access order and footprint determine cache-miss rates and memory-level parallelism more strongly than source-language syntax.
+3. **Controlled variables** — the variant axis (sequential scan, random permutation, pointer chasing, blocked/tiled traversal) and the
+   dataset/profile axis (L1-sized, L2-sized, LLC-sized, 2x LLC, large DRAM-resident) are varied one at a time; toolchain,
+   heap/allocator settings, CPU placement and dataset bytes are held fixed
+   within any compared set.
+4. **Java operation definition (contract)** — the implementation change
+   must define exactly one benchmark operation per variant — a single unit
+   of the variant's work over the declared dataset, with setup, dataset
+   generation and validation outside the timed region — and record the
+   exact definition in the lab's `benchmark.md`. JMH group/thread layout
+   and any per-worker pinning follow the unified runner conventions.
+5. **Rust operation definition (contract)** — identical unit of work,
+   dataset bytes, payload widths, batching and worker lifecycle as the
+   Java definition (persistent workers where Java uses persistent JMH
+   threads — never spawn/join inside a measured sample compared against
+   persistent workers); differences that cannot be reconciled must be
+   published as separate scenarios, never merged into one comparison.
+6. **Correctness oracle** — deterministic expected outputs for every
+   variant (exact counts/results/invariants appropriate to this lab's
+   operations), asserted by both languages' test suites before any timing
+   is trusted; the unified correctness gate blocks measurement on failure.
+7. **Semantic-equivalence fixture** — one shared fixture
+   (`content/labs/<id>/code/fixtures/`, per
+   `docs/benchmark-correctness-fixtures.md`) hard-coded identically by the
+   Java and Rust suites; any intentional semantic difference is documented
+   in the equivalence contract and excludes the affected pair from
+   cross-language comparison (`comparison-guard.js`).
+8. **Benchmark scenarios** — sequential scan, random permutation, pointer chasing, blocked/tiled traversal × L1-sized, L2-sized, LLC-sized, 2x LLC, large DRAM-resident, each scenario
+   selected per process invocation (never mixed in one run), named and
+   recorded in the run's provenance.
+9. **Expected canonical metrics** — ns/element, L1 misses, LLC misses, cache references, bandwidth, IPC; imported through the
+   plab-003 canonical schema with units, uncertainty and provenance.
+10. **Profiler evidence** — repository-supported subset of: JMH, Criterion, perf stat, perf c2c where available, async-profiler cache-miss profile;
+    unavailable tools are recorded as unavailable, never substituted.
+11. **Common benchmark traps (must be taught and avoided)** —
+- different dataset generation between languages
+- page faults in measurement
+- NUMA migration
+- comparing element counts with different byte footprints
+12. **Invalid conclusions this laboratory must never publish** —
+- any Java-versus-Rust winner claim (non-goal by policy)
+- any publication-grade claim from a developer-workstation run
+- any claim derived from a rejected or partial evidence run
+- concluding anything from a run that exhibits: different dataset generation between languages
+- concluding anything from a run that exhibits: page faults in measurement
+- concluding anything from a run that exhibits: NUMA migration
+- concluding anything from a run that exhibits: comparing element counts with different byte footprints
+13. **Native-Linux host requirements** — publication evidence is collected
+    exclusively by `scripts/performance-lab/run-linux-evidence.sh` on the
+    dedicated physical Linux host (explicit CPU sets validated against
+    live topology; worker affinity where topology matters; unprivileged
+    perf; normal-user execution) and batched via
+    `run-all-benchmarks.sh`. Until imported and reviewed, the lab renders
+    `awaiting-native-linux-measurement`.
+14. **Public content outline** — performance question and hypothesis;
+    theory/mechanism; visualization with textual fallback; Java track;
+    Rust track; benchmark methodology (awaiting state pre-import);
+    profiler evidence; traps/limitations; exercises (diagnosis +
+    implementation with success criteria); sources — per the unified
+    content contract enforced by `scripts/validate-labs.js`.
+15. **Completion and verification gates** — the tasks.md completion gate
+    plus: correctness suites green in both languages, runner configuration
+    accepted by the batch preflight, `openspec validate plab-104-cache-locality-working-set --strict`,
+    and evidence maturity claimed no higher than derived
+    (`docs/evidence-maturity.md`). Learning outcomes: reason in bytes rather than element counts; identify cache-capacity transitions; design locality-friendly traversal.

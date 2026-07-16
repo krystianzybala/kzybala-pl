@@ -44,7 +44,9 @@ pub struct SharedCounterPool {
 
 impl SharedCounterPool {
     pub fn new(partitions: usize) -> Self {
-        Self { counters: Mutex::new(vec![0; partitions]) }
+        Self {
+            counters: Mutex::new(vec![0; partitions]),
+        }
     }
 
     pub fn increment(&self, partition: usize) -> u64 {
@@ -94,7 +96,11 @@ mod tests {
         }
 
         for partition in 0..partitions {
-            assert_eq!(pool.get(partition), increments_per_thread, "partition {partition} should only reflect its own thread's increments");
+            assert_eq!(
+                pool.get(partition),
+                increments_per_thread,
+                "partition {partition} should only reflect its own thread's increments"
+            );
         }
     }
 

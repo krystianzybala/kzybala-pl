@@ -1,0 +1,12 @@
+{
+  "labId": "jit-pipeline",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). The Java kernel and the Rust AOT baseline generate the identical input stream (xorshift64, seed 7, 1024 amounts of 1 + state % 1000, unsigned) and must produce exactly these totals — the semantic-equivalence oracle for every JIT experiment and for the separate-scenario AOT baseline. Change a value here only together with both test suites.",
+  "inputs": { "seed": 7, "count": 1024, "firstThree": [328, 653, 744] },
+  "totals": {
+    "basic": 50215100,
+    "discount": 45198710,
+    "surge": 75319578,
+    "rotatingMix": 56392272,
+    "alternatingBasicDiscount": 47716500
+  }
+}

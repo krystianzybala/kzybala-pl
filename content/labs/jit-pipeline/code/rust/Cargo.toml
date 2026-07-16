@@ -1,0 +1,14 @@
+[package]
+name = "jit-pipeline-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab JIT Pipeline lab: the ahead-of-time (AOT) baseline for the shared pricing kernel — a SEPARATE scenario, never merged with JVM warm-up or steady state."
+publish = false
+
+[lib]
+name = "jit_pipeline_lab"
+path = "src/lib.rs"
+
+[dependencies]
+# Worker affinity for the native-Linux evidence harness (src/bin/aot_baseline.rs).
+libc = "0.2"

@@ -1,0 +1,12 @@
+{
+  "labId": "cache-hierarchy",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Both languages build chase tables with the identical xorshift64+Sattolo algorithm; traversalChecksum/traversal_checksum over the full cycle must produce exactly these values in BOTH suites — proving byte-identical datasets across Java and Rust. Change a value here only together with both test files.",
+  "checksumAlgorithm": "follow next[] from index 0 for size steps; checksum = checksum*31 + idx with 64-bit wrapping",
+  "cases": [
+    { "table": "random",     "size": 2048,  "seed": 42, "traversalChecksum": "8738039620073195968" },
+    { "table": "sequential", "size": 2048,              "traversalChecksum": "6272464722101566464" },
+    { "table": "random",     "size": 12345, "seed": 42, "traversalChecksum": "-7097521173149448694" },
+    { "table": "sequential", "size": 12345,             "traversalChecksum": "6737410350348517348" },
+    { "table": "random",     "size": 2048,  "seed": 7,  "traversalChecksum": "2077544042594837246" }
+  ]
+}

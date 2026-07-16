@@ -1,0 +1,10 @@
+{
+  "labId": "spsc-ring-buffer",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Both languages' suites hard-code exactly these cases: items transferred exactly once, in FIFO order, across wrap-around, under cached and uncached cursor modes and batched consumption. Change a value here only together with both test files.",
+  "cases": [
+    { "name": "two-threads-fifo", "capacity": 1024, "items": 200000, "cursorMode": "cached" },
+    { "name": "uncached-two-threads-fifo", "capacity": 1024, "items": 200000, "cursorMode": "uncached" },
+    { "name": "batch-drain-wraparound", "capacity": 128, "items": 300000, "batch": 64, "cursorMode": "cached" },
+    { "name": "full-empty-boundary", "capacity": 8, "items": 8 }
+  ]
+}

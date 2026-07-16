@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Native-Linux publication-evidence runner for the false-sharing reference
-# lab (docs/linux-evidence-runner.md).
+# Native-Linux publication-evidence runner for the Performance Lab
+# (docs/linux-evidence-runner.md) — one runner, per-lab configuration.
 #
-#   sudo ./scripts/performance-lab/run-linux-evidence.sh \
-#     false-sharing --profile publication --cpus 2,4
+#   ./scripts/performance-lab/run-linux-evidence.sh \
+#     <lab-id> --profile publication --cpus <CPU_A>,<CPU_B>
+#
+# Run as the NORMAL user (never sudo); pick CPU ids from
+# lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE — distinct physical cores, no SMT
+# siblings, same socket/NUMA node by default.
 #
 # Options: --profile publication|full|development|smoke, --cpus A,B
 # (required), --allow-cross-socket, --preflight-only (run every preflight
@@ -65,6 +69,18 @@ done
 
 fail() { echo "run-linux-evidence: $*" >&2; exit 1; }
 
+# --- Privilege model -----------------------------------------------------------
+# The runner is executed as the NORMAL user: Java, Maven, Cargo, JMH,
+# Criterion and every harness run as the invoking user, and all artifacts
+# are owned by the invoking user. Whole-script sudo is rejected — perf's
+# privileged requirements are satisfied once, out of band, by the
+# documented host setup (kernel.perf_event_paranoid=-1), after which perf
+# itself also runs unprivileged. No measurement subprocess is ever wrapped
+# in sudo (a sudo-wrapped `perf stat -- java` would run the JVM as root).
+if [ "$(id -u)" = "0" ]; then
+  fail "do not run this script with sudo/as root — benchmarks and builds must run as the invoking user. One-time host setup for unprivileged perf (run separately): sudo sysctl kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0"
+fi
+
 # --- Lab configuration ---------------------------------------------------------
 # One common runner, per-lab configuration (never divergent script copies).
 # A lab without a config file is rejected.
@@ -116,7 +132,10 @@ esac
 # both GC selection and the resolved compiler/processor counts are captured
 # in toolchain.json for review.
 EV_JVM_ARGS_BASE="-Xms1g -Xmx1g -XX:+UseSerialGC --enable-native-access=ALL-UNNAMED"
-EV_PERF_EVENTS="cycles,instructions,cache-references,cache-misses,branches,branch-misses,task-clock,context-switches,cpu-migrations,page-faults"
+# Labs may extend/override the counter set (LAB_PERF_EVENTS in the conf,
+# e.g. LLC events for cache-hierarchy); unsupported counters are recorded
+# as <not supported>, never discarded.
+EV_PERF_EVENTS="${LAB_PERF_EVENTS:-cycles,instructions,cache-references,cache-misses,branches,branch-misses,task-clock,context-switches,cpu-migrations,page-faults}"
 PERF_STAT_REPS=3
 # Process-level aggregate migrations are host/JVM-noise evidence, recorded
 # and bounded separately; benchmark-WORKER migrations (worker-placement
@@ -222,8 +241,10 @@ fi
 
 if [ "$DRY_RUN" != "1" ]; then
   [ "$PERF_VERSION" != "unavailable" ] || fail "perf is not installed"
-  [ "$PERF_STAT_OK" = "true" ] || fail "perf stat cannot count events (perf_event_paranoid=${PERF_PARANOID}; run under sudo or lower the sysctl)"
-  [ "$PERF_C2C_OK" = "true" ] || fail "perf c2c cannot open its required memory events on this CPU/kernel — not every x86_64 part supports useful c2c evidence; this host cannot produce the HITM evidence this lab requires"
+  [ "$PERF_STAT_OK" = "true" ] || fail "perf stat cannot count events as the invoking user (perf_event_paranoid=${PERF_PARANOID}) — one-time host setup: sudo sysctl kernel.perf_event_paranoid=-1 (never run this whole script under sudo)"
+  if [ "${LAB_C2C_REQUIRED:-0}" = "1" ]; then
+    [ "$PERF_C2C_OK" = "true" ] || fail "perf c2c cannot open its required memory events on this CPU/kernel — not every x86_64 part supports useful c2c evidence; this host cannot produce the HITM evidence this lab requires"
+  fi
 fi
 
 # 4. Topology.
@@ -503,22 +524,42 @@ for VARIANT in $(lab_variants); do
   export EV_THREADS="$VTHREADS"
   export EV_JMH_EXTRA="$(lab_jmh_args "$VARIANT")"
   export EV_JVM_ARGS="${EV_JVM_ARGS_BASE} -XX:ActiveProcessorCount=${VCPU_COUNT} $(lab_worker_props "$VARIANT") -Dplab.placementDir=${VDIR}"
-  echo "   scenario cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}'"
 
-  echo "-- JMH evidence run (${EV_FORKS} forks)"
-  run_or_plan "$(build_jmh_evidence_command "$VARIANT" "$VDIR") > ${VDIR}/jmh-console.log 2>&1"
-
-  echo "-- perf stat (${PERF_STAT_REPS} repetitions)"
-  for REP in $(seq 1 "$PERF_STAT_REPS"); do
-    run_or_plan "$(build_perf_stat_command "$VARIANT" "$VDIR" "$REP") > ${VDIR}/perf-stat-console-r${REP}.log 2>&1"
-  done
-
-  if [ "${LAB_C2C_REQUIRED:-0}" = "1" ] || [ "$PERF_C2C_OK" = "true" ]; then
-    echo "-- perf c2c record + report"
-    run_or_plan "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
-    run_or_plan "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-report.txt 2> ${VDIR}/perf-c2c-report.log"
+  # Variant kind: "jmh" (default — full JMH evidence + perf stat + c2c) or
+  # "aux" (a dedicated harness: litmus/outcome-count, warm-up trajectory,
+  # backpressure — anything JMH's aggregate modes would misrepresent).
+  if declare -f lab_variant_kind >/dev/null 2>&1; then
+    VKIND="$(lab_variant_kind "$VARIANT")"
   else
-    echo "-- perf c2c: optional for this lab and unavailable on this host — recorded as absent"
+    VKIND="jmh"
+  fi
+  echo "   scenario kind=${VKIND} cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}'"
+
+  if [ "$VKIND" = "aux" ]; then
+    AUX_CMD="$(lab_aux_evidence_cmd "$VARIANT")"
+    [ -n "$AUX_CMD" ] || fail "variant ${VARIANT} is kind=aux but lab_aux_evidence_cmd returned nothing"
+    # {VDIR} placeholder lets a config direct JVM logs (e.g. compilation
+    # logs) into the variant's evidence directory.
+    AUX_CMD="${AUX_CMD//\{VDIR\}/$VDIR}"
+    AUX_DIR="${REPO_ROOT}/${LAB_AUX_DIR:-$LAB_JAVA_DIR}"
+    echo "-- aux evidence harness"
+    run_or_plan "(cd ${AUX_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/jmh-placement.csv -- taskset -c ${SCEN_CPUS} ${AUX_CMD}) > ${VDIR}/aux-evidence.json 2> ${VDIR}/aux-evidence.log"
+  else
+    echo "-- JMH evidence run (${EV_FORKS} forks)"
+    run_or_plan "$(build_jmh_evidence_command "$VARIANT" "$VDIR") > ${VDIR}/jmh-console.log 2>&1"
+
+    echo "-- perf stat (${PERF_STAT_REPS} repetitions)"
+    for REP in $(seq 1 "$PERF_STAT_REPS"); do
+      run_or_plan "$(build_perf_stat_command "$VARIANT" "$VDIR" "$REP") > ${VDIR}/perf-stat-console-r${REP}.log 2>&1"
+    done
+
+    if [ "${LAB_C2C_REQUIRED:-0}" = "1" ] || [ "$PERF_C2C_OK" = "true" ]; then
+      echo "-- perf c2c record + report"
+      run_or_plan "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
+      run_or_plan "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-report.txt 2> ${VDIR}/perf-c2c-report.log"
+    else
+      echo "-- perf c2c: optional for this lab and unavailable on this host — recorded as absent"
+    fi
   fi
 
   RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"

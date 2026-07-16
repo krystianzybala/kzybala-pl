@@ -106,11 +106,14 @@ commands. Every implementation completion report includes a
 **"Native measurement required"** section with the exact command, e.g.:
 
 ```sh
-sudo ./scripts/performance-lab/run-linux-evidence.sh \
+./scripts/performance-lab/run-linux-evidence.sh \
   false-sharing \
   --profile publication \
   --cpus <CPU_A>,<CPU_B>
 ```
+
+(Normal user — never sudo; the one-time privileged perf setup is
+`sudo sysctl kernel.perf_event_paranoid=-1`, run separately.)
 
 (Choose `<CPU_A>,<CPU_B>` as two different physical cores, same
 socket/NUMA node — the runner validates and refuses anything else;

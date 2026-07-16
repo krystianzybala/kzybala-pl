@@ -1,0 +1,42 @@
+# Host configuration: dedicated native-Linux benchmark host
+# (Dell Precision Tower 5810, Xeon E5-2680 v4 — but nothing here assumes
+# CPU IDs from the model; fill cpu_sets from the LIVE topology).
+#
+# Fill every cpu_set after inspecting:
+#   lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE
+# Pick logical CPUs on DISTINCT physical cores (distinct CORE ids), same
+# SOCKET and NODE, no SMT siblings. run-all-benchmarks.sh re-validates
+# every set against the live topology before anything measures.
+#
+# Constrained YAML subset (schema.json): flat "key: value" pairs and
+# one-level "section:" blocks with two-space-indented "key: value" lines.
+schema_version: 1
+host_name: precision-5810
+max_load_per_core_x100: 20
+stability_timeout_seconds: 600
+
+cooldown_seconds:
+  short: 60
+  standard: 120
+  long: 300
+
+# Named CPU sets — comma-separated logical CPU ids, no spaces.
+# EMPTY values are intentionally invalid: the batch refuses to run until
+# you fill them from the live lscpu output.
+cpu_sets:
+  core_single: ""
+  core_pair: ""
+  core_quad: ""
+  core_octet: ""
+
+# Lab → cpu_set mapping. A lab may be mapped to a larger set than its
+# minimum; scenario subsets are deterministic prefixes (recorded per run).
+labs:
+  false-sharing: core_pair
+  spsc-ring-buffer: core_pair
+  cas-contention: core_octet
+  cache-hierarchy: core_single
+  mesi: core_pair
+  memory-ordering: core_pair
+  thread-per-core: core_quad
+  jit-pipeline: core_single

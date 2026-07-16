@@ -1,0 +1,15 @@
+{
+  "id": "jit-pipeline",
+  "title": "JIT Pipeline: Interpretation, C1, C2 and Deoptimization",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "intermediate",
+  "durationMinutes": 25,
+  "topics": ["jit", "tiered-compilation", "deoptimization", "warmup"],
+  "prerequisites": [],
+  "unlocks": [],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

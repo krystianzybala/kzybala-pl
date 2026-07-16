@@ -69,3 +69,12 @@ The lab is part of the Memory & Data track and must use the shared flow:
 - Required profiler/counter evidence is linked from the lab page.
 - Conclusions state mechanism, uncertainty, non-comparable aspects and host limitations.
 - No result is labeled verified until it has been reproduced and reviewed.
+
+## Native-Linux measurement policy
+
+Publication measurements for this laboratory follow
+`docs/measurement-environments.md`: development workstations produce
+correctness/smoke signals only; canonical evidence comes from the dedicated
+native-Linux benchmark host via the unified runner and batch workflow, and
+the public page renders `awaiting-native-linux-measurement` until that
+evidence is imported and reviewed.
