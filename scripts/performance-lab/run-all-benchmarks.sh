@@ -278,6 +278,32 @@ if [ "$BLOCKED" = "1" ]; then
   exit 1
 fi
 
+# --- Clean publication source (BEFORE any build/test) ---------------------------
+# Ordering matters (batch-20260717 regression): live preflight runs Maven
+# tests and benchmark builds, and those may create generated files — the
+# source-state check must therefore run FIRST, and generated build outputs
+# must be gitignored so they can never read as source drift. Publication
+# provenance still requires: committed source, clean tracked tree before
+# preflight, unchanged tracked tree after preflight, exact commit in the
+# manifest. Ignored build products never make the source dirty.
+SOURCE_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+SOURCE_STATE_BEFORE="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)"
+SOURCE_SUBMODULES="$(git -C "$REPO_ROOT" submodule status 2>/dev/null || true)"
+PUBLICATION_ELIGIBLE_BATCH="true"
+if [ "$DRY_RUN" != "1" ]; then
+  if [ -n "$SOURCE_STATE_BEFORE" ]; then
+    if [ "$PROFILE" = "publication" ] || [ "$PROFILE" = "full" ]; then
+      echo "run-all-benchmarks: dirty working tree — publication measurements require an exact, committed source state (checked BEFORE any build/test). Modified/untracked non-ignored paths:" >&2
+      printf '%s\n' "$SOURCE_STATE_BEFORE" >&2
+      exit 1
+    fi
+    PUBLICATION_ELIGIBLE_BATCH="false"
+    echo "   dirty tree permitted for profile '${PROFILE}' — this batch is permanently publicationEligible=false"
+  fi
+fi
+[ "$PROFILE" = "publication" ] || PUBLICATION_ELIGIBLE_BATCH="false"
+echo "   source state: commit ${SOURCE_COMMIT} tracked-clean=$([ -z "$SOURCE_STATE_BEFORE" ] && echo yes || echo no) submodules=$([ -n "$SOURCE_SUBMODULES" ] && echo present || echo none)"
+
 # --- Live preflight (runner-level, per lab) ----------------------------------
 # The per-lab runner validates OS/virt/topology/perf/toolchain/correctness/
 # permissions itself; this phase runs it for EVERY lab before any
@@ -312,8 +338,10 @@ write_batch_manifest() { # <state>
     echo "  \"repetitions\": ${REPETITIONS},"
     echo "  \"publicationEligible\": ${PUBLICATION_ELIGIBLE_BATCH:-false},"
     echo "  \"stabilityPolicy\": { \"consecutiveSamples\": ${STABILITY_CONSECUTIVE}, \"sampleIntervalSeconds\": ${STABILITY_INTERVAL}, \"timeoutSeconds\": ${STABILITY_TIMEOUT}, \"maxLoadPerCoreX100\": ${MAX_LOAD_X100} },"
-    echo "  \"sourceCommit\": \"$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)\","
-    echo "  \"dirtyTree\": $([ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ] && echo true || echo false),"
+    echo "  \"sourceCommit\": \"${SOURCE_COMMIT:-unknown}\","
+    echo "  \"dirtyTree\": $([ -n "${SOURCE_STATE_BEFORE:-}" ] && echo true || echo false),"
+    echo "  \"sourceStateBeforePreflight\": $([ -z "${SOURCE_STATE_BEFORE:-}" ] && echo '"clean"' || echo '"dirty (non-publication profile)"'),"
+    echo "  \"submodules\": $([ -n "${SOURCE_SUBMODULES:-}" ] && echo '"present"' || echo '"none"'),"
     echo "  \"startedAt\": \"${BATCH_STARTED_AT:-}\","
     echo "  \"completedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
     echo "  \"executionOrder\": [$(for lab in $ORDERED_LABS; do printf '"%s",' "$lab"; done | sed 's/,$//')],"
@@ -331,6 +359,23 @@ write_batch_manifest() { # <state>
     echo "}"
   } > "${BATCH_DIR}/batch-manifest.json"
 }
+
+# --- Post-preflight source integrity ---------------------------------------------
+# Live preflight ran builds/tests: generated IGNORED files are expected and
+# permitted, but a TRACKED file changing during preflight is an
+# infrastructure defect of the preflight itself — classified as
+# failed-preflight-source-mutation with the exact paths, never as user
+# dirty-tree state.
+if [ "$DRY_RUN" != "1" ]; then
+  SOURCE_STATE_AFTER="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)"
+  if [ "$SOURCE_STATE_AFTER" != "$SOURCE_STATE_BEFORE" ]; then
+    echo "run-all-benchmarks: failed-preflight-source-mutation — live preflight modified tracked/non-ignored files:" >&2
+    diff <(printf '%s' "$SOURCE_STATE_BEFORE") <(printf '%s' "$SOURCE_STATE_AFTER") | grep '^[<>]' >&2 || true
+    mkdir -p "$BATCH_DIR"
+    write_batch_manifest "failed-preflight-source-mutation"
+    exit 1
+  fi
+fi
 
 if [ "$LIVE_FAIL" = "1" ]; then
   echo
@@ -362,25 +407,6 @@ if [ "$DRY_RUN" = "1" ]; then
   echo "  [plan] batch manifest + SHA256SUMS + performance-lab-<batch-id>.tar.zst"
   exit 0
 fi
-
-# --- Clean publication source ---------------------------------------------------
-# Publication evidence must trace to an exact commit: a dirty tree blocks
-# the batch BEFORE the first lab, with the offending paths listed. There is
-# deliberately no override that could produce publication-eligible evidence
-# from uncommitted state. Smoke/development batches may proceed dirty but
-# are permanently publication-ineligible.
-GIT_DIRTY_PATHS="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)"
-PUBLICATION_ELIGIBLE_BATCH="true"
-if [ -n "$GIT_DIRTY_PATHS" ]; then
-  if [ "$PROFILE" = "publication" ] || [ "$PROFILE" = "full" ]; then
-    echo "run-all-benchmarks: dirty working tree — publication measurements require an exact, committed source state. Modified/untracked paths:" >&2
-    printf '%s\n' "$GIT_DIRTY_PATHS" >&2
-    exit 1
-  fi
-  PUBLICATION_ELIGIBLE_BATCH="false"
-  echo "   dirty tree permitted for profile '${PROFILE}' — this batch is permanently publicationEligible=false"
-fi
-[ "$PROFILE" = "publication" ] || PUBLICATION_ELIGIBLE_BATCH="false"
 
 # --- Sequential execution -------------------------------------------------------
 mkdir -p "$BATCH_DIR/host-environment" "$BATCH_DIR/failed-runs"
