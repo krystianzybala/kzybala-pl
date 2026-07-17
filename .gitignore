@@ -3,6 +3,11 @@
 .vscode/
 .claude/settings.local.json
 
+# Generated build outputs — Maven and Cargo. Never tracked: the
+# publication batch requires a clean tracked tree, and its own preflight
+# builds must never read as source drift (batch-20260717 regression).
+**/target/
+
 # Immutable raw benchmark run artifacts (docs/benchmark-artifact-layout.md).
 # Regenerable on your own hardware; committed only when it is the specific
 # evidence backing a benchmark.md number.

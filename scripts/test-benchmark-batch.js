@@ -679,6 +679,97 @@ test("stability: the real malformed environment fixture is rejected by JSON vali
   assert.notEqual(r.status, 0, "the double-zero environment document must fail structural validation");
 });
 
+// --- source-tree integrity (real-5810 dirty-tree regression, 2026-07-17) ----------
+// The publication batch aborted because live preflight's own Maven build
+// modified TRACKED target/ files, and the clean-tree gate ran after
+// preflight. Build outputs are now ignored repository-wide, the gate runs
+// BEFORE any build, and a tracked change during preflight is its own
+// failure class.
+
+test("source: no generated build output (target/) is tracked by git", () => {
+  const tracked = execSync("git ls-files | grep -E '(^|/)(target)/' || true", { cwd: ROOT, encoding: "utf8" }).trim();
+  assert.equal(tracked, "", `tracked build outputs found:\n${tracked}`);
+  const ignore = readFileSync(join(ROOT, ".gitignore"), "utf8");
+  assert.match(ignore, /^\*\*\/target\/$/m, ".gitignore must ignore Maven/Cargo target dirs repository-wide");
+});
+
+test("source: files under an ignored target/ never appear as tree drift (real git semantics)", () => {
+  const probe = join(ROOT, "content/labs/jit-pipeline/code/java/target", `probe-${Date.now()}.tmp`);
+  mkdirSync(join(ROOT, "content/labs/jit-pipeline/code/java/target"), { recursive: true });
+  try {
+    writeFileSync(probe, "generated");
+    const porcelain = execSync("git status --porcelain", { cwd: ROOT, encoding: "utf8" });
+    assert.ok(!porcelain.includes("probe-"), "an ignored generated file must not show in git status --porcelain");
+  } finally {
+    rmSync(probe, { force: true });
+  }
+});
+
+test("source: an initially dirty tree blocks the publication batch before ANY build, test or preflight run", () => {
+  const env = makeEnv();
+  try {
+    writeFileSync(join(env.bin, "git"), `#!/bin/sh
+case "$*" in
+  *status*--porcelain*) echo " M content/labs/mesi/theory.md"; exit 0 ;;
+  *rev-parse*) echo "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"; exit 0 ;;
+esac
+exit 0
+`);
+    chmodSync(join(env.bin, "git"), 0o755);
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /checked BEFORE any build\/test/);
+    assert.match(r.stderr, /content\/labs\/mesi\/theory\.md/);
+    assert.equal(readLog(env).length, 0, "the per-lab runner (and therefore Maven/Cargo) must never have been invoked");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("source: a tracked file mutating DURING live preflight is failed-preflight-source-mutation, and no measurement starts", () => {
+  const env = makeEnv();
+  try {
+    // stateful git stub: clean on the first porcelain call (the pre-build
+    // gate), dirty afterwards (as if preflight modified a tracked file)
+    writeFileSync(join(env.bin, "git"), `#!/bin/sh
+case "$*" in
+  *status*--porcelain*)
+    n=$(cat "${env.base}/git-calls" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "${env.base}/git-calls"
+    if [ "$n" -gt 1 ]; then echo " M content/labs/lab-a/theory.md"; fi
+    exit 0 ;;
+  *rev-parse*) echo "cccccccccccccccccccccccccccccccccccccccc"; exit 0 ;;
+  *log*) echo "{}"; exit 0 ;;
+esac
+exit 0
+`);
+    chmodSync(join(env.bin, "git"), 0o755);
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /failed-preflight-source-mutation/);
+    assert.match(r.stderr, /content\/labs\/lab-a\/theory\.md/, "the exact mutated path must be reported");
+    assert.doesNotMatch(r.stderr, /dirty working tree — publication/, "never classified as user dirty-tree state");
+    assert.equal(readLog(env).filter((l) => l.includes("MEASURE-START")).length, 0);
+    const manifest = latestManifest(env);
+    assert.equal(manifest.state, "failed-preflight-source-mutation");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("source: a clean tree proceeds through live preflight and records the exact commit in the manifest", () => {
+  const env = makeEnv();
+  try {
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
+    assert.equal(r.status, 0, r.stderr);
+    const manifest = latestManifest(env);
+    assert.equal(manifest.sourceCommit, "a".repeat(40));
+    assert.equal(manifest.dirtyTree, false);
+    assert.equal(manifest.sourceStateBeforePreflight, "clean");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
 // --- reference-tier discovery against the REAL repository -------------------------
 
 const LABS_DIR_REAL = join(ROOT, "scripts", "performance-lab", "labs");

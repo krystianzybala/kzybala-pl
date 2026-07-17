@@ -760,6 +760,8 @@ test("cardinality: every lab requires its exact CPU count — under- and over-su
 test("cardinality: all eight real lab configurations pass the full simulated live preflight at their exact cardinality", () => {
   const stubs = PREFLIGHT_STUBS_5810();
   const out = mkdtempSync(join(tmpdir(), "ev-all8-"));
+  // preflight must never modify tracked files (source-integrity invariant)
+  const porcelainBefore = execSync("git status --porcelain", { cwd: ROOT, encoding: "utf8" });
   try {
     const cpusFor = {
       "cache-hierarchy": "2", "jit-pipeline": "2",
@@ -772,6 +774,8 @@ test("cardinality: all eight real lab configurations pass the full simulated liv
       assert.equal(r.status, 0, `${lab} (--cpus ${cpus}): ${r.stderr || r.stdout}`);
       assert.match(r.stdout, /Preflight passed\./, lab);
     }
+    const porcelainAfter = execSync("git status --porcelain", { cwd: ROOT, encoding: "utf8" });
+    assert.equal(porcelainAfter, porcelainBefore, "simulated preflight of all eight labs must not modify any tracked file");
   } finally {
     rmSync(stubs, { recursive: true, force: true });
     rmSync(out, { recursive: true, force: true });
