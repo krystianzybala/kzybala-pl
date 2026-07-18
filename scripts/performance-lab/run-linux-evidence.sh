@@ -13,7 +13,17 @@
 # (required), --allow-cross-socket, --preflight-only (run every preflight
 # check, then stop before any measurement), --allow-virtualized
 # (smoke|development wiring checks only — never publication|full),
-# --out <dir>, --dry-run, --skip-load-check.
+# --out <dir>, --dry-run, --skip-load-check, --variant <name> (run ONE
+# variant only — focused smoke/diagnosis; recorded as a focused run in the
+# manifest, never presented as the full variant matrix).
+#
+# Every external measurement invocation runs under a hard wall-clock
+# timeout (run_with_deadline): on expiry, jcmd/thread-dump diagnostics are
+# captured from the still-alive JVMs, the whole process tree is terminated
+# with SIGTERM (SIGKILL only as a last resort after the grace period), the
+# run is stamped failed-benchmark-timeout, and the runner exits 3 so batch
+# orchestration aborts instead of silently continuing (regression guard for
+# the batch-20260717T150131Z SPSC producer hang, which ran 14h40m).
 #
 # Physical hosts are accepted: systemd-detect-virt exiting 1 (typically
 # printing the literal "none") means no virtualization — detection is by
@@ -51,12 +61,14 @@ ALLOW_VIRTUALIZED=0
 PREFLIGHT_ONLY=0
 DRY_RUN=0
 SKIP_LOAD_CHECK=0
+SELECTED_VARIANT=""
 OUT_ROOT="${REPO_ROOT}/results"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="$2"; shift 2 ;;
     --cpus) CPUS="$2"; shift 2 ;;
+    --variant) SELECTED_VARIANT="$2"; shift 2 ;;
     --allow-cross-socket) ALLOW_CROSS_SOCKET=1; shift ;;
     --allow-virtualized) ALLOW_VIRTUALIZED=1; shift ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
@@ -92,6 +104,20 @@ fi
 # shellcheck source=/dev/null
 source "$LAB_CONF"
 
+# --variant restricts the run to ONE variant from the lab's matrix —
+# focused smoke/diagnosis after a failure, without paying for the full
+# matrix. The selection is validated against the config and recorded in the
+# manifest; a focused run never masquerades as the full matrix.
+if [ -n "$SELECTED_VARIANT" ]; then
+  case " $(lab_variants) " in
+    *" ${SELECTED_VARIANT} "*) : ;;
+    *) fail "unknown variant '${SELECTED_VARIANT}' for lab ${LAB_ID} — available: $(lab_variants)" ;;
+  esac
+fi
+effective_variants() {
+  if [ -n "$SELECTED_VARIANT" ]; then echo "$SELECTED_VARIANT"; else lab_variants; fi
+}
+
 [ -n "$CPUS" ] || fail "--cpus is required: publication runs never silently choose CPUs"
 IFS=',' read -r -a CPU_LIST <<<"$CPUS"
 CPU_COUNT="${#CPU_LIST[@]}"
@@ -118,18 +144,25 @@ CPU_B=""
 # Explicit values, stored verbatim in benchmark-profile.json. Multiple
 # independent JVM forks are mandatory — one long invocation is not a
 # substitute for fork-to-fork variance.
+# EV_TIMEOUT_SECONDS is the hard wall-clock budget for ONE external
+# measurement invocation (a full JMH run, one perf stat repetition, a c2c
+# recording, an aux/Rust harness). It is derived from the profile: a
+# generous multiple of the expected duration (publication: 5 forks ×
+# ~15s measured + JVM/build overhead ≈ minutes, budget 30 min), so it only
+# fires on a genuine hang — never on a slow-but-progressing run. A fired
+# timeout is always failed-benchmark-timeout, never silently retried.
 case "$PROFILE" in
   publication)
-    EV_FORKS=5; EV_WI=5; EV_W="1s"; EV_I=10; EV_R="1s"
+    EV_FORKS=5; EV_WI=5; EV_W="1s"; EV_I=10; EV_R="1s"; EV_TIMEOUT_SECONDS=1800
     ;;
   full)
-    EV_FORKS=2; EV_WI=3; EV_W="1s"; EV_I=5; EV_R="1s"
+    EV_FORKS=2; EV_WI=3; EV_W="1s"; EV_I=5; EV_R="1s"; EV_TIMEOUT_SECONDS=900
     ;;
   development)
-    EV_FORKS=1; EV_WI=2; EV_W="500ms"; EV_I=3; EV_R="500ms"
+    EV_FORKS=1; EV_WI=2; EV_W="500ms"; EV_I=3; EV_R="500ms"; EV_TIMEOUT_SECONDS=420
     ;;
   smoke)
-    EV_FORKS=1; EV_WI=0; EV_W="200ms"; EV_I=1; EV_R="200ms"
+    EV_FORKS=1; EV_WI=0; EV_W="200ms"; EV_I=1; EV_R="200ms"; EV_TIMEOUT_SECONDS=180
     ;;
   *) fail "unsupported profile '${PROFILE}' (publication|full|development|smoke)" ;;
 esac
@@ -174,6 +207,37 @@ plan() { echo "[plan] $*"; }
 run_or_plan() {
   if [ "$DRY_RUN" = "1" ]; then plan "$*"; else eval "$*"; fi
 }
+
+# --- Signal handling / child cleanup (§ termination safety) ------------------
+# The runner never leaves benchmark JVMs behind: on INT/TERM (and on any
+# exit path) the currently running measurement tree is terminated with
+# SIGTERM first; SIGKILL is reserved for a tree that ignores SIGTERM for
+# the grace period. CURRENT_CHILD_PID is maintained by run_with_deadline.
+CURRENT_CHILD_PID=""
+cleanup_children() {
+  if [ -n "${CURRENT_CHILD_PID}" ] && kill -0 "$CURRENT_CHILD_PID" 2>/dev/null; then
+    signal_process_tree TERM "$CURRENT_CHILD_PID"
+    local grace=0 kill_after="${PLAB_TIMEOUT_KILL_AFTER_SECONDS:-30}"
+    while kill -0 "$CURRENT_CHILD_PID" 2>/dev/null && [ "$grace" -lt "$kill_after" ]; do
+      sleep 1; grace=$((grace + 1))
+    done
+    if kill -0 "$CURRENT_CHILD_PID" 2>/dev/null; then
+      signal_process_tree KILL "$CURRENT_CHILD_PID"
+    fi
+    CURRENT_CHILD_PID=""
+  fi
+}
+on_signal() {
+  echo "run-linux-evidence: interrupted — terminating benchmark children (SIGTERM, bounded grace)" >&2
+  cleanup_children
+  if [ -d "${RUN_DIR:-}" ] && declare -f write_run_status >/dev/null 2>&1; then
+    write_run_status "rejected" "interrupted-by-signal" 2>/dev/null || true
+  fi
+  trap - EXIT
+  exit 130
+}
+trap on_signal INT TERM
+trap cleanup_children EXIT
 
 capture_or_unavailable() {
   # capture_or_unavailable <description-command...> — prints command output
@@ -532,7 +596,36 @@ mark_rejected() {
   exit 1
 }
 
-for VARIANT in $(lab_variants); do
+# A fired wall-clock timeout is its own terminal state: the benchmark hung
+# (the SPSC producer spun 14h40m at 100% CPU in batch-20260717T150131Z).
+# jcmd/thread-dump diagnostics were captured before termination; the run is
+# diagnostic-only and the distinct exit code 3 makes batch orchestration
+# abort rather than continue past a hang.
+mark_timeout() {
+  echo "run-linux-evidence: BENCHMARK TIMEOUT — $1 exceeded the ${EV_TIMEOUT_SECONDS}s hard wall-clock budget" >&2
+  write_run_status "failed-benchmark-timeout" "$1"
+  write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
+  echo "Hang diagnostics (jcmd thread dumps, affinity, process tree) preserved in ${VDIR} (timeout-*.txt, timeout-diagnostics.json)." >&2
+  echo "Artifacts are DIAGNOSTIC ONLY (run-status.json: failed-benchmark-timeout)." >&2
+  exit 3
+}
+
+# run_measured <label> <command-string> — dry-run plans verbatim; real runs
+# execute under the profile's hard wall-clock budget. Timeout → mark_timeout
+# (exit 3); any other failure aborts as before (abort-on-first-error).
+run_measured() {
+  local label="$1" cmd="$2"
+  if [ "$DRY_RUN" = "1" ]; then plan "$cmd"; return 0; fi
+  local rc=0
+  run_with_deadline "$EV_TIMEOUT_SECONDS" "$VDIR" "$label" "$cmd" || rc=$?
+  if [ "$rc" = "124" ]; then
+    mark_timeout "$label"
+  elif [ "$rc" != "0" ]; then
+    fail "measurement command failed (${label}, exit ${rc}) — see logs in ${VDIR}"
+  fi
+}
+
+for VARIANT in $(effective_variants); do
   VDIR="${RUN_DIR}/${VARIANT}"
   mkdir -p "$VDIR"
   echo "== variant: ${VARIANT}"
@@ -557,7 +650,7 @@ for VARIANT in $(lab_variants); do
   else
     VKIND="jmh"
   fi
-  echo "   scenario kind=${VKIND} cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}'"
+  echo "   scenario kind=${VKIND} cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}' hard-timeout=${EV_TIMEOUT_SECONDS}s/invocation"
 
   if [ "$VKIND" = "aux" ]; then
     AUX_CMD="$(lab_aux_evidence_cmd "$VARIANT")"
@@ -567,20 +660,20 @@ for VARIANT in $(lab_variants); do
     AUX_CMD="${AUX_CMD//\{VDIR\}/$VDIR}"
     AUX_DIR="${REPO_ROOT}/${LAB_AUX_DIR:-$LAB_JAVA_DIR}"
     echo "-- aux evidence harness"
-    run_or_plan "(cd ${AUX_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/jmh-placement.csv -- taskset -c ${SCEN_CPUS} ${AUX_CMD}) > ${VDIR}/aux-evidence.json 2> ${VDIR}/aux-evidence.log"
+    run_measured "aux-harness (variant ${VARIANT})" "(cd ${AUX_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/jmh-placement.csv -- taskset -c ${SCEN_CPUS} ${AUX_CMD}) > ${VDIR}/aux-evidence.json 2> ${VDIR}/aux-evidence.log"
   else
     echo "-- JMH evidence run (${EV_FORKS} forks)"
-    run_or_plan "$(build_jmh_evidence_command "$VARIANT" "$VDIR") > ${VDIR}/jmh-console.log 2>&1"
+    run_measured "jmh-evidence (variant ${VARIANT})" "$(build_jmh_evidence_command "$VARIANT" "$VDIR") > ${VDIR}/jmh-console.log 2>&1"
 
     echo "-- perf stat (${PERF_STAT_REPS} repetitions)"
     for REP in $(seq 1 "$PERF_STAT_REPS"); do
-      run_or_plan "$(build_perf_stat_command "$VARIANT" "$VDIR" "$REP") > ${VDIR}/perf-stat-console-r${REP}.log 2>&1"
+      run_measured "perf-stat r${REP} (variant ${VARIANT})" "$(build_perf_stat_command "$VARIANT" "$VDIR" "$REP") > ${VDIR}/perf-stat-console-r${REP}.log 2>&1"
     done
 
     if [ "${LAB_C2C_REQUIRED:-0}" = "1" ] || [ "$PERF_C2C_OK" = "true" ]; then
       echo "-- perf c2c record + report"
-      run_or_plan "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
-      run_or_plan "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-report.txt 2> ${VDIR}/perf-c2c-report.log"
+      run_measured "perf-c2c-record (variant ${VARIANT})" "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
+      run_measured "perf-c2c-report (variant ${VARIANT})" "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-report.txt 2> ${VDIR}/perf-c2c-report.log"
     else
       echo "-- perf c2c: optional for this lab and unavailable on this host — recorded as absent"
     fi
@@ -589,7 +682,7 @@ for VARIANT in $(lab_variants); do
   RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"
   if [ -n "$RUST_CMD" ]; then
     echo "-- Rust persistent-worker harness"
-    run_or_plan "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log"
+    run_measured "rust-harness (variant ${VARIANT})" "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log"
   fi
 
   # --- Placement policy (after all of this variant's executions) -------------
@@ -654,7 +747,7 @@ cat > "${RUN_DIR}/evidence-manifest.json" <<MANEOF
   "benchmarkProfile": "benchmark-profile.json",
   "correctness": "correctness.json",
   "variants": {
-$(FIRST=1; for V in $(lab_variants); do
+$(FIRST=1; for V in $(effective_variants); do
   [ "$FIRST" = "1" ] || printf ',\n'
   FIRST=0
   printf '    "%s": {\n' "$V"
@@ -671,6 +764,8 @@ $(FIRST=1; for V in $(lab_variants); do
 done; printf '\n')
   },
   "runStatusFile": "run-status.json",
+  "variantSelection": $([ -n "$SELECTED_VARIANT" ] && printf '"focused:%s"' "$SELECTED_VARIANT" || printf '"all"'),
+  "hardTimeoutSecondsPerInvocation": ${EV_TIMEOUT_SECONDS},
   "canonical": { "pendingImport": true, "importer": "scripts/performance-lab/import-evidence.sh (adds canonical-jmh.json, canonical-perf-stat.json, comparison.json on the repository machine)" },
   "review": { "verifiedMaturityRequiresHumanReview": true, "importDoesNotPromote": true }
 }

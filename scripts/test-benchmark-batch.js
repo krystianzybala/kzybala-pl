@@ -906,3 +906,33 @@ test("host config: the shipped Precision 5810 template conforms to its schema sh
     assert.match(yaml, new RegExp(`^  ${lab}: `, "m"));
   }
 });
+
+// --- failed-benchmark-timeout (batch-20260717T150131Z hang regression) --------
+// The per-lab runner exits 3 when a benchmark invocation exceeded its hard
+// wall-clock budget. The batch must abort on the spot: a host that just
+// carried a hung 100%-CPU JVM for hours must not keep measuring, and a hang
+// needs human attention — it is never skipped like an ordinary rejection.
+
+test("batch: a runner exit of 3 (failed-benchmark-timeout) aborts the entire batch immediately", () => {
+  const env = makeEnv();
+  try {
+    const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host], { STUB_RUN_EXIT_lab_a_1: "3" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /failed-benchmark-timeout on lab-a/);
+    assert.match(r.stderr, /aborting the entire batch/);
+    assert.match(r.stderr, /diagnostics/);
+    const manifest = latestManifest(env);
+    assert.equal(manifest.state, "failed-benchmark-timeout");
+    const labA = manifest.labs["lab-a"].runs;
+    assert.equal(labA.length, 1);
+    assert.equal(labA[0].status, "failed-benchmark-timeout");
+    // nothing after the timeout ran: no lab-b measurement, no repetition 2
+    const measures = readLog(env).filter((l) => l.includes("MEASURE-START"));
+    assert.equal(measures.length, 1, `expected exactly one measurement attempt, got:\n${measures.join("\n")}`);
+    // the timed-out run is quarantined as diagnostics, never mixed with evidence
+    const batchDir = join(env.batches, readdirSync(env.batches).sort().pop());
+    assert.ok(existsSync(join(batchDir, "failed-runs", "lab-a-run-1")));
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});

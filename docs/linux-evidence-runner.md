@@ -156,6 +156,46 @@ Permits command-construction and wiring validation on a VM or container
 `"publicationEligible": false, "environmentKind": "virtualized"`. There is
 no option that allows virtualized publication evidence.
 
+### `--variant <name>` (focused rerun)
+
+Runs exactly one variant from the lab's matrix — the cheap way to re-verify
+a defect-revealing case (e.g. the SPSC hang case `cached-b1-c1024`) or to
+smoke a fix without paying for the full matrix. The name is validated
+against the lab configuration; unknown names fail with the available list.
+The manifest records `"variantSelection": "focused:<name>"` — a focused run
+never masquerades as the full matrix, and full-matrix evidence claims still
+require a run with `"variantSelection": "all"`.
+
+### Hard wall-clock timeouts (`failed-benchmark-timeout`)
+
+Since the batch-20260717T150131Z SPSC hang (a JMH fork spun 14h40m at 100%
+CPU with no bound anywhere — see
+`docs/incidents/2026-07-17-spsc-jmh-hang.md`), every external measurement
+invocation (JMH run, each `perf stat` repetition, `perf c2c`, aux/Rust
+harnesses) executes under a hard wall-clock budget derived from the
+profile: publication 1800s, full 900s, development 420s, smoke 180s per
+invocation — generous multiples of the expected duration, so a fired
+timeout always means a genuine hang. On expiry the runner:
+
+1. captures diagnostics from the **still-live** tree first: a process-tree
+   snapshot, `jcmd <pid> Thread.print / VM.command_line / VM.flags` and
+   `taskset -pc <pid>` for every surviving JVM
+   (`timeout-diagnostics.json`, `timeout-*.txt` in the variant directory);
+2. terminates the whole process tree with SIGTERM; SIGKILL is only the
+   last resort after a 30s grace period, never the normal path;
+3. stamps `run-status.json` with `"runStatus": "failed-benchmark-timeout"`
+   (diagnostic-only, never canonical evidence) and exits with code 3.
+
+The batch orchestrator treats exit 3 as `failed-benchmark-timeout`,
+quarantines the run under `failed-runs/`, writes the batch manifest with
+that state and **aborts the entire batch** — a host that just carried a
+hung 100%-CPU JVM must not keep measuring, and a hang needs human
+attention. Timed-out runs are never silently retried or skipped.
+
+Both the runner and the orchestrator install EXIT/INT/TERM traps that
+forward SIGTERM to the running benchmark tree, so an interrupted run never
+leaves benchmark JVMs behind.
+
 ## What must hold before measurement starts (all enforced)
 
 `perf` installed and usable (`perf stat` can count; `perf c2c record -e
