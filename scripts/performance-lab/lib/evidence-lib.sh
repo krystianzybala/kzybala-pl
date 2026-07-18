@@ -425,3 +425,115 @@ write_sha256sums() {
     find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 $hasher > SHA256SUMS
   )
 }
+
+# --- Hard wall-clock timeouts (post batch-20260717T150131Z SPSC hang) --------
+# A benchmark invocation must never be able to consume unbounded wall-clock
+# time again: every external measurement command runs under run_with_deadline,
+# which (on expiry) captures JVM diagnostics FIRST, then terminates the whole
+# process tree with SIGTERM. SIGKILL is never the normal path — it is the
+# last resort, only after SIGTERM has been ignored for the grace period.
+
+# list_process_tree <pid> — prints <pid> and every live descendant,
+# children first (portable: pgrep -P works on Linux and macOS).
+list_process_tree() {
+  local pid="$1" child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    list_process_tree "$child"
+  done
+  echo "$pid"
+}
+
+# signal_process_tree <SIGNAL> <root-pid> — best-effort signal to the tree.
+signal_process_tree() {
+  local sig="$1" root="$2" p
+  for p in $(list_process_tree "$root"); do
+    kill "-${sig}" "$p" 2>/dev/null || true
+  done
+}
+
+# capture_hang_diagnostics <diag-dir> <label> <root-pid> <budget-seconds>
+# Runs BEFORE the tree is signalled, while the hung processes are still
+# alive: process-tree snapshot, and for every surviving java process a jcmd
+# Thread.print / VM.command_line / VM.flags dump plus its taskset -pc
+# affinity. Every capture is best-effort — a missing tool is recorded, and
+# diagnostics failures never mask the timeout itself.
+capture_hang_diagnostics() {
+  local diagdir="$1" label="$2" root="$3" budget="$4"
+  mkdir -p "$diagdir" 2>/dev/null || return 0
+  local pids java_pids="" p
+  pids="$(list_process_tree "$root")"
+  {
+    echo "label: ${label}"
+    echo "budgetSeconds: ${budget}"
+    echo "capturedAt: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "---- ps (hung process tree, captured before SIGTERM) ----"
+    # shellcheck disable=SC2086
+    ps -o pid,ppid,stat,etime,pcpu,command -p $(echo $pids | tr ' ' ',') 2>/dev/null || true
+  } > "${diagdir}/timeout-process-tree.txt"
+  for p in $pids; do
+    if ps -o command= -p "$p" 2>/dev/null | grep -q "java"; then
+      java_pids="${java_pids} ${p}"
+      if command -v jcmd >/dev/null 2>&1; then
+        local dcmd
+        for dcmd in Thread.print VM.command_line VM.flags; do
+          jcmd "$p" "$dcmd" > "${diagdir}/timeout-jcmd-${p}-${dcmd}.txt" 2>&1 || true
+        done
+      fi
+      if command -v taskset >/dev/null 2>&1; then
+        taskset -pc "$p" > "${diagdir}/timeout-affinity-${p}.txt" 2>&1 || true
+      fi
+    fi
+  done
+  local jcmd_avail="false"
+  command -v jcmd >/dev/null 2>&1 && jcmd_avail="true"
+  cat > "${diagdir}/timeout-diagnostics.json" <<DIAGEOF
+{
+  "label": $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$label" 2>/dev/null || printf '"unavailable"'),
+  "budgetSeconds": ${budget},
+  "capturedBeforeTermination": true,
+  "javaPids": [$(echo "$java_pids" | tr -s ' ' '\n' | sed '/^$/d' | paste -sd, -)],
+  "jcmdAvailable": ${jcmd_avail},
+  "processTree": "timeout-process-tree.txt",
+  "terminationPolicy": "SIGTERM to the whole tree; SIGKILL only after the grace period (never the normal path)"
+}
+DIAGEOF
+}
+
+# run_with_deadline <budget-seconds> <diag-dir> <label> <command-string>
+# Executes the command with a hard wall-clock budget. Returns the command's
+# own exit status, or 124 on timeout (after diagnostics capture and tree
+# termination). Test hooks: PLAB_TIMEOUT_OVERRIDE_SECONDS replaces the
+# budget; PLAB_TIMEOUT_KILL_AFTER_SECONDS replaces the 30s SIGTERM grace.
+run_with_deadline() {
+  local budget="$1" diagdir="$2" label="$3" cmd="$4"
+  [ -n "${PLAB_TIMEOUT_OVERRIDE_SECONDS:-}" ] && budget="$PLAB_TIMEOUT_OVERRIDE_SECONDS"
+  local kill_after="${PLAB_TIMEOUT_KILL_AFTER_SECONDS:-30}"
+  bash -c "$cmd" &
+  local pid=$!
+  CURRENT_CHILD_PID="$pid"
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$budget" ]; then
+      echo "run_with_deadline: TIMEOUT after ${budget}s — ${label}" >&2
+      capture_hang_diagnostics "$diagdir" "$label" "$pid" "$budget"
+      signal_process_tree TERM "$pid"
+      local grace=0
+      while kill -0 "$pid" 2>/dev/null && [ "$grace" -lt "$kill_after" ]; do
+        sleep 1; grace=$((grace + 1))
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "run_with_deadline: escalating to SIGKILL — SIGTERM ignored for ${kill_after}s (${label})" >&2
+        signal_process_tree KILL "$pid"
+      fi
+      wait "$pid" 2>/dev/null || true
+      CURRENT_CHILD_PID=""
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  local rc=0
+  wait "$pid" || rc=$?
+  CURRENT_CHILD_PID=""
+  return "$rc"
+}

@@ -13,6 +13,8 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.annotations.AuxCounters;
+import org.openjdk.jmh.infra.Control;
 import org.openjdk.jmh.infra.ThreadParams;
 
 import java.util.concurrent.TimeUnit;
@@ -59,7 +61,43 @@ public class SpscLinuxEvidenceBenchmark {
     private long produceSeq;
     private long consumeSeq;
     private long[] out; // preallocated consumer storage — no allocation in the measured path
-    private boolean sequenceViolated;
+    private volatile boolean sequenceViolated;
+
+    /**
+     * Explicit SPSC event counters (JMH aux counters, per worker). These —
+     * not the primary invocation throughput — are the authoritative
+     * item-rate evidence: with {@link Control}-bounded loops one successful
+     * invocation is one produced item (or one drained batch), but the final
+     * invocation of an iteration may return without transferring anything,
+     * so published items/s always comes from producedItems/consumedItems.
+     */
+    @AuxCounters(AuxCounters.Type.EVENTS)
+    @State(Scope.Thread)
+    public static class ProducerCounters {
+        public long producedItems;
+        public long producerFullRetries;
+
+        @Setup(Level.Iteration)
+        public void reset() {
+            producedItems = 0;
+            producerFullRetries = 0;
+        }
+    }
+
+    @AuxCounters(AuxCounters.Type.EVENTS)
+    @State(Scope.Thread)
+    public static class ConsumerCounters {
+        public long consumedItems;
+        public long consumerEmptyPolls;
+        public long sequenceViolations;
+
+        @Setup(Level.Iteration)
+        public void reset() {
+            consumedItems = 0;
+            consumerEmptyPolls = 0;
+            sequenceViolations = 0;
+        }
+    }
 
     @State(Scope.Thread)
     public static class PinProducer {
@@ -107,14 +145,29 @@ public class SpscLinuxEvidenceBenchmark {
         sequenceViolated = false;
     }
 
-    /** One operation = exactly one item accepted (spins while full). */
+    /**
+     * One successful operation = exactly one item accepted. The retry loop
+     * is bounded by {@link Control#stopMeasurement}: at iteration end the
+     * consumer may already have parked on JMH's iteration latch with the
+     * ring full — the batch-20260717T150131Z hang — so an unbounded
+     * spin-until-accepted here deadlocks the fork. When JMH signals the
+     * end, this method returns {@code false} without producing; the
+     * producer and consumer are independently capable of returning, never
+     * assuming the other stops at the same instant.
+     */
     @Benchmark
     @Group("transfer")
-    public void produce(PinProducer pinned) {
-        while (!buffer.tryProduce(produceSeq)) {
+    public boolean produce(Control control, PinProducer pinned, ProducerCounters counters) {
+        while (!control.stopMeasurement) {
+            if (buffer.tryProduce(produceSeq)) {
+                produceSeq++;
+                counters.producedItems++;
+                return true;
+            }
+            counters.producerFullRetries++;
             Thread.onSpinWait();
         }
-        produceSeq++;
+        return false;
     }
 
     /**
@@ -125,18 +178,24 @@ public class SpscLinuxEvidenceBenchmark {
      */
     @Benchmark
     @Group("transfer")
-    public void consume(PinConsumer pinned) {
-        int n = buffer.tryConsumeBatch(out, batch);
-        if (n == 0) {
-            Thread.onSpinWait();
-            return;
-        }
-        for (int i = 0; i < n; i++) {
-            if (out[i] != consumeSeq + i) {
-                sequenceViolated = true;
+    public int consume(Control control, PinConsumer pinned, ConsumerCounters counters) {
+        while (!control.stopMeasurement) {
+            int n = buffer.tryConsumeBatch(out, batch);
+            if (n > 0) {
+                for (int i = 0; i < n; i++) {
+                    if (out[i] != consumeSeq + i) {
+                        sequenceViolated = true;
+                        counters.sequenceViolations++;
+                    }
+                }
+                consumeSeq += n;
+                counters.consumedItems += n;
+                return n;
             }
+            counters.consumerEmptyPolls++;
+            Thread.onSpinWait();
         }
-        consumeSeq += n;
+        return 0;
     }
 
     @TearDown(Level.Trial)
@@ -147,6 +206,11 @@ public class SpscLinuxEvidenceBenchmark {
         if (consumeSeq == 0 || produceSeq == 0) {
             throw new IllegalStateException("no items transferred (produced=" + produceSeq + ", consumed=" + consumeSeq + ") — a worker was starved");
         }
+        // In-flight items at iteration shutdown are EXPECTED, not a
+        // violation: the ring is trial-scoped, so items queued when an
+        // iteration ends are drained (sequence-checked) at the start of
+        // the next one, and at trial teardown at most `capacity` items may
+        // legitimately remain unconsumed.
         long inFlight = produceSeq - consumeSeq;
         if (inFlight < 0 || inFlight > capacity) {
             throw new IllegalStateException("cursor accounting broken: produced=" + produceSeq + ", consumed=" + consumeSeq + ", capacity=" + capacity);

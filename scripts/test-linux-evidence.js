@@ -596,17 +596,33 @@ test("configs: the runner rejects unsupported lab ids", () => {
   }
 });
 
-test("configs: SPSC scenarios cover cursor mode, batch and capacity, with a persistent-worker Rust harness", () => {
+test("configs: SPSC scenarios cover cursor mode, batch and capacity, each in a JMH view AND a finite-harness view", () => {
   const variants = confCall("spsc-ring-buffer", "lab_variants").stdout.trim().split(/\s+/);
-  assert.deepEqual(variants, ["cached-b1-c1024", "uncached-b1-c1024", "cached-b64-c1024", "cached-b1-c65536"]);
+  // post batch-20260717T150131Z: every matrix case carries two views — the
+  // Control-bounded JMH cost benchmark and the finite transfer harness
+  // (the primary items/s source, which cannot hang by construction).
+  assert.deepEqual(variants, [
+    "cached-b1-c1024", "harness-cached-b1-c1024",
+    "uncached-b1-c1024", "harness-uncached-b1-c1024",
+    "cached-b64-c1024", "harness-cached-b64-c1024",
+    "cached-b1-c65536", "harness-cached-b1-c65536",
+  ]);
+  assert.equal(confCall("spsc-ring-buffer", "lab_variant_kind harness-cached-b1-c1024").stdout.trim(), "aux");
+  assert.equal(confCall("spsc-ring-buffer", "lab_variant_kind cached-b1-c1024").stdout.trim(), "jmh");
   const args = confCall("spsc-ring-buffer", "lab_jmh_args uncached-b1-c1024").stdout.trim();
   assert.equal(args, "-p cursorMode=uncached -p batch=1 -p capacity=1024");
+  const harness = confCall("spsc-ring-buffer", "lab_aux_evidence_cmd harness-cached-b64-c1024").stdout.trim();
+  assert.match(harness, /SpscTransferHarness/);
+  assert.match(harness, /--capacity 1024 --cursor-mode cached --batch 64/);
+  assert.match(harness, /--deadline-seconds \d+/);
   const rust = confCall("spsc-ring-buffer", "lab_rust_evidence_cmd cached-b64-c65536").stdout.trim();
   // Methodology parity: the publication harness is the persistent-worker
   // bin — never the Criterion spawn/join lifecycle benchmark.
   assert.match(rust, /--bin spsc_evidence/);
   assert.doesNotMatch(rust, /cargo bench/);
   assert.match(rust, /--cpus 2,4/);
+  // harness variants never duplicate the Rust run
+  assert.equal(confCall("spsc-ring-buffer", "lab_rust_evidence_cmd harness-cached-b1-c1024").stdout.trim(), "");
 });
 
 test("configs: CAS contender scenarios derive from the validated CPU set, never hardcoded CPU numbers", () => {
@@ -957,4 +973,226 @@ test("maturity: a fixture-derived record can never reach verified, even with eve
   const maturity = deriveMaturity(record);
   assert.notEqual(maturity.level, "verified");
   assert.equal(maturity.checks.importerCapability, false);
+});
+
+// --- hard wall-clock timeout (batch-20260717T150131Z SPSC hang regression) ---
+// A JMH forked worker span 14h40m at 100% CPU because the producer loop had
+// no termination bound. The runner must never depend on the benchmark being
+// well-behaved again: every external invocation runs under run_with_deadline.
+
+test("timeout lib: run_with_deadline passes a completing command's exit status through", () => {
+  const r = libCall(`run_with_deadline 30 /tmp unit-pass 'exit 7'`);
+  assert.equal(r.status, 7);
+  const ok = libCall(`run_with_deadline 30 /tmp unit-pass 'true'`);
+  assert.equal(ok.status, 0, ok.stderr);
+});
+
+test("timeout lib: run_with_deadline returns 124 on a hang, captures diagnostics, and leaves no survivors", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ev-deadline-"));
+  const pidfile = join(dir, "hang.pid");
+  try {
+    const r = libCall(
+      `run_with_deadline 1 '${dir}' unit-hang 'echo $$ > ${pidfile}; exec sleep 60'`,
+      { PLAB_TIMEOUT_KILL_AFTER_SECONDS: "5" },
+    );
+    assert.equal(r.status, 124);
+    assert.match(r.stderr, /TIMEOUT after 1s — unit-hang/);
+    assert.doesNotMatch(r.stderr, /escalating to SIGKILL/);
+    assert.ok(existsSync(join(dir, "timeout-process-tree.txt")), "process-tree snapshot missing");
+    const diag = JSON.parse(readFileSync(join(dir, "timeout-diagnostics.json"), "utf8"));
+    assert.equal(diag.capturedBeforeTermination, true);
+    assert.match(diag.terminationPolicy, /SIGTERM/);
+    const pid = Number(readFileSync(pidfile, "utf8").trim());
+    assert.ok(pid > 0);
+    assert.throws(() => process.kill(pid, 0), /ESRCH/, "hung child survived the deadline");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Full-runner hang: stub perf/taskset exec their payload so the stub java
+// (which hangs exactly like the real SPSC ForkedMain did) actually runs
+// under the runner's measurement path. One invocation, asserted from three
+// angles below (classification, diagnostics, cleanup).
+function hangStubs() {
+  return makeStubDir({
+    uname: `echo Linux`,
+    "systemd-detect-virt": PHYSICAL_VIRT,
+    lscpu: LSCPU_STUB,
+    nproc: `echo 8`,
+    perf: `if [ "$1" = "--version" ]; then echo "perf version 6.8"; exit 0; fi
+if [ "$1" = "c2c" ]; then case "$*" in *"-e list"*) echo "ldlat-loads, ldlat-stores"; exit 0 ;; esac; fi
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--" ]; then shift; exec "$@"; fi
+  shift
+done
+exit 0`,
+    taskset: `if [ "$1" = "-c" ]; then shift 2; exec "$@"; fi
+exit 0`,
+    mvn: `case "$*" in
+  *package*) mkdir -p target; [ -f target/benchmarks.jar ] || : > target/benchmarks.jar ;;
+esac
+exit 0`,
+    java: `case "$*" in
+  *-version*) exit 0 ;;
+  *benchmarks.jar*) echo $$ > "$PLAB_TEST_PIDFILE"; exec sleep 300 ;;
+esac
+exit 0`,
+  });
+}
+
+let hangCache = null;
+function hangRunResult() {
+  if (hangCache) return hangCache;
+  const pidfile = join(mkdtempSync(join(tmpdir(), "ev-pid-")), "hang.pid");
+  const stubs = hangStubs();
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  let r;
+  try {
+    const stdout = execFileSync(
+      "bash",
+      [RUNNER, "false-sharing", "--profile", "smoke", "--cpus", "0,1", "--skip-load-check", "--out", out],
+      {
+        env: {
+          ...process.env,
+          PATH: `${stubs}:/usr/bin:/bin`,
+          PLAB_TIMEOUT_OVERRIDE_SECONDS: "2",
+          PLAB_TIMEOUT_KILL_AFTER_SECONDS: "5",
+          PLAB_TEST_PIDFILE: pidfile,
+        },
+        encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], timeout: 120000,
+      },
+    );
+    r = { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    r = { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+  }
+  const runDir = execSync(`find '${out}/false-sharing' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+  hangCache = { r, runDir, pidfile };
+  return hangCache;
+}
+
+test("runner timeout: a hung benchmark is killed at the budget and classified failed-benchmark-timeout (exit 3)", () => {
+  const { r, runDir } = hangRunResult();
+  assert.equal(r.status, 3, r.stderr);
+  assert.match(r.stderr, /BENCHMARK TIMEOUT/);
+  assert.match(r.stderr, /DIAGNOSTIC ONLY/);
+  const status = JSON.parse(readFileSync(join(runDir, "run-status.json"), "utf8"));
+  assert.equal(status.runStatus, "failed-benchmark-timeout");
+  assert.equal(status.publicationEligible, false);
+  assert.equal(status.canonicalEvidenceEligible, false);
+  assert.match(status.rejectionReason, /jmh-evidence \(variant shared\)/);
+});
+
+test("runner timeout: hang diagnostics are captured from the live tree before termination", () => {
+  const { runDir } = hangRunResult();
+  const vdir = join(runDir, "shared");
+  assert.ok(existsSync(join(vdir, "timeout-process-tree.txt")), "timeout-process-tree.txt missing");
+  const tree = readFileSync(join(vdir, "timeout-process-tree.txt"), "utf8");
+  assert.match(tree, /sleep 300/, "snapshot must show the hung command while still alive");
+  const diag = JSON.parse(readFileSync(join(vdir, "timeout-diagnostics.json"), "utf8"));
+  assert.equal(diag.capturedBeforeTermination, true);
+  assert.equal(diag.budgetSeconds, 2);
+  assert.match(diag.terminationPolicy, /SIGKILL only after/);
+});
+
+test("runner timeout: SIGTERM cleans the whole tree (no SIGKILL, no survivors, no further variants)", () => {
+  const { r, runDir, pidfile } = hangRunResult();
+  assert.doesNotMatch(r.stderr, /escalating to SIGKILL/);
+  const pid = Number(readFileSync(pidfile, "utf8").trim());
+  assert.ok(pid > 0);
+  assert.throws(() => process.kill(pid, 0), /ESRCH/, "hung benchmark process survived the runner");
+  assert.equal(existsSync(join(runDir, "padded")), false, "runner must abort, not continue to the next variant");
+});
+
+// --- focused --variant runs + the SPSC core/sweep matrix ---------------------
+
+function runLab(lab, args, stubDir, outDir, extraEnv = {}) {
+  try {
+    const stdout = execFileSync("bash", [RUNNER, lab, ...args, "--out", outDir], {
+      env: { ...process.env, PATH: `${stubDir}:/usr/bin:/bin`, ...extraEnv },
+      encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+  }
+}
+
+test("runner --variant: an unknown variant is rejected with the available list", () => {
+  const stubs = makeStubDir({ lscpu: LSCPU_STUB, "systemd-detect-virt": PHYSICAL_VIRT });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--dry-run", "--cpus", "0,1", "--variant", "no-such-variant"], stubs, out);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /unknown variant 'no-such-variant'/);
+    assert.match(r.stderr, /cached-b1-c1024/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner --variant: a focused run plans only the selected variant and is recorded as focused in the manifest", () => {
+  const stubs = makeStubDir({ lscpu: LSCPU_STUB, "systemd-detect-virt": PHYSICAL_VIRT });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--dry-run", "--profile", "smoke", "--cpus", "0,1", "--variant", "cached-b1-c1024"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    const plans = r.stdout.split("\n").filter((l) => l.startsWith("[plan]"));
+    assert.ok(plans.length > 0);
+    for (const line of plans) {
+      assert.doesNotMatch(line, /uncached|65536|SpscTransferHarness/, line);
+    }
+    assert.ok(plans.some((l) => /cursorMode=cached -p batch=1 -p capacity=1024/.test(l)));
+    const runDir = execSync(`find '${out}/spsc-ring-buffer' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    assert.equal(manifest.variantSelection, "focused:cached-b1-c1024");
+    assert.deepEqual(Object.keys(manifest.variants), ["cached-b1-c1024"]);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("spsc matrix: the default plan carries both views (JMH cost + finite harness) for every case incl. the sweep", () => {
+  const stubs = makeStubDir({ lscpu: LSCPU_STUB, "systemd-detect-virt": PHYSICAL_VIRT });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--dry-run", "--profile", "smoke", "--cpus", "0,1"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    // the previously hanging case is present in both views
+    assert.match(r.stdout, /cursorMode=cached -p batch=1 -p capacity=1024/);
+    assert.match(r.stdout, /SpscTransferHarness --items \d+ --capacity 1024 --cursor-mode cached --batch 1/);
+    // capacity sweep is in the default matrix (the defect is never hidden by shrinking the matrix)
+    assert.match(r.stdout, /capacity=65536/);
+    assert.match(r.stdout, /SpscTransferHarness --items \d+ --capacity 65536/);
+    const manifest = JSON.parse(readFileSync(
+      join(execSync(`find '${out}/spsc-ring-buffer' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim(), "evidence-manifest.json"), "utf8"));
+    assert.equal(manifest.variantSelection, "all");
+    assert.equal(Object.keys(manifest.variants).length, 8);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("spsc matrix: PLAB_SPSC_MATRIX=core keeps all three core cases in both views and drops only the capacity sweep", () => {
+  const stubs = makeStubDir({ lscpu: LSCPU_STUB, "systemd-detect-virt": PHYSICAL_VIRT });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--dry-run", "--profile", "smoke", "--cpus", "0,1"], stubs, out, { PLAB_SPSC_MATRIX: "core" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /cursorMode=cached -p batch=1 -p capacity=1024/);
+    assert.match(r.stdout, /cursorMode=uncached -p batch=1 -p capacity=1024/);
+    assert.match(r.stdout, /cursorMode=cached -p batch=64 -p capacity=1024/);
+    assert.match(r.stdout, /SpscTransferHarness --items \d+ --capacity 1024 --cursor-mode uncached/);
+    assert.doesNotMatch(r.stdout, /65536/);
+    const manifest = JSON.parse(readFileSync(
+      join(execSync(`find '${out}/spsc-ring-buffer' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim(), "evidence-manifest.json"), "utf8"));
+    assert.equal(Object.keys(manifest.variants).length, 6);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
 });

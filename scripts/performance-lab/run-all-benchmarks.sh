@@ -211,6 +211,21 @@ done
 # have no associative arrays).
 STATE_DIR="$(mktemp -d)"
 trap 'rm -rf "$STATE_DIR"' EXIT
+
+# INT/TERM forwarding: the lab runner runs as a background child (below) so
+# a signal reaching this orchestrator is forwarded as SIGTERM; the runner's
+# own traps then terminate the benchmark process tree (SIGTERM first,
+# SIGKILL only after the grace period — never the normal path).
+CURRENT_LAB_PID=""
+on_batch_signal() {
+  echo "run-all-benchmarks: interrupted — forwarding SIGTERM to the running lab runner" >&2
+  if [ -n "${CURRENT_LAB_PID}" ] && kill -0 "$CURRENT_LAB_PID" 2>/dev/null; then
+    kill -TERM "$CURRENT_LAB_PID" 2>/dev/null || true
+    wait "$CURRENT_LAB_PID" 2>/dev/null || true
+  fi
+  exit 130
+}
+trap on_batch_signal INT TERM
 lab_set() { printf '%s' "$3" > "${STATE_DIR}/${1}.${2}"; }
 lab_get() { cat "${STATE_DIR}/${1}.${2}" 2>/dev/null || true; }
 lab_append_run() { # <lab> <json-entry>
@@ -329,7 +344,10 @@ for lab in $ORDERED_LABS; do
 done
 
 write_batch_manifest() { # <state>
-  local state="$1"
+  # `lab` must be local: this function runs from inside the measurement
+  # loop's abort paths, and clobbering the caller's ${lab} makes the abort
+  # message name the wrong lab (last-in-order instead of the failing one).
+  local state="$1" lab
   {
     echo "{"
     echo "  \"batchId\": \"${BATCH_ID}\","
@@ -458,8 +476,16 @@ for rep in $(seq 1 "$REPETITIONS"); do
       write_batch_manifest "failed-infrastructure"
       fail "failed-environment-capture on ${lab} — aborting the entire batch"
     fi
-    if "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --out "$REP_DIR" \
-        > "${REP_DIR}/${lab}.console.log" 2>&1; then
+    # The lab runner runs in the background so INT/TERM reaching this
+    # orchestrator can be forwarded to it (its own traps then terminate the
+    # benchmark process tree — SIGTERM first, SIGKILL only as last resort).
+    RUNNER_RC=0
+    "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --out "$REP_DIR" \
+        > "${REP_DIR}/${lab}.console.log" 2>&1 &
+    CURRENT_LAB_PID=$!
+    wait "$CURRENT_LAB_PID" || RUNNER_RC=$?
+    CURRENT_LAB_PID=""
+    if [ "$RUNNER_RC" = "0" ]; then
       ARCHIVE="$(ls "${REP_DIR}/${lab}-"*"-linux-evidence.tar."* 2>/dev/null | head -1 || true)"
       if [ -n "$ARCHIVE" ] && "$VERIFY_EVIDENCE" "$ARCHIVE" > "${REP_DIR}/${lab}.verify.log" 2>&1; then
         HASH="$(shasum -a 256 "$ARCHIVE" 2>/dev/null || sha256sum "$ARCHIVE")"
@@ -468,6 +494,17 @@ for rep in $(seq 1 "$REPETITIONS"); do
         lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"verification-failed\"}"
         BATCH_STATE="partial"
       fi
+    elif [ "$RUNNER_RC" = "3" ]; then
+      # Exit 3 = failed-benchmark-timeout: a benchmark exceeded its hard
+      # wall-clock budget (a hang, like the SPSC producer spin that ran
+      # 14h40m in batch-20260717T150131Z). The whole batch aborts — a host
+      # that just carried a hung 100%-CPU JVM must not keep measuring as if
+      # nothing happened, and the hang needs human attention, not skipping.
+      mkdir -p "${BATCH_DIR}/failed-runs/${lab}-run-${rep}"
+      mv "${REP_DIR}/${lab}" "${BATCH_DIR}/failed-runs/${lab}-run-${rep}/" 2>/dev/null || true
+      lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"failed-benchmark-timeout\", \"console\": \"run-${rep}/${lab}.console.log\"}"
+      write_batch_manifest "failed-benchmark-timeout"
+      fail "failed-benchmark-timeout on ${lab} — a benchmark invocation exceeded its hard wall-clock budget; jcmd/thread-dump diagnostics are preserved with the failed run (failed-runs/${lab}-run-${rep}); aborting the entire batch (a hang is never silently skipped)"
     else
       # Methodological failures are never silently retried (retry budget: 0).
       mkdir -p "${BATCH_DIR}/failed-runs/${lab}-run-${rep}"

@@ -43,6 +43,30 @@ brand-new producer/consumer pair — on every one of its 100 samples, so its
 reported time necessarily includes thread creation/teardown overhead that
 the Java number does not.
 
+### Counter semantics in the Linux evidence benchmark (post-hang hardening)
+
+The native-Linux JMH evidence benchmark
+(`SpscLinuxEvidenceBenchmark`) is termination-safe: both worker loops are
+bounded by JMH's `Control.stopMeasurement`, so an iteration boundary that
+catches the ring full (the batch-20260717T150131Z hang:
+`docs/incidents/2026-07-17-spsc-jmh-hang.md`) can no longer wedge a fork.
+Because a single benchmark invocation may now retry internally before
+transferring, **JMH's invocation throughput is NOT item throughput.** The
+authoritative item accounting lives in explicit `@AuxCounters`:
+
+- `producedItems` / `consumedItems` — items actually transferred (the
+  consumer adds the full batch size it drained, `+= n`);
+- `producerFullRetries` / `consumerEmptyPolls` — contention/emptiness
+  spins, reported separately from progress;
+- `sequenceViolations` — must be 0 in any accepted run;
+- at shutdown `producedItems − consumedItems` is bounded by ring capacity
+  (in-flight items are expected, not an error).
+
+End-to-end **items/s** comes from the finite transfer harness
+(`SpscTransferHarness`: exactly N items, start barrier, shared
+cancellation, internal deadline — it cannot hang by construction), which
+runs as the `harness-*` variant next to every JMH cost-view variant.
+
 ## Illustrative development data (this run — not a portable claim)
 
 **Java (JMH, `@Group("spsc")`, ops/ms per side, higher is better):**
