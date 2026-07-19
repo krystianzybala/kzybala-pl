@@ -1,0 +1,13 @@
+{
+  "role": "ingress",
+  "threadName": "main",
+  "nativeThreadId": 379911,
+  "intendedCpu": 2,
+  "observedCpuAfterPin": 2,
+  "observedCpuAtTeardown": 2,
+  "affinityMask": "0000000000000004:0000000000000000",
+  "migrationsAtPin": 6,
+  "migrationsAtTeardown": 6,
+  "migrationsDuringTrial": 0,
+  "pinned": true
+}
