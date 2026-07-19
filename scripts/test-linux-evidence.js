@@ -1196,3 +1196,132 @@ test("spsc matrix: PLAB_SPSC_MATRIX=core keeps all three core cases in both view
     rmSync(out, { recursive: true, force: true });
   }
 });
+
+// --- focused Rust-only component runs (worker-affinity diagnosis loop) --------
+// After the 2026-07-18 Rust affinity-diagnostics failure, --component
+// rust-harness reruns just the Rust persistent-worker harness for one
+// variant: no Maven gate, no JMH, no perf stat/c2c around JMH.
+
+function rustComponentStubs(cargoBody) {
+  return makeStubDir({
+    uname: `echo Linux`,
+    "systemd-detect-virt": PHYSICAL_VIRT,
+    lscpu: LSCPU_STUB,
+    nproc: `echo 8`,
+    perf: `if [ "$1" = "--version" ]; then echo "perf version 6.8"; exit 0; fi
+if [ "$1" = "c2c" ]; then case "$*" in *"-e list"*) echo "ldlat-loads, ldlat-stores"; exit 0 ;; esac; fi
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--" ]; then shift; exec "$@"; fi
+  shift
+done
+exit 0`,
+    taskset: `if [ "$1" = "-c" ]; then shift 2; exec "$@"; fi
+exit 0`,
+    cargo: cargoBody,
+  });
+}
+
+const RUST_OK_JSON = `{"harness":"spsc_evidence (persistent workers)","sequenceValid":true,"workers":[{"role":"producer","pinned":true,"nativeThreadId":4001},{"role":"consumer","pinned":true,"nativeThreadId":4002}],"violations":[]}`;
+
+test("runner --component: rust-harness dry-run plans ONLY the Rust harness for the selected variant", () => {
+  const stubs = makeStubDir({ lscpu: LSCPU_STUB, "systemd-detect-virt": PHYSICAL_VIRT });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--dry-run", "--profile", "smoke", "--cpus", "0,1", "--variant", "cached-b1-c1024", "--component", "rust-harness"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    const plans = r.stdout.split("\n").filter((l) => l.startsWith("[plan]"));
+    assert.ok(plans.length > 0, "the rust harness must be planned");
+    for (const line of plans) {
+      assert.match(line, /spsc_evidence/, line);
+      assert.doesNotMatch(line, /benchmarks\.jar|c2c|SpscTransferHarness/, line);
+    }
+    const runDir = execSync(`find '${out}/spsc-ring-buffer' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    assert.equal(manifest.componentSelection, "rust-harness");
+    assert.equal(manifest.variantSelection, "focused:cached-b1-c1024");
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner --component: unknown components and Rust-less variants are rejected", () => {
+  const stubs = makeStubDir({ lscpu: LSCPU_STUB, "systemd-detect-virt": PHYSICAL_VIRT });
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const bad = runLab("spsc-ring-buffer", ["--dry-run", "--cpus", "0,1", "--component", "jmh-only"], stubs, out);
+    assert.notEqual(bad.status, 0);
+    assert.match(bad.stderr, /unknown --component 'jmh-only'/);
+    const noRust = runLab("spsc-ring-buffer", ["--dry-run", "--cpus", "0,1", "--variant", "harness-cached-b1-c1024", "--component", "rust-harness"], stubs, out);
+    assert.notEqual(noRust.status, 0);
+    assert.match(noRust.stderr, /no selected variant defines a Rust harness command/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner --component: a clean focused Rust-only run collects rust evidence, skips the Maven gate, and is not publication-eligible", () => {
+  const stubs = rustComponentStubs(`echo '${RUST_OK_JSON}'
+exit 0`);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--profile", "smoke", "--cpus", "0,1", "--skip-load-check", "--variant", "cached-b1-c1024", "--component", "rust-harness"], stubs, out);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /skipped \(component=rust-harness/);
+    const runDir = execSync(`find '${out}/spsc-ring-buffer' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+    const evidence = JSON.parse(readFileSync(join(runDir, "cached-b1-c1024", "rust-evidence.json"), "utf8"));
+    assert.equal(evidence.sequenceValid, true);
+    const status = JSON.parse(readFileSync(join(runDir, "run-status.json"), "utf8"));
+    assert.equal(status.runStatus, "collected");
+    assert.equal(status.publicationEligible, false, "smoke + focused component is never publication evidence");
+    const jmh = execSync(`find '${runDir}' -name 'jmh.json'`, { encoding: "utf8" }).trim();
+    assert.equal(jmh, "", "no JMH artifact may exist in a rust-only run");
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner --component: a harness placement violation (exit 1) is classified rejected, sequence-valid or not", () => {
+  const stubs = rustComponentStubs(`echo '{"sequenceValid":true,"violations":["consumer: intended CPU 3 but finished on 2"]}'
+exit 1`);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--profile", "smoke", "--cpus", "0,1", "--skip-load-check", "--variant", "cached-b1-c1024", "--component", "rust-harness"], stubs, out);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /rust-harness-violation \(variant cached-b1-c1024\)/);
+    const runDir = execSync(`find '${out}/spsc-ring-buffer' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+    const status = JSON.parse(readFileSync(join(runDir, "run-status.json"), "utf8"));
+    assert.equal(status.runStatus, "rejected");
+    assert.match(status.rejectionReason, /rust-harness-violation/);
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("runner --component: a hung Rust harness hits the hard timeout and leaves no workers behind", () => {
+  const pidfile = join(mkdtempSync(join(tmpdir(), "ev-pid-")), "rust-hang.pid");
+  const stubs = rustComponentStubs(`echo $$ > "$PLAB_TEST_PIDFILE"
+exec sleep 300`);
+  const out = mkdtempSync(join(tmpdir(), "ev-out-"));
+  try {
+    const r = runLab("spsc-ring-buffer", ["--profile", "smoke", "--cpus", "0,1", "--skip-load-check", "--variant", "cached-b1-c1024", "--component", "rust-harness"], stubs, out, {
+      PLAB_TIMEOUT_OVERRIDE_SECONDS: "2",
+      PLAB_TIMEOUT_KILL_AFTER_SECONDS: "5",
+      PLAB_TEST_PIDFILE: pidfile,
+    });
+    assert.equal(r.status, 3, r.stderr);
+    assert.match(r.stderr, /BENCHMARK TIMEOUT/);
+    const runDir = execSync(`find '${out}/spsc-ring-buffer' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
+    const status = JSON.parse(readFileSync(join(runDir, "run-status.json"), "utf8"));
+    assert.equal(status.runStatus, "failed-benchmark-timeout");
+    const pid = Number(readFileSync(pidfile, "utf8").trim());
+    assert.ok(pid > 0);
+    assert.throws(() => process.kill(pid, 0), /ESRCH/, "hung Rust worker survived the runner");
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+});
