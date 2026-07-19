@@ -43,6 +43,48 @@ on exactly that conflation, placement is now enforced at the worker level:
   classified as worker migrations, and the counter is never discarded;
 - `taskset` remains as secondary containment only.
 
+### Rust worker protocol (post 2026-07-18 affinity-diagnostics fix)
+
+The first real focused SPSC run exposed a diagnostics defect in the Rust
+persistent-worker harness: the parent called the end-of-run capture again
+after `join()`, overwriting both workers' end state with the **main
+thread's** CPU and migration counter — producing identical migration
+counts for producer and consumer and a false "consumer finished on CPU 2"
+violation while the actual pinning was correct. The harness now enforces:
+
+- each worker, **on its own thread**: reads its own Linux TID
+  (`syscall(SYS_gettid)` — never the process PID), samples its migration
+  counter *before* pinning, pins itself (`sched_setaffinity(0)` = calling
+  task), verifies the mask via `sched_getaffinity` (**exactly** the
+  intended CPU — the two-CPU `taskset` containment mask never counts as
+  pinned), verifies `sched_getcpu()`, samples migrations again, then
+  reports READY; the parent releases the start barrier only after both
+  workers proved their placement (duplicate or invalid TIDs abort before
+  any timing);
+- `pinned` requires all of: syscall success + mask exactly `{intended}` +
+  observed CPU == intended + valid own TID — `affinitySetSucceeded`,
+  `affinityMaskVerified`, `cpuAfterPinVerified` are reported separately;
+- migration accounting is windowed: `migrationsBeforePin`,
+  `migrationsAfterPin`, `migrationsAtMeasurementStart`,
+  `migrationsAtMeasurementEnd` are all reported;
+  `migrationsDuringMeasurement = atMeasurementEnd − atMeasurementStart`
+  is the publication gate (must be 0, smoke included — duration may
+  shrink, placement rules never do). Startup/pre-pin migrations are
+  reported but never counted; a *decreasing* counter is an infrastructure
+  error;
+- every end-of-run observation (CPU, mask as an explicit `allowedCpus`
+  list, migrations, capturing TID) is taken by the worker itself and
+  returned through the join handle; `capturedByTid` must equal the
+  worker's own TID and the per-worker procfs paths
+  (`/proc/self/task/<tid>/sched`) must be distinct — the parent never
+  queries worker placement;
+- naming: per-worker counters (`producerWorkerMigrations`-class evidence)
+  are never comparable with the surrounding `perf stat` process-tree
+  counter (`processTreeCpuMigrations` — launcher, service and compiler
+  threads included). Java worker placement is never rejected on a
+  non-zero process-tree count when per-worker evidence proves zero
+  migrations.
+
 JVM profile for evidence runs: `-Xms1g -Xmx1g -XX:+UseSerialGC
 -XX:ActiveProcessorCount=<pinned cpu count>
 --enable-native-access=ALL-UNNAMED`. SerialGC is chosen because the
@@ -165,6 +207,31 @@ against the lab configuration; unknown names fail with the available list.
 The manifest records `"variantSelection": "focused:<name>"` — a focused run
 never masquerades as the full matrix, and full-matrix evidence claims still
 require a run with `"variantSelection": "all"`.
+
+### `--component rust-harness` (focused Rust-only rerun)
+
+Runs **only** the Rust persistent-worker harness for the selected
+variant(s) — no Maven correctness gate, no JMH, no `perf stat`/`perf c2c`
+around JMH, no aux harness — the fast loop for diagnosing worker-affinity
+issues:
+
+```bash
+./scripts/performance-lab/run-linux-evidence.sh \
+  spsc-ring-buffer \
+  --profile smoke \
+  --cpus <CPU_A>,<CPU_B> \
+  --variant cached-b1-c1024 \
+  --component rust-harness \
+  --out /tmp/spsc-rust-affinity-smoke
+```
+
+It finishes in seconds (plus a one-time `cargo` build) and exits non-zero
+on any sequence failure, wrong affinity mask, wrong observed CPU,
+migration during measurement, duplicate worker TID (classified
+`rejected: rust-harness-violation`), or hang (hard timeout →
+`failed-benchmark-timeout`, exit 3). `componentSelection` is recorded in
+the manifest; component runs — like smoke/development profiles — are
+never publication-eligible.
 
 ### Hard wall-clock timeouts (`failed-benchmark-timeout`)
 

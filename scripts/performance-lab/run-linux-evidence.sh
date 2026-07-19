@@ -15,7 +15,14 @@
 # (smoke|development wiring checks only — never publication|full),
 # --out <dir>, --dry-run, --skip-load-check, --variant <name> (run ONE
 # variant only — focused smoke/diagnosis; recorded as a focused run in the
-# manifest, never presented as the full variant matrix).
+# manifest, never presented as the full variant matrix), --component
+# all|rust-harness (rust-harness runs ONLY the Rust persistent-worker
+# harness — no Maven gate, no JMH, no perf stat/c2c around JMH — for fast
+# affinity diagnosis; the harness itself exits non-zero on any sequence,
+# affinity-mask, placement, migration, or TID-integrity violation).
+#
+# Smoke/development profiles and focused --variant/--component runs are
+# never publication-eligible, whatever the host.
 #
 # Every external measurement invocation runs under a hard wall-clock
 # timeout (run_with_deadline): on expiry, jcmd/thread-dump diagnostics are
@@ -62,6 +69,7 @@ PREFLIGHT_ONLY=0
 DRY_RUN=0
 SKIP_LOAD_CHECK=0
 SELECTED_VARIANT=""
+COMPONENT="all"
 OUT_ROOT="${REPO_ROOT}/results"
 
 while [ $# -gt 0 ]; do
@@ -69,6 +77,7 @@ while [ $# -gt 0 ]; do
     --profile) PROFILE="$2"; shift 2 ;;
     --cpus) CPUS="$2"; shift 2 ;;
     --variant) SELECTED_VARIANT="$2"; shift 2 ;;
+    --component) COMPONENT="$2"; shift 2 ;;
     --allow-cross-socket) ALLOW_CROSS_SOCKET=1; shift ;;
     --allow-virtualized) ALLOW_VIRTUALIZED=1; shift ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
@@ -118,6 +127,15 @@ effective_variants() {
   if [ -n "$SELECTED_VARIANT" ]; then echo "$SELECTED_VARIANT"; else lab_variants; fi
 }
 
+# --component rust-harness runs ONLY the Rust persistent-worker harness for
+# the selected variant(s): no Maven correctness gate, no JMH, no perf
+# stat/c2c around JMH, no aux harness — the fast placement-diagnosis loop.
+# The Rust harness self-validates placement and exits non-zero on any
+# violation, so a component run still fails loudly on broken affinity.
+case "$COMPONENT" in
+  all|rust-harness) : ;;
+  *) fail "unknown --component '${COMPONENT}' (all|rust-harness)" ;;
+esac
 [ -n "$CPUS" ] || fail "--cpus is required: publication runs never silently choose CPUs"
 IFS=',' read -r -a CPU_LIST <<<"$CPUS"
 CPU_COUNT="${#CPU_LIST[@]}"
@@ -139,6 +157,17 @@ CPU_A="${CPU_LIST[0]}"
 # or define a second CPU (and never invoke pair-specific code paths).
 CPU_B=""
 [ "$CPU_COUNT" -ge 2 ] && CPU_B="${CPU_LIST[1]}"
+
+# --component rust-harness availability check (needs the parsed CPU list —
+# lab_rust_evidence_cmd interpolates the validated CPUs into the command).
+if [ "$COMPONENT" = "rust-harness" ]; then
+  [ -n "${LAB_RUST_DIR:-}" ] || fail "--component rust-harness: lab ${LAB_ID} has no Rust harness"
+  RUST_ONLY_OK=0
+  for V in $(effective_variants); do
+    [ -n "$(lab_rust_evidence_cmd "$V")" ] && RUST_ONLY_OK=1
+  done
+  [ "$RUST_ONLY_OK" = "1" ] || fail "--component rust-harness: no selected variant defines a Rust harness command (harness-* variants are Java-only; pick the base variant, e.g. cached-b1-c1024)"
+fi
 
 # --- Resolved publication profile -------------------------------------------
 # Explicit values, stored verbatim in benchmark-profile.json. Multiple
@@ -278,10 +307,21 @@ VM_TYPE=""
 CONTAINER_TYPE=""
 ENV_KIND="physical"
 PUBLICATION_ELIGIBLE="true"
+# smoke/development profiles are wiring/diagnosis runs: never publication
+# evidence regardless of host; a focused --component run likewise.
+PUBLICATION_INELIGIBLE_REASON=""
+case "$PROFILE" in
+  smoke|development) PUBLICATION_ELIGIBLE="false"; PUBLICATION_INELIGIBLE_REASON="non-publication profile (${PROFILE})" ;;
+esac
+if [ "$COMPONENT" != "all" ]; then
+  PUBLICATION_ELIGIBLE="false"
+  PUBLICATION_INELIGIBLE_REASON="${PUBLICATION_INELIGIBLE_REASON:+${PUBLICATION_INELIGIBLE_REASON}; }focused component run (${COMPONENT})"
+fi
 if VIRT_INFO="$(detect_virtualization)"; then
   VIRT_DETECTED="true"
   ENV_KIND="virtualized"
   PUBLICATION_ELIGIBLE="false"
+  PUBLICATION_INELIGIBLE_REASON="${PUBLICATION_INELIGIBLE_REASON:+${PUBLICATION_INELIGIBLE_REASON}; }virtualized environment"
   VM_TYPE="$(printf '%s' "$VIRT_INFO" | sed -n 's/^vm=\([^ ]*\).*/\1/p')"
   CONTAINER_TYPE="$(printf '%s' "$VIRT_INFO" | sed -n 's/.*container=\(.*\)$/\1/p')"
   [ "$VM_TYPE" = "none" ] && VM_TYPE=""
@@ -389,15 +429,23 @@ mkdir -p "$RUN_DIR" 2>/dev/null || fail "cannot create output directory ${RUN_DI
 #    alone is fooled by broken shims (e.g. macOS's /usr/bin/java stub with
 #    no JDK); executing `java -version` is the real check, and it resolves
 #    through whatever PATH the host uses (SDKMAN installs included).
-if [ "$DRY_RUN" != "1" ]; then
+if [ "$DRY_RUN" != "1" ] && [ "$COMPONENT" = "all" ]; then
   java -version >/dev/null 2>&1 || fail "java is not installed"
   command -v mvn >/dev/null 2>&1 || fail "mvn (Maven) is not installed"
+fi
+if [ "$COMPONENT" = "rust-harness" ] && [ "$DRY_RUN" != "1" ]; then
+  command -v cargo >/dev/null 2>&1 || fail "cargo is not installed (required for --component rust-harness)"
 fi
 
 # 9. Correctness gate — measurement never starts on a failing suite.
 echo "== correctness gate (mvn test)"
 CORRECTNESS_STATUS="skipped-dry-run"
-if [ "$DRY_RUN" != "1" ]; then
+if [ "$COMPONENT" = "rust-harness" ]; then
+  # Rust-only diagnosis loop: the Java suite gates full evidence runs, not
+  # this focused mode; the Rust harness carries its own sequence check.
+  CORRECTNESS_STATUS="skipped-rust-harness-component"
+  echo "   skipped (component=rust-harness — Rust harness self-validates sequences and placement)"
+elif [ "$DRY_RUN" != "1" ]; then
   if (cd "$JAVA_DIR" && mvn -q test) > "${RUN_DIR}/correctness-console.log" 2>&1; then
     CORRECTNESS_STATUS="passed"
   else
@@ -565,7 +613,7 @@ if [ "$PREFLIGHT_ONLY" = "1" ]; then
   if [ "$PUBLICATION_ELIGIBLE" = "true" ]; then
     echo "Publication profile eligible: yes"
   else
-    echo "Publication profile eligible: no (virtualized — smoke/development wiring checks only)"
+    echo "Publication profile eligible: no (${PUBLICATION_INELIGIBLE_REASON:-virtualized — smoke/development wiring checks only})"
   fi
   echo "Selected CPUs: ${CPUS}"
   echo "Measurement was not started because --preflight-only was supplied."
@@ -652,6 +700,29 @@ for VARIANT in $(effective_variants); do
   fi
   echo "   scenario kind=${VKIND} cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}' hard-timeout=${EV_TIMEOUT_SECONDS}s/invocation"
 
+  if [ "$COMPONENT" = "rust-harness" ]; then
+    RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"
+    if [ -z "$RUST_CMD" ]; then
+      echo "-- component=rust-harness: variant ${VARIANT} has no Rust command — skipped"
+      continue
+    fi
+    echo "-- Rust persistent-worker harness (component-only run)"
+    RUST_RC=0
+    if [ "$DRY_RUN" = "1" ]; then
+      plan "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log"
+    else
+      run_with_deadline "$EV_TIMEOUT_SECONDS" "$VDIR" "rust-harness (variant ${VARIANT})" \
+        "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log" || RUST_RC=$?
+      if [ "$RUST_RC" = "124" ]; then
+        mark_timeout "rust-harness (variant ${VARIANT})"
+      elif [ "$RUST_RC" != "0" ]; then
+        cat "${VDIR}/rust-evidence.json" >&2 2>/dev/null || true
+        mark_rejected "rust-harness-violation (variant ${VARIANT}) — sequence/affinity/diagnostics failure, see ${VDIR}/rust-evidence.json"
+      fi
+    fi
+    continue
+  fi
+
   if [ "$VKIND" = "aux" ]; then
     AUX_CMD="$(lab_aux_evidence_cmd "$VARIANT")"
     [ -n "$AUX_CMD" ] || fail "variant ${VARIANT} is kind=aux but lab_aux_evidence_cmd returned nothing"
@@ -682,11 +753,29 @@ for VARIANT in $(effective_variants); do
   RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"
   if [ -n "$RUST_CMD" ]; then
     echo "-- Rust persistent-worker harness"
-    run_measured "rust-harness (variant ${VARIANT})" "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log"
+    if [ "$DRY_RUN" = "1" ]; then
+      plan "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log"
+    else
+      RUST_RC=0
+      run_with_deadline "$EV_TIMEOUT_SECONDS" "$VDIR" "rust-harness (variant ${VARIANT})" \
+        "(cd ${RUST_DIR} && perf stat -x, -e ${EV_PERF_EVENTS} -o ${VDIR}/rust-perf-stat.csv -- taskset -c ${SCEN_CPUS} ${RUST_CMD}) > ${VDIR}/rust-evidence.json 2> ${VDIR}/rust-evidence.log" || RUST_RC=$?
+      if [ "$RUST_RC" = "124" ]; then
+        mark_timeout "rust-harness (variant ${VARIANT})"
+      elif [ "$RUST_RC" != "0" ]; then
+        cat "${VDIR}/rust-evidence.json" >&2 2>/dev/null || true
+        mark_rejected "rust-harness-violation (variant ${VARIANT}) — sequence/affinity/diagnostics failure, see ${VDIR}/rust-evidence.json"
+      fi
+    fi
   fi
 
   # --- Placement policy (after all of this variant's executions) -------------
-  if [ "$DRY_RUN" != "1" ]; then
+  # Full-component runs only: it gates the JMH worker-placement files and
+  # process-tree counters (processTreeCpuMigrations — launcher/service
+  # threads included, never comparable with per-worker migration counters).
+  # A rust-harness component run has no JMH placement artifacts; the Rust
+  # harness enforces its own per-worker placement policy and already
+  # rejected the run above on any violation.
+  if [ "$DRY_RUN" != "1" ] && [ "$COMPONENT" = "all" ]; then
     # 1. Benchmark-WORKER migrations: BLOCKING. Merge the per-fork
     #    worker-placement files the benchmark wrote and validate every
     #    worker was pinned, landed on its intended CPU and never migrated.
@@ -765,6 +854,7 @@ done; printf '\n')
   },
   "runStatusFile": "run-status.json",
   "variantSelection": $([ -n "$SELECTED_VARIANT" ] && printf '"focused:%s"' "$SELECTED_VARIANT" || printf '"all"'),
+  "componentSelection": "${COMPONENT}",
   "hardTimeoutSecondsPerInvocation": ${EV_TIMEOUT_SECONDS},
   "canonical": { "pendingImport": true, "importer": "scripts/performance-lab/import-evidence.sh (adds canonical-jmh.json, canonical-perf-stat.json, comparison.json on the repository machine)" },
   "review": { "verifiedMaturityRequiresHumanReview": true, "importDoesNotPromote": true }
