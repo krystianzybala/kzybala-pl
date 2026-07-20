@@ -1,0 +1,22 @@
+{
+  "labId": "benchmark-harness-traps",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Both languages implement the identical four kernels with 64-bit wrapping semantics (Java long overflow == Rust wrapping_*): xorshift64 scalar mix, xorshift64-filled array reduction, decimal CSV parser over a deterministically generated input, and an LCG stateful counter. Every value below must be produced exactly by BOTH suites — trap variants and corrected variants alike compute the same result (only the measurement harness differs). Change a value here only together with both test files.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7; x ^= x << 17 (64-bit wrapping, logical right shift)",
+    "reduction": "wrapping 64-bit sum over the xorshift64 stream (each element is the stream value AFTER stepping)",
+    "parser": "input = comma-joined decimal of (stream value mod 1000000), count values from the seed; checksum = checksum*31 + parsedValue, 64-bit wrapping; the parse must also verify the value count",
+    "counter": "state = state * 6364136223846793005 + 1442695040888963407 (64-bit wrapping LCG), stepped N times from the seed"
+  },
+  "cases": {
+    "scalar": { "seed": 42, "rounds": 1000, "mixed": "2260733264014075113" },
+    "reduction": { "seed": 42, "length": 4096, "sum": "6622022393378204083" },
+    "parser": {
+      "seed": 7,
+      "count": 256,
+      "inputLength": 1760,
+      "inputPrefix": "888327,51652,763743,795107,470850,165125",
+      "checksum": "1274698891203359752"
+    },
+    "counter": { "seed": 0, "steps": 10000, "finalState": "206428032307178832" }
+  }
+}

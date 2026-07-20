@@ -37,6 +37,8 @@ cpu_sets:
 # Lab → cpu_set mapping. A lab may be mapped to a larger set than its
 # minimum; scenario subsets are deterministic prefixes (recorded per run).
 labs:
+  benchmark-harness-traps: core_single
+  clocks-latency-histograms: core_pair
   false-sharing: core_pair
   spsc-ring-buffer: core_pair
   cas-contention: core_octet

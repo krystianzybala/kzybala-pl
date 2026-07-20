@@ -1,5 +1,30 @@
 [
   {
+    "id": "benchmark-harness-traps",
+    "title": "Benchmark Harness Traps",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "beginner",
+    "durationMinutes": 35,
+    "topics": [
+      "benchmarking",
+      "methodology",
+      "jit",
+      "measurement"
+    ],
+    "prerequisites": [],
+    "unlocks": [
+      "clocks-latency-histograms"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
     "id": "cache-hierarchy",
     "title": "Cache Hierarchy",
     "status": "stable",
@@ -21,6 +46,31 @@
     "interactive": true,
     "benchmark": true,
     "conceptualModel": true
+  },
+  {
+    "id": "clocks-latency-histograms",
+    "title": "Clocks, Latency Histograms and Percentiles",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 40,
+    "topics": [
+      "benchmarking",
+      "latency",
+      "percentiles",
+      "measurement"
+    ],
+    "prerequisites": [
+      "benchmark-harness-traps"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
   },
   {
     "id": "false-sharing",

@@ -1,0 +1,29 @@
+[package]
+name = "clocks-latency-histograms-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Clocks, latency histograms and percentiles\" lab (kzybala.pl/lab/clocks-latency-histograms/)."
+publish = false
+
+[lib]
+name = "clocks_latency_lab"
+path = "src/lib.rs"
+
+[dependencies]
+# HdrHistogram port — same bucket math as the Java org.hdrhistogram
+# dependency, which is what makes the percentile fixtures shareable.
+hdrhistogram = "7"
+# Worker affinity for the native-Linux evidence harnesses.
+libc = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+# cargo bench always builds this profile (inherits release). Benchmarking
+# a debug build is invalid input for this lab by definition.
+[profile.bench]
+inherits = "release"
+
+[[bench]]
+name = "recording_cost"
+harness = false

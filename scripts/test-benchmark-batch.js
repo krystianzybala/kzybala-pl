@@ -822,6 +822,8 @@ labs:
   memory-ordering: core_pair
   thread-per-core: core_quad
   jit-pipeline: core_single
+  benchmark-harness-traps: core_single
+  clocks-latency-histograms: core_pair
 `);
     const r = (() => {
       try {

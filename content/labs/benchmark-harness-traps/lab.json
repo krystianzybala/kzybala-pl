@@ -1,0 +1,25 @@
+{
+  "id": "benchmark-harness-traps",
+  "title": "Benchmark Harness Traps",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "beginner",
+  "durationMinutes": 35,
+  "topics": [
+    "benchmarking",
+    "methodology",
+    "jit",
+    "measurement"
+  ],
+  "prerequisites": [],
+  "unlocks": [
+    "clocks-latency-histograms"
+  ],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

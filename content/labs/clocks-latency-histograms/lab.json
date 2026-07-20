@@ -1,0 +1,25 @@
+{
+  "id": "clocks-latency-histograms",
+  "title": "Clocks, Latency Histograms and Percentiles",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "intermediate",
+  "durationMinutes": 40,
+  "topics": [
+    "benchmarking",
+    "latency",
+    "percentiles",
+    "measurement"
+  ],
+  "prerequisites": [
+    "benchmark-harness-traps"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

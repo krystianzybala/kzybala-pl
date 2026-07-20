@@ -1,0 +1,104 @@
+{
+  "labId": "clocks-latency-histograms",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Deterministic synthetic latency streams (xorshift64 + integer bimodal mapping) recorded into HdrHistogram-compatible histograms (1 ns..60 s, 3 significant digits). Both languages must reproduce every value below exactly — sequences via identical integer arithmetic, percentiles via the shared HdrHistogram bucket semantics (Java org.hdrhistogram, Rust hdrhistogram crate). Histogram memory footprint is implementation-specific and deliberately NOT a shared fixture. Change a value here only together with both test files.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7; x ^= x << 17 (64-bit wrapping, logical right shift)",
+    "bimodalNanos": "u = stream value (unsigned): u%100 < 95 -> 800 + u%400; else 40000 + u%20000",
+    "pauseInjection": "bimodal sequence with +5000000 ns added at indices 999, 1999, ... (every 1000th op)",
+    "checksum": "checksum*31 + value, 64-bit wrapping, over the full sequence",
+    "histogram": "lowest=1, highest=60000000000, significantDigits=3; corrected recording uses expectedInterval=1000 ns",
+    "merge": "two independently recorded histograms added into a fresh one",
+    "burstResponse": "single-server FIFO: bursts of 10 arrivals every 50000 ns; arrival_i=(i/10)*50000; completion=max(arrival,prevCompletion)+service; response=completion-arrival (service from the bimodal stream)"
+  },
+  "cases": {
+    "bimodal": {
+      "seed": 42,
+      "n": 100000,
+      "checksum": "3641811140783620904",
+      "first5": [
+        874,
+        1071,
+        954,
+        936,
+        962
+      ],
+      "recordAll": {
+        "count": 100000,
+        "p50": 1009,
+        "p95": 1194,
+        "p99": 55903,
+        "p999": 59711,
+        "max": 59999
+      },
+      "sampledEvery64": {
+        "count": 1563,
+        "p50": 1008,
+        "p95": 1193,
+        "p99": 56799,
+        "p999": 59807,
+        "max": 59999
+      }
+    },
+    "pauseInjected": {
+      "seed": 42,
+      "n": 100000,
+      "checksum": "-3209529033418889176",
+      "naive": {
+        "count": 100000,
+        "p50": 1009,
+        "p95": 1194,
+        "p99": 56223,
+        "p999": {
+          "java": 59999,
+          "rust": 5001215,
+          "note": "p99.9 falls EXACTLY on the stall cliff (100 stalls / 100000 values); the two HdrHistogram implementations resolve the tie differently. Documented instrument difference — excluded from cross-language pinning; all off-boundary percentiles match exactly. Taught in benchmark.md as the percentile-convention trap."
+        },
+        "max": 5062655
+      },
+      "correctedInterval1000": {
+        "count": 837236,
+        "p50": 819199,
+        "p95": 4587519,
+        "p99": 4923391,
+        "p999": 4997119,
+        "max": 5062655
+      }
+    },
+    "merged": {
+      "seedA": 42,
+      "seedB": 43,
+      "nEach": 50000,
+      "result": {
+        "count": 100000,
+        "p50": 1009,
+        "p95": 1194,
+        "p99": 55903,
+        "p999": 59711,
+        "max": 59999
+      }
+    },
+    "burstResponse": {
+      "seed": 42,
+      "n": 100000,
+      "burstSize": 10,
+      "burstIntervalNanos": 50000,
+      "checksum": "8047843593492953431",
+      "response": {
+        "count": 100000,
+        "p50": 21023,
+        "p95": 140927,
+        "p99": 223615,
+        "p999": 316159,
+        "max": 377599
+      },
+      "serviceForComparison": {
+        "count": 100000,
+        "p50": 1009,
+        "p95": 1194,
+        "p99": 55903,
+        "p999": 59711,
+        "max": 59999
+      }
+    }
+  }
+}
