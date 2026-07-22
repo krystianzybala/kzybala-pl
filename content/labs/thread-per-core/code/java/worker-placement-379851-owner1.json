@@ -1,0 +1,13 @@
+{
+  "role": "owner1",
+  "threadName": "Thread-1",
+  "nativeThreadId": 379873,
+  "intendedCpu": 4,
+  "observedCpuAfterPin": 4,
+  "observedCpuAtTeardown": 4,
+  "affinityMask": "0000000000000010:0000000000000000",
+  "migrationsAtPin": 6,
+  "migrationsAtTeardown": 6,
+  "migrationsDuringTrial": 0,
+  "pinned": true
+}
