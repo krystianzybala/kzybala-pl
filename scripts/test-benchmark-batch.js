@@ -350,7 +350,9 @@ test("batch: --dry-run renders the full plan (with cooldowns) and produces no ar
     const r = runBatch(env, [...BASE_ARGS, "--host-config", env.host, "--dry-run"]);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /\[plan\] cooldown 0s \+ stability wait/);
-    assert.match(r.stdout, /\[plan\] .*stub-runner\.sh lab-a --profile publication --cpus 0,1/);
+    // "publication" (BASE_ARGS) is a deprecated alias, normalized to
+    // "publication-core" before the plan is rendered.
+    assert.match(r.stdout, /\[plan\] .*stub-runner\.sh lab-a --profile publication-core --cpus 0,1/);
     assert.match(r.stdout, /run-2/);
     assert.equal(existsSync(env.batches), false, "dry-run must create no batch artifacts");
     assert.equal(readLog(env).length, 0, "dry-run must not invoke the per-lab runner");

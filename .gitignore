@@ -7,6 +7,7 @@
 # publication batch requires a clean tracked tree, and its own preflight
 # builds must never read as source drift (batch-20260717 regression).
 **/target/
+**/__pycache__/
 
 # Immutable raw benchmark run artifacts (docs/benchmark-artifact-layout.md).
 # Regenerable on your own hardware; committed only when it is the specific

@@ -4,7 +4,7 @@
 # complete evidence package for later site-wide import.
 #
 #   ./scripts/performance-lab/run-all-benchmarks.sh \
-#     --profile publication \
+#     --profile publication-core \
 #     --host-config config/benchmark-hosts/precision-5810.yaml \
 #     --repetitions 2
 #
@@ -16,12 +16,36 @@
 # processes / raw artifacts / provenance, and never imports or publishes
 # anything. Runs as the NORMAL user — whole-script sudo is rejected; the
 # one-time privileged perf setup is documented, out of band.
+#
+# --profile publication-core|publication-sweep|full|development|smoke
+# ("publication" accepted as a deprecated alias for publication-core).
+# --results-root <dir> (or PERFORMANCE_LAB_RESULTS_ROOT) — where evidence
+# is written; the repository should hold only source and canonical
+# imported evidence, not the raw/temporary measurement tree
+# (docs/evidence-storage-retention.md section 9). --retain-raw-profiler-
+# data forwards the same flag to every per-lab runner invocation (keeps
+# perf.data/perf-c2c.data/JFR instead of the default delete-after-
+# validated-summary policy) and excludes it from the default batch archive
+# regardless (a separate raw archive is a maintainer's job if truly
+# needed).
+#
+# Storage discipline (post the 2026-07 /home-filesystem-exhaustion
+# incident): a filesystem preflight runs before any lab's build/test, a
+# per-lab storage check runs before every lab in the sequence, and a final
+# check runs before archive generation — any of them aborting the batch
+# with failed-storage-preflight / failed-storage-budget /
+# failed-artifact-size-limit, never "benchmark instability". Thresholds are
+# configurable in the host config's `storage:` section (defaults: 80/40/30
+# GiB minimum-before-batch/abort/max-batch-size, 2 GiB per-variant raw
+# profiler cap, 200 MiB max text report, 2 GiB smoke budget).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=lib/evidence-lib.sh
 source "${SCRIPT_DIR}/lib/evidence-lib.sh"
+# shellcheck source=lib/storage-lib.sh
+source "${SCRIPT_DIR}/lib/storage-lib.sh"
 # Test hook: lets the batch tests substitute a controlled per-lab runner
 # without duplicating orchestration logic in fixtures.
 LAB_RUNNER="${PLAB_RUNNER_OVERRIDE:-${SCRIPT_DIR}/run-linux-evidence.sh}"
@@ -31,7 +55,8 @@ VERIFY_EVIDENCE="${PLAB_VERIFY_OVERRIDE:-${SCRIPT_DIR}/verify-evidence.sh}"
 # and a batch output root override.
 CONTENT_ROOT="${PLAB_CONTENT_ROOT:-${REPO_ROOT}/content/labs}"
 CONF_DIR="${PLAB_CONF_DIR:-${SCRIPT_DIR}/labs}"
-BATCH_ROOT="${PLAB_BATCH_ROOT:-${REPO_ROOT}/results/batches}"
+RESULTS_ROOT="${PERFORMANCE_LAB_RESULTS_ROOT:-${REPO_ROOT}/results}"
+BATCH_ROOT="${PLAB_BATCH_ROOT:-${RESULTS_ROOT}/batches}"
 
 fail() { echo "run-all-benchmarks: $*" >&2; exit 1; }
 
@@ -39,28 +64,42 @@ if [ "$(id -u)" = "0" ]; then
   fail "do not run this script with sudo/as root — Java, Maven, Cargo, JMH, Criterion, harnesses and archives must run as/belong to the invoking user. One-time host setup for unprivileged perf (run separately): sudo sysctl kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0"
 fi
 
-PROFILE="publication"
+PROFILE="publication-core"
 HOST_CONFIG=""
 REPETITIONS=2
 PREFLIGHT_ONLY=0
 STABILITY_CHECK_ONLY=0
 DRY_RUN=0
 DIAGNOSTIC=0
+RETAIN_RAW_PROFILER_DATA=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="$2"; shift 2 ;;
     --host-config) HOST_CONFIG="$2"; shift 2 ;;
     --repetitions) REPETITIONS="$2"; shift 2 ;;
+    --results-root) RESULTS_ROOT="$2"; BATCH_ROOT="${PLAB_BATCH_ROOT:-${RESULTS_ROOT}/batches}"; shift 2 ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --stability-check-only) STABILITY_CHECK_ONLY=1; shift ;;
     --diagnostic) DIAGNOSTIC=1; shift ;;
+    --retain-raw-profiler-data) RETAIN_RAW_PROFILER_DATA=1; shift ;;
     *) fail "unknown option: $1" ;;
   esac
 done
 
+# "publication" is a deprecated alias for "publication-core", normalized
+# here so every downstream check (repetitions, dirty-tree gate,
+# publicationEligible) uses one canonical set of profile names.
+[ "$PROFILE" = "publication" ] && PROFILE="publication-core"
+is_publication_profile() {
+  case "$1" in
+    publication-core|publication-sweep) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 [ -n "$HOST_CONFIG" ] && [ -f "$HOST_CONFIG" ] || fail "--host-config <file> is required (template: config/benchmark-hosts/precision-5810.yaml)"
-if [ "$PROFILE" = "publication" ] && [ "$REPETITIONS" -lt 2 ] && [ "$DIAGNOSTIC" != "1" ]; then
+if is_publication_profile "$PROFILE" && [ "$REPETITIONS" -lt 2 ] && [ "$DIAGNOSTIC" != "1" ]; then
   fail "publication batches require --repetitions >= 2 (independent runs); pass --diagnostic for an explicitly non-publication single-run batch"
 fi
 
@@ -100,6 +139,50 @@ STABILITY_CONSECUTIVE="${STABILITY_CONSECUTIVE:-3}"
 STABILITY_INTERVAL="${PLAB_STABILITY_POLL_SECONDS:-$(cfg_flat stability_sample_interval_seconds)}"
 STABILITY_INTERVAL="${STABILITY_INTERVAL:-5}"
 [ -n "$HOST_NAME" ] && [ -n "$MAX_LOAD_X100" ] && [ -n "$STABILITY_TIMEOUT" ] || fail "host config is missing host_name/max_load_per_core_x100/stability_timeout_seconds"
+
+# --- Storage thresholds (docs/evidence-storage-retention.md) -----------------
+# Configurable in the host config's `storage:` section (GiB/MiB for human
+# readability there; exported as bytes for the shared storage-lib.sh
+# functions and every per-lab runner invocation below). Every key is
+# optional — an absent `storage:` section falls back to the documented
+# defaults (80/40/30/2 GiB, 200 MiB), never to "unbounded".
+storage_cfg_gib() { # <key> <default-gib>
+  local v
+  v="$(cfg_section storage "$1")"
+  echo "${v:-$2}"
+}
+MIN_AVAILABLE_BEFORE_BATCH_GIB="$(storage_cfg_gib min_available_before_batch_gib 80)"
+ABORT_THRESHOLD_GIB="$(storage_cfg_gib abort_threshold_during_batch_gib 40)"
+MAX_BATCH_GIB="$(storage_cfg_gib max_total_batch_size_gib 30)"
+MAX_RAW_PROFILER_GIB="$(storage_cfg_gib max_raw_profiler_bytes_per_variant_gib 2)"
+MAX_TEXT_REPORT_MIB="$(storage_cfg_gib max_generated_text_report_size_mib 200)"
+SMOKE_BUDGET_GIB="$(storage_cfg_gib smoke_budget_gib 2)"
+# An already-set PLAB_* env var wins over the host-config-derived value
+# (same precedence convention as PLAB_STABILITY_POLL_SECONDS above) — lets
+# a focused rerun or a test override one threshold without editing the
+# host config.
+export PLAB_MIN_AVAILABLE_BEFORE_BATCH_BYTES="${PLAB_MIN_AVAILABLE_BEFORE_BATCH_BYTES:-$((MIN_AVAILABLE_BEFORE_BATCH_GIB * 1024 * 1024 * 1024))}"
+export PLAB_ABORT_THRESHOLD_BYTES="${PLAB_ABORT_THRESHOLD_BYTES:-$((ABORT_THRESHOLD_GIB * 1024 * 1024 * 1024))}"
+export PLAB_MAX_BATCH_BYTES="${PLAB_MAX_BATCH_BYTES:-$((MAX_BATCH_GIB * 1024 * 1024 * 1024))}"
+export PLAB_MAX_RAW_PROFILER_BYTES_PER_VARIANT="${PLAB_MAX_RAW_PROFILER_BYTES_PER_VARIANT:-$((MAX_RAW_PROFILER_GIB * 1024 * 1024 * 1024))}"
+export PLAB_MAX_TEXT_REPORT_BYTES="${PLAB_MAX_TEXT_REPORT_BYTES:-$((MAX_TEXT_REPORT_MIB * 1024 * 1024))}"
+export PLAB_SMOKE_BUDGET_BYTES="${PLAB_SMOKE_BUDGET_BYTES:-$((SMOKE_BUDGET_GIB * 1024 * 1024 * 1024))}"
+export PERFORMANCE_LAB_RESULTS_ROOT="$RESULTS_ROOT"
+
+# Filesystem preflight (section 5): checked before ANY build or measurement
+# — the 2026-07 incident's disk filled to zero headroom mid-batch; refusing
+# to start when there is already insufficient headroom is cheap.
+mkdir -p "$RESULTS_ROOT" 2>/dev/null || true
+if [ "$DRY_RUN" != "1" ] && [ "$STABILITY_CHECK_ONLY" != "1" ]; then
+  BATCH_FS_STATS="$(fs_stats_json "$RESULTS_ROOT")"
+  BATCH_FS_AVAIL="$(printf '%s' "$BATCH_FS_STATS" | python3 -c 'import json,sys; print(json.load(sys.stdin)["availableBytes"])')"
+  if [ "$BATCH_FS_AVAIL" -lt "$PLAB_MIN_AVAILABLE_BEFORE_BATCH_BYTES" ]; then
+    echo "run-all-benchmarks: failed-storage-preflight — ${RESULTS_ROOT} has ${BATCH_FS_AVAIL} bytes available, below the ${PLAB_MIN_AVAILABLE_BEFORE_BATCH_BYTES}-byte minimum required before starting a batch:" >&2
+    printf '%s\n' "$BATCH_FS_STATS" >&2
+    fail "no measurements started (failed-storage-preflight)"
+  fi
+  echo "Storage preflight: ${RESULTS_ROOT} has $((BATCH_FS_AVAIL / 1024 / 1024 / 1024)) GiB available (minimum required: ${MIN_AVAILABLE_BEFORE_BATCH_GIB} GiB)"
+fi
 
 cooldown_for_class() {
   local seconds
@@ -307,7 +390,7 @@ SOURCE_SUBMODULES="$(git -C "$REPO_ROOT" submodule status 2>/dev/null || true)"
 PUBLICATION_ELIGIBLE_BATCH="true"
 if [ "$DRY_RUN" != "1" ]; then
   if [ -n "$SOURCE_STATE_BEFORE" ]; then
-    if [ "$PROFILE" = "publication" ] || [ "$PROFILE" = "full" ]; then
+    if is_publication_profile "$PROFILE" || [ "$PROFILE" = "full" ]; then
       echo "run-all-benchmarks: dirty working tree — publication measurements require an exact, committed source state (checked BEFORE any build/test). Modified/untracked non-ignored paths:" >&2
       printf '%s\n' "$SOURCE_STATE_BEFORE" >&2
       exit 1
@@ -316,7 +399,7 @@ if [ "$DRY_RUN" != "1" ]; then
     echo "   dirty tree permitted for profile '${PROFILE}' — this batch is permanently publicationEligible=false"
   fi
 fi
-[ "$PROFILE" = "publication" ] || PUBLICATION_ELIGIBLE_BATCH="false"
+is_publication_profile "$PROFILE" || PUBLICATION_ELIGIBLE_BATCH="false"
 echo "   source state: commit ${SOURCE_COMMIT} tracked-clean=$([ -z "$SOURCE_STATE_BEFORE" ] && echo yes || echo no) submodules=$([ -n "$SOURCE_SUBMODULES" ] && echo present || echo none)"
 
 # --- Live preflight (runner-level, per lab) ----------------------------------
@@ -373,6 +456,7 @@ write_batch_manifest() { # <state>
     done
     echo
     echo "  },"
+    echo "  \"storage\": { \"resultsRoot\": \"${RESULTS_ROOT}\", \"sameFilesystemAsRepo\": ${SAME_FS_AS_REPO:-null}, \"thresholds\": { \"minAvailableBeforeBatchGib\": ${MIN_AVAILABLE_BEFORE_BATCH_GIB:-80}, \"abortThresholdGib\": ${ABORT_THRESHOLD_GIB:-40}, \"maxBatchGib\": ${MAX_BATCH_GIB:-30}, \"maxRawProfilerGibPerVariant\": ${MAX_RAW_PROFILER_GIB:-2}, \"smokeBudgetGib\": ${SMOKE_BUDGET_GIB:-2} }, \"rawProfilerRetained\": $([ "${RETAIN_RAW_PROFILER_DATA:-0}" = "1" ] && echo true || echo false) },"
     echo "  \"state\": \"${state}\""
     echo "}"
   } > "${BATCH_DIR}/batch-manifest.json"
@@ -428,6 +512,15 @@ fi
 
 # --- Sequential execution -------------------------------------------------------
 mkdir -p "$BATCH_DIR/host-environment" "$BATCH_DIR/failed-runs"
+# Provenance (section 9): if the results root and the repository sit on the
+# same filesystem, say so explicitly in the batch manifest.
+SAME_FS_AS_REPO="$(python3 -c "
+import os
+try:
+    print('true' if os.stat('${RESULTS_ROOT}').st_dev == os.stat('${REPO_ROOT}').st_dev else 'false')
+except OSError:
+    print('null')
+" 2>/dev/null || echo null)"
 STABILITY_SAMPLES_FILE="${BATCH_DIR}/host-stability-samples.jsonl"
 : > "$STABILITY_SAMPLES_FILE"
 BATCH_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -476,11 +569,26 @@ for rep in $(seq 1 "$REPETITIONS"); do
       write_batch_manifest "failed-infrastructure"
       fail "failed-environment-capture on ${lab} — aborting the entire batch"
     fi
+    # Storage check before every lab (section 6): a batch that just ran a
+    # disk-hungry lab must not silently start another on an already-nearly-
+    # full disk — this is the same abort threshold the runner itself
+    # enforces per-variant, checked again here at the coarser per-lab grain.
+    LAB_FS_AVAIL="$(fs_available_bytes "$RESULTS_ROOT")"
+    if [ "$LAB_FS_AVAIL" -lt "$PLAB_ABORT_THRESHOLD_BYTES" ]; then
+      lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"failed-storage-budget\"}"
+      write_batch_manifest "failed-storage-budget"
+      fail "failed-storage-budget — ${RESULTS_ROOT} has ${LAB_FS_AVAIL} bytes available (below the ${PLAB_ABORT_THRESHOLD_BYTES}-byte abort threshold), refusing to start ${lab} (repetition ${rep})"
+    fi
+    RETAIN_ARGS=()
+    [ "$RETAIN_RAW_PROFILER_DATA" = "1" ] && RETAIN_ARGS=(--retain-raw-profiler-data)
     # The lab runner runs in the background so INT/TERM reaching this
     # orchestrator can be forwarded to it (its own traps then terminate the
     # benchmark process tree — SIGTERM first, SIGKILL only as last resort).
+    # bash 3.2 (macOS's default /bin/bash) treats "${arr[@]}" on an EMPTY
+    # array as unbound under `set -u` — the ${arr[@]+...} guard is the
+    # portable idiom (evaluates to nothing when the array has no elements).
     RUNNER_RC=0
-    "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --out "$REP_DIR" \
+    "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --out "$REP_DIR" ${RETAIN_ARGS[@]+"${RETAIN_ARGS[@]}"} \
         > "${REP_DIR}/${lab}.console.log" 2>&1 &
     CURRENT_LAB_PID=$!
     wait "$CURRENT_LAB_PID" || RUNNER_RC=$?
@@ -494,6 +602,17 @@ for rep in $(seq 1 "$REPETITIONS"); do
         lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"verification-failed\"}"
         BATCH_STATE="partial"
       fi
+    elif [ "$RUNNER_RC" = "4" ]; then
+      # Exit 4 = the runner's own storage-budget abort (a crossed abort
+      # threshold or per-run byte budget mid-measurement). Treated exactly
+      # like a timeout: the whole batch aborts rather than continuing on a
+      # host that just ran a run out of disk headroom, and the partial
+      # diagnostic manifest the runner wrote is preserved with the run.
+      mkdir -p "${BATCH_DIR}/failed-runs/${lab}-run-${rep}"
+      mv "${REP_DIR}/${lab}" "${BATCH_DIR}/failed-runs/${lab}-run-${rep}/" 2>/dev/null || true
+      lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"failed-storage-budget\", \"console\": \"run-${rep}/${lab}.console.log\"}"
+      write_batch_manifest "failed-storage-budget"
+      fail "failed-storage-budget on ${lab} — the runner aborted after crossing a storage threshold mid-run; the partial diagnostic manifest is preserved (failed-runs/${lab}-run-${rep}); aborting the entire batch (never classified as benchmark instability)"
     elif [ "$RUNNER_RC" = "3" ]; then
       # Exit 3 = failed-benchmark-timeout: a benchmark exceeded its hard
       # wall-clock budget (a hang, like the SPSC producer spin that ran
@@ -521,18 +640,45 @@ if ! write_host_state "${BATCH_DIR}/host-environment/after-batch.json"; then
 fi
 write_batch_manifest "$BATCH_STATE"
 write_sha256sums "$BATCH_DIR" || fail "batch hashing failed"
+
+# Storage check + size sanity before archive generation (sections 6, 11):
+# estimate the archive's input size and refuse to build an unreasonably
+# large one rather than silently writing it and eating whatever disk is
+# left. Evidence already on disk is NOT deleted by this check — only
+# archive creation is skipped, so a maintainer can investigate first.
+BATCH_BYTES_BEFORE_ARCHIVE="$(dir_size_bytes "$BATCH_DIR")"
+if [ "$BATCH_BYTES_BEFORE_ARCHIVE" -gt "$PLAB_MAX_BATCH_BYTES" ]; then
+  echo "run-all-benchmarks: failed-artifact-size-limit — batch content is ${BATCH_BYTES_BEFORE_ARCHIVE} bytes, exceeding the ${PLAB_MAX_BATCH_BYTES}-byte budget; refusing to build the archive. Evidence remains on disk at ${BATCH_DIR} for inspection." >&2
+  write_batch_manifest "failed-artifact-size-limit"
+  exit 1
+fi
+FS_AVAIL_BEFORE_ARCHIVE="$(fs_available_bytes "$BATCH_ROOT")"
+if [ "$FS_AVAIL_BEFORE_ARCHIVE" -lt "$PLAB_ABORT_THRESHOLD_BYTES" ]; then
+  echo "run-all-benchmarks: failed-storage-budget — only ${FS_AVAIL_BEFORE_ARCHIVE} bytes available before archive generation (below the ${PLAB_ABORT_THRESHOLD_BYTES}-byte abort threshold)." >&2
+  write_batch_manifest "failed-storage-budget"
+  exit 1
+fi
+
 # Built outside BATCH_DIR first (tar must never add an archive to itself),
 # then moved inside so the final layout matches the documented structure.
+# The default archive excludes raw-profiler artifacts (section 11) — this
+# is belt-and-suspenders: by default no run has any (retire_raw_profiler_
+# file already deleted them), and it only matters when a run was started
+# with --retain-raw-profiler-data.
+TAR_EXCLUDES=(--exclude='*perf.data' --exclude='*perf-c2c.data' --exclude='*.jfr')
 if command -v zstd >/dev/null 2>&1; then
   TMP_ARCHIVE="${BATCH_ROOT}/.performance-lab-${BATCH_ID}.tar.zst.tmp"
-  tar --zstd -cf "$TMP_ARCHIVE" -C "${BATCH_DIR}/.." "${BATCH_ID}"
+  tar "${TAR_EXCLUDES[@]}" --zstd -cf "$TMP_ARCHIVE" -C "${BATCH_DIR}/.." "${BATCH_ID}"
   BATCH_ARCHIVE="${BATCH_DIR}/performance-lab-${BATCH_ID}.tar.zst"
 else
   TMP_ARCHIVE="${BATCH_ROOT}/.performance-lab-${BATCH_ID}.tar.gz.tmp"
-  tar -czf "$TMP_ARCHIVE" -C "${BATCH_DIR}/.." "${BATCH_ID}"
+  tar "${TAR_EXCLUDES[@]}" -czf "$TMP_ARCHIVE" -C "${BATCH_DIR}/.." "${BATCH_ID}"
   BATCH_ARCHIVE="${BATCH_DIR}/performance-lab-${BATCH_ID}.tar.gz"
 fi
 mv "$TMP_ARCHIVE" "$BATCH_ARCHIVE"
+if [ "$RETAIN_RAW_PROFILER_DATA" = "1" ] && find "$BATCH_DIR" \( -name 'perf.data' -o -name 'perf-c2c.data' \) 2>/dev/null | grep -q .; then
+  echo "NOTE: raw profiler data was retained (--retain-raw-profiler-data) and is present on disk under ${BATCH_DIR}, but is excluded from the default archive above — archive it separately if you need to move it off-host."
+fi
 
 echo
 echo "== BATCH $(echo "$BATCH_STATE" | tr '[:lower:]' '[:upper:]')"

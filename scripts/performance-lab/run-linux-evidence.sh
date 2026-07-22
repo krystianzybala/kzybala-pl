@@ -3,23 +3,31 @@
 # (docs/linux-evidence-runner.md) — one runner, per-lab configuration.
 #
 #   ./scripts/performance-lab/run-linux-evidence.sh \
-#     <lab-id> --profile publication --cpus <CPU_A>,<CPU_B>
+#     <lab-id> --profile publication-core --cpus <CPU_A>,<CPU_B>
 #
 # Run as the NORMAL user (never sudo); pick CPU ids from
 # lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE — distinct physical cores, no SMT
 # siblings, same socket/NUMA node by default.
 #
-# Options: --profile publication|full|development|smoke, --cpus A,B
-# (required), --allow-cross-socket, --preflight-only (run every preflight
-# check, then stop before any measurement), --allow-virtualized
-# (smoke|development wiring checks only — never publication|full),
-# --out <dir>, --dry-run, --skip-load-check, --variant <name> (run ONE
-# variant only — focused smoke/diagnosis; recorded as a focused run in the
-# manifest, never presented as the full variant matrix), --component
-# all|rust-harness (rust-harness runs ONLY the Rust persistent-worker
-# harness — no Maven gate, no JMH, no perf stat/c2c around JMH — for fast
-# affinity diagnosis; the harness itself exits non-zero on any sequence,
-# affinity-mask, placement, migration, or TID-integrity violation).
+# Options: --profile publication-core|publication-sweep|full|development|
+# smoke ("publication" is accepted as a deprecated alias for
+# publication-core), --cpus A,B (required), --allow-cross-socket,
+# --preflight-only (run every preflight check, then stop before any
+# measurement), --allow-virtualized (smoke|development wiring checks only
+# — never publication-core|publication-sweep|full), --out <dir> /
+# --results-root <dir> (equivalent — where evidence is written; also
+# settable via the PERFORMANCE_LAB_RESULTS_ROOT environment variable),
+# --dry-run, --skip-load-check, --variant <name> (run ONE variant only —
+# focused smoke/diagnosis; recorded as a focused run in the manifest,
+# never presented as the full variant matrix), --component all|rust-harness
+# (rust-harness runs ONLY the Rust persistent-worker harness — no Maven
+# gate, no JMH, no perf stat/c2c around JMH — for fast affinity diagnosis;
+# the harness itself exits non-zero on any sequence, affinity-mask,
+# placement, migration, or TID-integrity violation), --retain-raw-profiler-
+# data (keep perf.data/perf-c2c.data/JFR after a successful summary report
+# instead of the default delete-after-validated-summary policy),
+# --retain-failed-raw (keep raw profiler recordings from a rejected/
+# timed-out run instead of the default delete-on-failure policy).
 #
 # Smoke/development profiles and focused --variant/--component runs are
 # never publication-eligible, whatever the host.
@@ -32,6 +40,24 @@
 # orchestration aborts instead of silently continuing (regression guard for
 # the batch-20260717T150131Z SPSC producer hang, which ran 14h40m).
 #
+# Storage discipline (docs/evidence-storage-retention.md, post the
+# 2026-07 /home-filesystem-exhaustion incident — 131 GB of results/, mostly
+# raw perf.data/perf-c2c.data and unbounded c2c text reports, filled a
+# 295 GB disk to zero headroom): a filesystem preflight runs before any
+# build/measurement, storage is checked before/after every variant and
+# profiler invocation, perf c2c is gated by each lab's declared
+# PROFILER_POLICY (none|stat|c2c-core-only|c2c) and — for c2c-core-only —
+# restricted to the lab's declared representative variants
+# (lab_c2c_variants), c2c text reports are summarized and bounded (never
+# the raw --show-all --call-graph dump), and raw profiler recordings are
+# deleted by default once their bounded summary report is generated and
+# validated (or on any rejected/timed-out run) unless retention was
+# explicitly requested. A crossed abort threshold stops the current
+# profiler, terminates children, finalizes a partial diagnostic manifest,
+# and aborts this run — never silently continuing, never misclassified as
+# benchmark instability (failed-storage-preflight / failed-storage-budget
+# / failed-artifact-size-limit are their own run-status reasons).
+#
 # Physical hosts are accepted: systemd-detect-virt exiting 1 (typically
 # printing the literal "none") means no virtualization — detection is by
 # exit status, never by stdout text (detect_virtualization in
@@ -40,11 +66,15 @@
 # Collects, per variant (shared / padded, each in its own JVM invocation,
 # its own perf session and its own output directory):
 #   - JMH -rf json evidence (multi-fork publication profile),
-#   - perf stat counters (3 independent repetitions, CSV),
-#   - perf c2c recording (binary perf-c2c.data preserved) + --stdio report,
+#   - perf stat counters (profile-dependent repetitions, CSV),
+#   - perf c2c recording, ONLY where the lab's profiler policy and profile
+#     select it for this variant — a bounded --show-all-derived summary
+#     report is always what is kept; the binary perf-c2c.data is deleted
+#     by default once that summary is validated,
 # plus host topology, environment, toolchain, capability results,
-# correctness-gate results, the resolved profile, a SHA-256 manifest over
-# every artifact, and a single archive to copy off the host.
+# correctness-gate results, the resolved profile, storage/filesystem
+# provenance, a SHA-256 manifest over every artifact, and a single archive
+# (raw-profiler-excluded by default) to copy off the host.
 #
 # Policy (docs/linux-evidence-runner.md): this runner is the ONLY source of
 # publication hardware-counter evidence for this lab. macOS runs are
@@ -58,10 +88,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=lib/evidence-lib.sh
 source "${SCRIPT_DIR}/lib/evidence-lib.sh"
+# shellcheck source=lib/storage-lib.sh
+source "${SCRIPT_DIR}/lib/storage-lib.sh"
 
 # --- Arguments ---------------------------------------------------------------
 LAB_ID="${1:-}"; shift || true
-PROFILE="publication"
+PROFILE="publication-core"
 CPUS=""
 ALLOW_CROSS_SOCKET=0
 ALLOW_VIRTUALIZED=0
@@ -70,7 +102,9 @@ DRY_RUN=0
 SKIP_LOAD_CHECK=0
 SELECTED_VARIANT=""
 COMPONENT="all"
-OUT_ROOT="${REPO_ROOT}/results"
+OUT_ROOT="${PERFORMANCE_LAB_RESULTS_ROOT:-${REPO_ROOT}/results}"
+RETAIN_RAW_PROFILER_DATA=0
+RETAIN_FAILED_RAW=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -81,9 +115,11 @@ while [ $# -gt 0 ]; do
     --allow-cross-socket) ALLOW_CROSS_SOCKET=1; shift ;;
     --allow-virtualized) ALLOW_VIRTUALIZED=1; shift ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
-    --out) OUT_ROOT="$2"; shift 2 ;;
+    --out|--results-root) OUT_ROOT="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --skip-load-check) SKIP_LOAD_CHECK=1; shift ;;
+    --retain-raw-profiler-data) RETAIN_RAW_PROFILER_DATA=1; shift ;;
+    --retain-failed-raw) RETAIN_FAILED_RAW=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -104,10 +140,14 @@ fi
 
 # --- Lab configuration ---------------------------------------------------------
 # One common runner, per-lab configuration (never divergent script copies).
-# A lab without a config file is rejected.
-LAB_CONF="${SCRIPT_DIR}/labs/${LAB_ID:-none}.conf"
+# A lab without a config file is rejected. Test hook (never needed in real
+# use, mirrors run-all-benchmarks.sh's PLAB_CONF_DIR): a synthetic labs
+# directory so storage/retention tests can exercise a full non-dry-run
+# measurement loop against fixture stubs without touching real lab code.
+LABS_DIR="${PLAB_LABS_DIR:-${SCRIPT_DIR}/labs}"
+LAB_CONF="${LABS_DIR}/${LAB_ID:-none}.conf"
 if [ -z "$LAB_ID" ] || [ ! -f "$LAB_CONF" ]; then
-  SUPPORTED="$(ls "${SCRIPT_DIR}/labs" 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')"
+  SUPPORTED="$(ls "${LABS_DIR}" 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')"
   fail "unsupported lab id '${LAB_ID:-<none>}' — supported: ${SUPPORTED:-none}"
 fi
 # shellcheck source=/dev/null
@@ -127,11 +167,69 @@ effective_variants() {
   if [ -n "$SELECTED_VARIANT" ]; then echo "$SELECTED_VARIANT"; else lab_variants; fi
 }
 
-# --component rust-harness runs ONLY the Rust persistent-worker harness for
-# the selected variant(s): no Maven correctness gate, no JMH, no perf
-# stat/c2c around JMH, no aux harness — the fast placement-diagnosis loop.
-# The Rust harness self-validates placement and exits non-zero on any
-# violation, so a component run still fails loudly on broken affinity.
+# --- Profiler policy resolution (docs/evidence-storage-retention.md) ---------
+# Each lab declares LAB_PROFILER_POLICY (none|stat|c2c-core-only|c2c) and,
+# for c2c-core-only, an optional lab_c2c_variants() function naming the
+# representative variants that actually get c2c evidence — cache-line
+# ownership/HITM evidence is central to false-sharing/mesi/spsc, but that
+# does not mean every cursor mode/batch size/capacity/fork/repetition
+# needs its own multi-hundred-MB perf-c2c.data. A lab without an explicit
+# policy falls back to the pre-existing LAB_C2C_REQUIRED signal (never
+# silently promoted to unconditional c2c the way the old capability-gated
+# behavior did).
+LAB_PROFILER_POLICY="${LAB_PROFILER_POLICY:-$([ "${LAB_C2C_REQUIRED:-0}" = "1" ] && echo "c2c-core-only" || echo "stat")}"
+case "$LAB_PROFILER_POLICY" in
+  none|stat|c2c-core-only|c2c) : ;;
+  *) fail "lab ${LAB_ID}: invalid LAB_PROFILER_POLICY '${LAB_PROFILER_POLICY}' (none|stat|c2c-core-only|c2c)" ;;
+esac
+variant_profiler_policy() {
+  if declare -f lab_profiler_policy >/dev/null 2>&1; then
+    lab_profiler_policy "$1"
+  else
+    echo "$LAB_PROFILER_POLICY"
+  fi
+}
+c2c_representative_variants() {
+  if declare -f lab_c2c_variants >/dev/null 2>&1; then
+    lab_c2c_variants
+  else
+    lab_variants
+  fi
+}
+is_c2c_representative_variant() {
+  case " $(c2c_representative_variants) " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+# resolve_profiler_action <variant> — sets RUN_STAT / RUN_C2C to 0|1.
+# smoke and publication-sweep NEVER run c2c, regardless of lab policy:
+# smoke is a wiring/termination check (never publication evidence) and
+# sweep exists precisely so a full parameter matrix does not pay c2c cost
+# per point (that per-point-c2c pattern is what filled the disk).
+resolve_profiler_action() {
+  local variant="$1" policy
+  policy="$(variant_profiler_policy "$variant")"
+  RUN_STAT=1
+  RUN_C2C=0
+  [ "$policy" = "none" ] && RUN_STAT=0
+  case "$PROFILE" in
+    smoke|publication-sweep) RUN_C2C=0 ;;
+    *)
+      case "$policy" in
+        c2c) RUN_C2C=1 ;;
+        # `&&` here would propagate is_c2c_representative_variant's exit
+        # status (1 for every non-representative variant) as this whole
+        # function's own return status — under `set -e`, a non-representative
+        # variant would then abort the entire script. `if` never does that.
+        c2c-core-only) if is_c2c_representative_variant "$variant"; then RUN_C2C=1; fi ;;
+      esac
+      ;;
+  esac
+}
+
+# --component rust-harness availability check (needs the parsed CPU list —
+# lab_rust_evidence_cmd interpolates the validated CPUs into the command).
 case "$COMPONENT" in
   all|rust-harness) : ;;
   *) fail "unknown --component '${COMPONENT}' (all|rust-harness)" ;;
@@ -158,8 +256,6 @@ CPU_A="${CPU_LIST[0]}"
 CPU_B=""
 [ "$CPU_COUNT" -ge 2 ] && CPU_B="${CPU_LIST[1]}"
 
-# --component rust-harness availability check (needs the parsed CPU list —
-# lab_rust_evidence_cmd interpolates the validated CPUs into the command).
 if [ "$COMPONENT" = "rust-harness" ]; then
   [ -n "${LAB_RUST_DIR:-}" ] || fail "--component rust-harness: lab ${LAB_ID} has no Rust harness"
   RUST_ONLY_OK=0
@@ -173,27 +269,36 @@ fi
 # Explicit values, stored verbatim in benchmark-profile.json. Multiple
 # independent JVM forks are mandatory — one long invocation is not a
 # substitute for fork-to-fork variance.
-# EV_TIMEOUT_SECONDS is the hard wall-clock budget for ONE external
-# measurement invocation (a full JMH run, one perf stat repetition, a c2c
-# recording, an aux/Rust harness). It is derived from the profile: a
-# generous multiple of the expected duration (publication: 5 forks ×
-# ~15s measured + JVM/build overhead ≈ minutes, budget 30 min), so it only
-# fires on a genuine hang — never on a slow-but-progressing run. A fired
-# timeout is always failed-benchmark-timeout, never silently retried.
+#
+# publication-core: full statistical rigor on a representative subset of
+#   variants (the profiler-policy layer above decides which variants get
+#   c2c; every variant still gets the full JMH/perf-stat rigor below).
+# publication-sweep: the full parameter matrix, same JMH rigor, lightweight
+#   (single-repetition) perf stat, and c2c is never run per matrix point
+#   (resolve_profiler_action forces RUN_C2C=0 for this profile).
+# "publication" is accepted as a deprecated alias for publication-core so
+# existing invocations/docs keep working; PROFILE is normalized below so
+# every downstream artifact records the canonical name.
 case "$PROFILE" in
-  publication)
-    EV_FORKS=5; EV_WI=5; EV_W="1s"; EV_I=10; EV_R="1s"; EV_TIMEOUT_SECONDS=1800
+  publication) PROFILE="publication-core" ;;
+esac
+case "$PROFILE" in
+  publication-core)
+    EV_FORKS=5; EV_WI=5; EV_W="1s"; EV_I=10; EV_R="1s"; EV_TIMEOUT_SECONDS=1800; PERF_STAT_REPS=3
+    ;;
+  publication-sweep)
+    EV_FORKS=3; EV_WI=3; EV_W="1s"; EV_I=8; EV_R="1s"; EV_TIMEOUT_SECONDS=1200; PERF_STAT_REPS=1
     ;;
   full)
-    EV_FORKS=2; EV_WI=3; EV_W="1s"; EV_I=5; EV_R="1s"; EV_TIMEOUT_SECONDS=900
+    EV_FORKS=2; EV_WI=3; EV_W="1s"; EV_I=5; EV_R="1s"; EV_TIMEOUT_SECONDS=900; PERF_STAT_REPS=3
     ;;
   development)
-    EV_FORKS=1; EV_WI=2; EV_W="500ms"; EV_I=3; EV_R="500ms"; EV_TIMEOUT_SECONDS=420
+    EV_FORKS=1; EV_WI=2; EV_W="500ms"; EV_I=3; EV_R="500ms"; EV_TIMEOUT_SECONDS=420; PERF_STAT_REPS=1
     ;;
   smoke)
-    EV_FORKS=1; EV_WI=0; EV_W="200ms"; EV_I=1; EV_R="200ms"; EV_TIMEOUT_SECONDS=180
+    EV_FORKS=1; EV_WI=0; EV_W="200ms"; EV_I=1; EV_R="200ms"; EV_TIMEOUT_SECONDS=180; PERF_STAT_REPS=1
     ;;
-  *) fail "unsupported profile '${PROFILE}' (publication|full|development|smoke)" ;;
+  *) fail "unsupported profile '${PROFILE}' (publication-core|publication-sweep|full|development|smoke)" ;;
 esac
 # GC/JVM choice for evidence runs: these benchmarks allocate nothing in the
 # measured path, so the collector's job is trivial — SerialGC is chosen to
@@ -213,7 +318,6 @@ EV_JVM_ARGS_BASE="-Xms1g -Xmx1g -XX:+UseSerialGC --enable-native-access=ALL-UNNA
 # e.g. LLC events for cache-hierarchy); unsupported counters are recorded
 # as <not supported>, never discarded.
 EV_PERF_EVENTS="${LAB_PERF_EVENTS:-cycles,instructions,cache-references,cache-misses,branches,branch-misses,task-clock,context-switches,cpu-migrations,page-faults}"
-PERF_STAT_REPS=3
 # Process-level aggregate migrations are host/JVM-noise evidence, recorded
 # and bounded separately; benchmark-WORKER migrations (worker-placement
 # evidence) are the blocking publication gate. The aggregate threshold only
@@ -222,6 +326,18 @@ MAX_AGGREGATE_MIGRATIONS_PER_SEC=50
 MAX_LOAD_PER_CORE_X100=20
 FAILURE_POLICY="abort-on-first-error"
 export EV_SELECTOR EV_FORKS EV_WI EV_W EV_I EV_R EV_PERF_EVENTS
+
+# --- Storage thresholds (docs/evidence-storage-retention.md) -----------------
+# Every default is overridable via environment (run-all-benchmarks.sh
+# resolves these from the host config's `storage:` section and exports
+# them before invoking this runner; a standalone invocation gets the
+# hardcoded defaults below, never an unbounded assumption).
+MIN_AVAILABLE_BYTES="$(storage_default_abort_threshold_bytes)"
+ABORT_THRESHOLD_BYTES="$(storage_default_abort_threshold_bytes)"
+MAX_RUN_BYTES="$(storage_default_max_batch_bytes)"
+MAX_RAW_PROFILER_BYTES_PER_VARIANT="$(storage_default_max_raw_profiler_bytes_per_variant)"
+MAX_TEXT_REPORT_BYTES="$(storage_default_max_text_report_bytes)"
+SMOKE_BUDGET_BYTES="$(storage_default_smoke_budget_bytes)"
 
 JAVA_DIR="${REPO_ROOT}/${LAB_JAVA_DIR}"
 [ -d "$JAVA_DIR" ] || fail "lab config points at missing Java project ${LAB_JAVA_DIR}"
@@ -285,6 +401,119 @@ json_escape() {
 import json, sys
 print(json.dumps(sys.argv[1]))
 PYEOF
+}
+
+# --- Run-status / rejection / timeout helpers (defined early: also used by
+# the filesystem preflight, below, not only by post-measurement paths) -------
+write_run_status() {
+  cat > "${RUN_DIR}/run-status.json" <<STATEOF
+{
+  "runStatus": "$1",
+  "publicationEligible": $([ "$1" = "collected" ] && echo "${PUBLICATION_ELIGIBLE:-false}" || echo "false"),
+  "canonicalEvidenceEligible": $([ "$1" = "collected" ] && echo "true" || echo "false"),
+  "rejectionReason": $([ -n "${2:-}" ] && json_escape "$2" || printf 'null')
+}
+STATEOF
+}
+
+# cleanup_raw_profiler_files_in <dir> — deletes any raw-profiler artifact
+# (perf.data, perf-c2c.data, JFR recordings, the unbounded pre-summary c2c
+# text dump) still present under <dir>, unless retention was requested.
+# Used for BOTH the rejected and timed-out terminal paths (section 7:
+# "Failed and partial runs must not preserve unlimited raw profiler data by
+# default").
+cleanup_raw_profiler_files_in() {
+  local dir="$1" retain="$2"
+  [ "$retain" = "1" ] && return 0
+  [ -d "$dir" ] || return 0
+  find "$dir" \( -name 'perf.data' -o -name 'perf-c2c.data' -o -name '*.jfr' -o -name '.perf-c2c-report-raw.txt' \) -type f -delete 2>/dev/null || true
+}
+
+mark_rejected() {
+  echo "run-linux-evidence: RUN REJECTED — $1" >&2
+  write_run_status "rejected" "$1"
+  cleanup_raw_profiler_files_in "$RUN_DIR" "$RETAIN_FAILED_RAW"
+  write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
+  echo "Partial artifacts preserved as DIAGNOSTIC ONLY in ${RUN_DIR} (run-status.json: rejected)." >&2
+  exit 1
+}
+
+# A fired wall-clock timeout is its own terminal state: the benchmark hung
+# (the SPSC producer spun 14h40m in batch-20260717T150131Z). jcmd/thread-
+# dump diagnostics were captured before termination; the run is
+# diagnostic-only and the distinct exit code 3 makes batch orchestration
+# abort rather than continue past a hang.
+mark_timeout() {
+  echo "run-linux-evidence: BENCHMARK TIMEOUT — $1 exceeded the ${EV_TIMEOUT_SECONDS}s hard wall-clock budget" >&2
+  write_run_status "failed-benchmark-timeout" "$1"
+  cleanup_raw_profiler_files_in "$RUN_DIR" "$RETAIN_FAILED_RAW"
+  write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
+  echo "Hang diagnostics (jcmd thread dumps, affinity, process tree) preserved in ${VDIR:-$RUN_DIR} (timeout-*.txt, timeout-diagnostics.json)." >&2
+  echo "Artifacts are DIAGNOSTIC ONLY (run-status.json: failed-benchmark-timeout)." >&2
+  exit 3
+}
+
+# mark_storage_abort <reason-code> <message> — section 5/6: a crossed
+# storage threshold is its own terminal state, never "benchmark
+# instability". Stops the current profiler/child, finalizes a partial
+# diagnostic manifest, removes temporary files, preserves bounded
+# diagnostics, and exits 4 (a distinct code so batch orchestration aborts
+# the whole batch exactly as it does for exit 3 timeouts).
+mark_storage_abort() {
+  local reason_code="$1" message="$2"
+  echo "run-linux-evidence: STORAGE ABORT (${reason_code}) — ${message}" >&2
+  cleanup_children
+  mkdir -p "$RUN_DIR" 2>/dev/null || true
+  write_run_status "$reason_code" "$message"
+  cleanup_raw_profiler_files_in "$RUN_DIR" "$RETAIN_FAILED_RAW"
+  find "$RUN_DIR" -name '*.tmp' -o -name '.perf-c2c-report-raw.txt' 2>/dev/null | xargs -r rm -f 2>/dev/null || true
+  write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
+  echo "Bounded diagnostic manifest preserved in ${RUN_DIR} (run-status.json: ${reason_code})." >&2
+  exit 4
+}
+
+# check_storage_or_abort <label> — section 6 checkpoint: fails the run
+# (mark_storage_abort) if the output filesystem is below the abort
+# threshold or this run has exceeded its total-bytes budget. Called before
+# every variant, after every profiler invocation, after every variant and
+# before archive generation.
+check_storage_or_abort() {
+  local label="$1"
+  [ "$DRY_RUN" = "1" ] && return 0
+  local fs_avail run_bytes raw_bytes within=1
+  fs_avail="$(fs_available_bytes "$OUT_ROOT")"
+  run_bytes="$(dir_size_bytes "$RUN_DIR")"
+  raw_bytes=0
+  [ -d "$RUN_DIR" ] && raw_bytes="$(python3 -c "
+import sys
+sys.path.insert(0, '${SCRIPT_DIR}/lib')
+from evidence_classify import classify
+import os
+total = 0
+for root, _dirs, files in os.walk('${RUN_DIR}'):
+    for name in files:
+        fp = os.path.join(root, name)
+        rel = os.path.relpath(fp, '${RUN_DIR}')
+        if classify(rel) == 'raw-profiler':
+            try:
+                total += os.lstat(fp).st_size
+            except OSError:
+                pass
+print(total)
+")"
+  if [ "$fs_avail" -lt "$ABORT_THRESHOLD_BYTES" ] || [ "$run_bytes" -gt "$MAX_RUN_BYTES" ]; then
+    within=0
+  fi
+  if [ -d "$RUN_DIR" ]; then
+    append_storage_progress "${RUN_DIR}/storage-progress.jsonl" "$run_bytes" "$run_bytes" "$raw_bytes" "$fs_avail" "$within"
+  fi
+  if [ "$within" = "0" ]; then
+    if [ "$fs_avail" -lt "$ABORT_THRESHOLD_BYTES" ]; then
+      mark_storage_abort "failed-storage-budget" "filesystem available (${fs_avail} bytes) fell below the abort threshold (${ABORT_THRESHOLD_BYTES} bytes) at: ${label}"
+    else
+      mark_storage_abort "failed-storage-budget" "run exceeded its total-bytes budget (${run_bytes} > ${MAX_RUN_BYTES} bytes) at: ${label}"
+    fi
+  fi
 }
 
 # =============================================================================
@@ -425,6 +654,36 @@ fi
 mkdir -p "$RUN_DIR" 2>/dev/null || fail "cannot create output directory ${RUN_DIR}"
 [ -w "$RUN_DIR" ] || fail "output directory ${RUN_DIR} is not writable"
 
+# 7b. Filesystem preflight (section 5 — docs/evidence-storage-retention.md):
+# checked BEFORE any build/measurement starts. A physical host under real
+# load is exactly the scenario the 2026-07 incident happened on — refusing
+# to start a run when the disk is already nearly full is cheap; discovering
+# it mid-batch after hours of measurement is what filled it to zero.
+FS_STATS_JSON="$(fs_stats_json "$OUT_ROOT")"
+cat > "${RUN_DIR}/filesystem-preflight.json" <<FSEOF
+$(printf '%s' "$FS_STATS_JSON" | python3 -c "
+import json, sys
+stats = json.load(sys.stdin)
+stats['minimumRequiredBytes'] = ${MIN_AVAILABLE_BYTES}
+stats['withinBudget'] = stats['availableBytes'] >= ${MIN_AVAILABLE_BYTES}
+stats['repoRootDevice'] = None
+try:
+    import os
+    stats['sameFilesystemAsRepo'] = os.stat('${OUT_ROOT}').st_dev == os.stat('${REPO_ROOT}').st_dev
+except OSError:
+    stats['sameFilesystemAsRepo'] = None
+print(json.dumps(stats, indent=2))
+")
+FSEOF
+FS_WITHIN_BUDGET="$(python3 -c "import json; print(json.load(open('${RUN_DIR}/filesystem-preflight.json'))['withinBudget'])")"
+if [ "$FS_WITHIN_BUDGET" != "True" ] && [ "$DRY_RUN" != "1" ]; then
+  write_run_status "rejected" "failed-storage-preflight"
+  echo "run-linux-evidence: failed-storage-preflight — ${OUT_ROOT} has insufficient available space (see ${RUN_DIR}/filesystem-preflight.json, minimum required ${MIN_AVAILABLE_BYTES} bytes)" >&2
+  exit 1
+fi
+SAME_FS_AS_REPO="$(python3 -c "import json; v=json.load(open('${RUN_DIR}/filesystem-preflight.json')).get('sameFilesystemAsRepo'); print('true' if v else 'false')")"
+[ "$SAME_FS_AS_REPO" = "true" ] && echo "   NOTE: results root ${OUT_ROOT} is on the SAME filesystem as the repository — recorded in filesystem-preflight.json"
+
 # 8. Java/Maven toolchain present and actually runnable — `command -v`
 #    alone is fooled by broken shims (e.g. macOS's /usr/bin/java stub with
 #    no JDK); executing `java -version` is the real check, and it resolves
@@ -527,7 +786,9 @@ cat > "${RUN_DIR}/environment.json" <<ENVEOF
   "backgroundLoad": $(json_escape "$LOAD_SNAPSHOT"),
   "sourceCommit": "${GIT_REVISION}",
   "dirtyTree": ${GIT_DIRTY},
-  "diffHash": ${GIT_DIFF_HASH}
+  "diffHash": ${GIT_DIFF_HASH},
+  "outputRoot": $(json_escape "$OUT_ROOT"),
+  "outputFilesystem": $(cat "${RUN_DIR}/filesystem-preflight.json")
 }
 ENVEOF
 
@@ -587,6 +848,22 @@ cat > "${RUN_DIR}/benchmark-profile.json" <<PROFEOF
     "scenario": $(json_escape "$SCENARIO")
   },
   "perfStatRepetitions": ${PERF_STAT_REPS},
+  "profilerPolicy": {
+    "labDefault": "${LAB_PROFILER_POLICY}",
+    "perVariant": {$(FIRST=1; for V in $(lab_variants); do [ "$FIRST" = "1" ] || printf ', '; FIRST=0; resolve_profiler_action "$V"; printf '"%s": { "stat": %s, "c2c": %s, "policy": "%s" }' "$V" "$([ "$RUN_STAT" = "1" ] && echo true || echo false)" "$([ "$RUN_C2C" = "1" ] && echo true || echo false)" "$(variant_profiler_policy "$V")"; done)},
+    "c2cRepresentativeVariants": $(json_escape "$(c2c_representative_variants)"),
+    "note": "smoke and publication-sweep never run c2c regardless of lab policy; c2c-core-only runs c2c only for c2cRepresentativeVariants"
+  },
+  "storageThresholds": {
+    "minAvailableBytes": ${MIN_AVAILABLE_BYTES},
+    "abortThresholdBytes": ${ABORT_THRESHOLD_BYTES},
+    "maxRunBytes": ${MAX_RUN_BYTES},
+    "maxRawProfilerBytesPerVariant": ${MAX_RAW_PROFILER_BYTES_PER_VARIANT},
+    "maxTextReportBytes": ${MAX_TEXT_REPORT_BYTES},
+    "smokeBudgetBytes": ${SMOKE_BUDGET_BYTES},
+    "rawProfilerRetained": $([ "$RETAIN_RAW_PROFILER_DATA" = "1" ] && echo true || echo false),
+    "failedRawRetained": $([ "$RETAIN_FAILED_RAW" = "1" ] && echo true || echo false)
+  },
   "failurePolicy": "${FAILURE_POLICY}",
   "loadPolicy": { "maxOneMinuteLoadPerCoreX100": ${MAX_LOAD_PER_CORE_X100} }
 }
@@ -603,8 +880,8 @@ COREOF
 # =============================================================================
 # Preflight-only stop point: every check above has run (OS, virtualization,
 # topology, load, perf capabilities, toolchain, revision, correctness gate,
-# output permissions); nothing below (JMH, perf stat, perf c2c, archive)
-# executes. Metadata files stay in place for inspection.
+# output permissions, filesystem preflight); nothing below (JMH, perf stat,
+# perf c2c, archive) executes. Metadata files stay in place for inspection.
 # =============================================================================
 if [ "$PREFLIGHT_ONLY" = "1" ]; then
   echo
@@ -619,44 +896,6 @@ if [ "$PREFLIGHT_ONLY" = "1" ]; then
   echo "Measurement was not started because --preflight-only was supplied."
   exit 0
 fi
-
-# =============================================================================
-# Measurement — one variant at a time, fully separated. A policy violation
-# stamps the run rejected (diagnostic only, never canonical evidence) and
-# exits non-zero.
-# =============================================================================
-write_run_status() {
-  cat > "${RUN_DIR}/run-status.json" <<STATEOF
-{
-  "runStatus": "$1",
-  "publicationEligible": $([ "$1" = "collected" ] && echo "$PUBLICATION_ELIGIBLE" || echo "false"),
-  "canonicalEvidenceEligible": $([ "$1" = "collected" ] && echo "true" || echo "false"),
-  "rejectionReason": $([ -n "${2:-}" ] && json_escape "$2" || printf 'null')
-}
-STATEOF
-}
-
-mark_rejected() {
-  echo "run-linux-evidence: RUN REJECTED — $1" >&2
-  write_run_status "rejected" "$1"
-  write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
-  echo "Partial artifacts preserved as DIAGNOSTIC ONLY in ${RUN_DIR} (run-status.json: rejected)." >&2
-  exit 1
-}
-
-# A fired wall-clock timeout is its own terminal state: the benchmark hung
-# (the SPSC producer spun 14h40m at 100% CPU in batch-20260717T150131Z).
-# jcmd/thread-dump diagnostics were captured before termination; the run is
-# diagnostic-only and the distinct exit code 3 makes batch orchestration
-# abort rather than continue past a hang.
-mark_timeout() {
-  echo "run-linux-evidence: BENCHMARK TIMEOUT — $1 exceeded the ${EV_TIMEOUT_SECONDS}s hard wall-clock budget" >&2
-  write_run_status "failed-benchmark-timeout" "$1"
-  write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
-  echo "Hang diagnostics (jcmd thread dumps, affinity, process tree) preserved in ${VDIR} (timeout-*.txt, timeout-diagnostics.json)." >&2
-  echo "Artifacts are DIAGNOSTIC ONLY (run-status.json: failed-benchmark-timeout)." >&2
-  exit 3
-}
 
 # run_measured <label> <command-string> — dry-run plans verbatim; real runs
 # execute under the profile's hard wall-clock budget. Timeout → mark_timeout
@@ -673,10 +912,57 @@ run_measured() {
   fi
 }
 
+# summarize_c2c_report <raw-report> <bounded-report> — section 8: a `perf
+# c2c report --show-all` dump can be megabytes of irrelevant kernel symbols.
+# The bounded report keeps exactly what the importer and a human reviewer
+# need: summary totals, top cache lines, top symbols, local/remote HITM
+# counts — never the raw line-by-line dump.
+summarize_c2c_report() {
+  local raw="$1" bounded="$2"
+  python3 - "$raw" "$bounded" <<'PYEOF'
+import re, sys
+raw_path, bounded_path = sys.argv[1], sys.argv[2]
+with open(raw_path, errors="replace") as fh:
+    lines = fh.readlines()
+
+def grab_section(header_pattern, max_lines=25):
+    out = []
+    capturing = False
+    for line in lines:
+        if re.search(header_pattern, line):
+            capturing = True
+            out.append(line.rstrip("\n"))
+            continue
+        if capturing:
+            if line.strip() == "" and len(out) > 1:
+                break
+            out.append(line.rstrip("\n"))
+            if len(out) >= max_lines:
+                break
+    return out
+
+summary = [l.rstrip("\n") for l in lines if re.search(r"Total.*(records|loads|stores)|HITM|Shared Cache Line", l, re.IGNORECASE)][:40]
+top_cachelines = grab_section(r"Shared Data Cache Line Table", 25)
+top_symbols = grab_section(r"Shared Cache Line Distribution Pareto|Symbol", 30)
+
+with open(bounded_path, "w") as out:
+    out.write("# Bounded perf c2c summary (docs/evidence-storage-retention.md section 8)\n")
+    out.write(f"# Filtered from {len(lines)} raw line(s); the unbounded --show-all dump is never stored.\n\n")
+    out.write("## Summary totals / HITM counts\n")
+    out.write("\n".join(summary) if summary else "(no summary lines matched — see rawProfilerRetained if the full report was kept)")
+    out.write("\n\n## Top cache lines\n")
+    out.write("\n".join(top_cachelines) if top_cachelines else "(none captured)")
+    out.write("\n\n## Top symbols\n")
+    out.write("\n".join(top_symbols) if top_symbols else "(none captured)")
+    out.write("\n")
+PYEOF
+}
+
 for VARIANT in $(effective_variants); do
   VDIR="${RUN_DIR}/${VARIANT}"
   mkdir -p "$VDIR"
   echo "== variant: ${VARIANT}"
+  check_storage_or_abort "before variant ${VARIANT}"
 
   # Per-scenario resolution from the lab config: thread count, the
   # deterministic CPU-list prefix this scenario uses, worker pin
@@ -698,7 +984,8 @@ for VARIANT in $(effective_variants); do
   else
     VKIND="jmh"
   fi
-  echo "   scenario kind=${VKIND} cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}' hard-timeout=${EV_TIMEOUT_SECONDS}s/invocation"
+  resolve_profiler_action "$VARIANT"
+  echo "   scenario kind=${VKIND} cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}' hard-timeout=${EV_TIMEOUT_SECONDS}s/invocation profiler(stat=${RUN_STAT},c2c=${RUN_C2C})"
 
   if [ "$COMPONENT" = "rust-harness" ]; then
     RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"
@@ -736,18 +1023,53 @@ for VARIANT in $(effective_variants); do
     echo "-- JMH evidence run (${EV_FORKS} forks)"
     run_measured "jmh-evidence (variant ${VARIANT})" "$(build_jmh_evidence_command "$VARIANT" "$VDIR") > ${VDIR}/jmh-console.log 2>&1"
 
-    echo "-- perf stat (${PERF_STAT_REPS} repetitions)"
-    for REP in $(seq 1 "$PERF_STAT_REPS"); do
-      run_measured "perf-stat r${REP} (variant ${VARIANT})" "$(build_perf_stat_command "$VARIANT" "$VDIR" "$REP") > ${VDIR}/perf-stat-console-r${REP}.log 2>&1"
-    done
-
-    if [ "${LAB_C2C_REQUIRED:-0}" = "1" ] || [ "$PERF_C2C_OK" = "true" ]; then
-      echo "-- perf c2c record + report"
-      run_measured "perf-c2c-record (variant ${VARIANT})" "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
-      run_measured "perf-c2c-report (variant ${VARIANT})" "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-report.txt 2> ${VDIR}/perf-c2c-report.log"
+    if [ "$RUN_STAT" = "1" ]; then
+      echo "-- perf stat (${PERF_STAT_REPS} repetition(s))"
+      for REP in $(seq 1 "$PERF_STAT_REPS"); do
+        run_measured "perf-stat r${REP} (variant ${VARIANT})" "$(build_perf_stat_command "$VARIANT" "$VDIR" "$REP") > ${VDIR}/perf-stat-console-r${REP}.log 2>&1"
+      done
     else
-      echo "-- perf c2c: optional for this lab and unavailable on this host — recorded as absent"
+      echo "-- perf stat: skipped (lab profiler policy = none)"
     fi
+
+    if [ "$RUN_C2C" = "1" ] && [ "$PERF_C2C_OK" != "true" ] && [ "${LAB_C2C_REQUIRED:-0}" != "1" ]; then
+      # Policy selected this variant for c2c, but the host cannot open the
+      # required memory events (not every x86_64 part/kernel supports it)
+      # and this lab does not hard-require c2c capability (a lab that DOES
+      # — LAB_C2C_REQUIRED=1 — already failed this at preflight, step 3,
+      # for any real run). Degrade gracefully instead of aborting the
+      # whole run over an optional profiler.
+      echo "-- perf c2c: policy selected variant ${VARIANT} but perf c2c is unavailable on this host — recorded as absent"
+      RUN_C2C=0
+    fi
+    if [ "$RUN_C2C" = "1" ]; then
+      echo "-- perf c2c record + bounded report"
+      run_measured "perf-c2c-record (variant ${VARIANT})" "$(build_c2c_record_command "$VARIANT" "$VDIR") > ${VDIR}/perf-c2c-console.log 2>&1"
+      if [ "$DRY_RUN" = "1" ]; then
+        plan "$(build_c2c_report_command "$VARIANT" "$VDIR")"
+      else
+        # Per-variant raw-profiler size cap (section 5/12): a pathological
+        # recording never gets the chance to eat the rest of the budget.
+        RAW_C2C_BYTES="$(file_size_bytes "${VDIR}/perf-c2c.data")"
+        if [ "$RAW_C2C_BYTES" -gt "$MAX_RAW_PROFILER_BYTES_PER_VARIANT" ]; then
+          mark_rejected "failed-artifact-size-limit — ${VDIR}/perf-c2c.data is ${RAW_C2C_BYTES} bytes, exceeding the per-variant cap of ${MAX_RAW_PROFILER_BYTES_PER_VARIANT} bytes (variant ${VARIANT})"
+        fi
+        run_measured "perf-c2c-report (variant ${VARIANT})" "$(build_c2c_report_command "$VARIANT" "$VDIR") > ${VDIR}/.perf-c2c-report-raw.txt 2> ${VDIR}/perf-c2c-report.log"
+        summarize_c2c_report "${VDIR}/.perf-c2c-report-raw.txt" "${VDIR}/perf-c2c-report.txt"
+        if ! enforce_text_size_limit "${VDIR}/perf-c2c-report.txt" "$MAX_TEXT_REPORT_BYTES"; then
+          mark_rejected "failed-artifact-size-limit — bounded c2c report for variant ${VARIANT} still exceeds ${MAX_TEXT_REPORT_BYTES} bytes"
+        fi
+        # Raw-profiler cleanup (section 7): hash + size are recorded BEFORE
+        # any deletion decision; the raw file is removed by default only
+        # once the bounded summary above exists and is non-empty.
+        retire_raw_profiler_file "${VDIR}/perf-c2c.data" "${VDIR}/perf-c2c-report.txt" "$RETAIN_RAW_PROFILER_DATA" "${VDIR}/raw-profiler-retention.json" \
+          || mark_rejected "raw-profiler cleanup failed for variant ${VARIANT} (see stderr)"
+        rm -f "${VDIR}/.perf-c2c-report-raw.txt"
+      fi
+    else
+      echo "-- perf c2c: not selected for this variant (policy=$(variant_profiler_policy "$VARIANT"), profile=${PROFILE}) — recorded as absent"
+    fi
+    check_storage_or_abort "after profiler, variant ${VARIANT}"
   fi
 
   RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"
@@ -807,9 +1129,23 @@ PLACEOF
       mark_rejected "aggregate-migration-policy-without-worker-pinning (variant ${VARIANT})"
     fi
   fi
+
+  check_storage_or_abort "after variant ${VARIANT}"
 done
 
 write_run_status "collected" ""
+
+# Smoke-profile budget (section 3): a smoke run must never exceed a small,
+# configurable total footprint — it is a wiring/termination check, not
+# evidence, and is permanently non-publication-eligible regardless.
+if [ "$PROFILE" = "smoke" ] && [ "$DRY_RUN" != "1" ]; then
+  SMOKE_RUN_BYTES="$(dir_size_bytes "$RUN_DIR")"
+  if ! storage_budget_check "smoke-budget" "$SMOKE_RUN_BYTES" "$SMOKE_BUDGET_BYTES" > "${RUN_DIR}/smoke-budget.json"; then
+    echo "run-linux-evidence: smoke run exceeded its ${SMOKE_BUDGET_BYTES}-byte budget (${SMOKE_RUN_BYTES} bytes) — see ${RUN_DIR}/smoke-budget.json" >&2
+    write_run_status "rejected" "failed-storage-budget — smoke profile exceeded its configured budget"
+    exit 1
+  fi
+fi
 
 # =============================================================================
 # Manifest, hashes, archive
@@ -846,8 +1182,8 @@ $(FIRST=1; for V in $(effective_variants); do
   printf '      "placementPolicy": "%s/placement-policy.json",\n' "$V"
   printf '      "perfStat": ["%s/perf-stat.csv", "%s/perf-stat-r2.csv", "%s/perf-stat-r3.csv"],\n' "$V" "$V" "$V"
   printf '      "perfStatJmh": ["%s/perf-stat-jmh.json", "%s/perf-stat-jmh-r2.json", "%s/perf-stat-jmh-r3.json"],\n' "$V" "$V" "$V"
-  printf '      "perfC2cData": "%s/perf-c2c.data",\n' "$V"
   printf '      "perfC2cReport": "%s/perf-c2c-report.txt",\n' "$V"
+  printf '      "rawProfilerRetention": "%s/raw-profiler-retention.json",\n' "$V"
   printf '      "rustEvidence": "%s/rust-evidence.json"\n' "$V"
   printf '    }'
 done; printf '\n')
@@ -856,20 +1192,45 @@ done; printf '\n')
   "variantSelection": $([ -n "$SELECTED_VARIANT" ] && printf '"focused:%s"' "$SELECTED_VARIANT" || printf '"all"'),
   "componentSelection": "${COMPONENT}",
   "hardTimeoutSecondsPerInvocation": ${EV_TIMEOUT_SECONDS},
+  "outputRoot": $(json_escape "$OUT_ROOT"),
   "canonical": { "pendingImport": true, "importer": "scripts/performance-lab/import-evidence.sh (adds canonical-jmh.json, canonical-perf-stat.json, comparison.json on the repository machine)" },
   "review": { "verifiedMaturityRequiresHumanReview": true, "importDoesNotPromote": true }
 }
 MANEOF
 
 if [ "$DRY_RUN" != "1" ]; then
+  check_storage_or_abort "before archive generation"
   write_sha256sums "$RUN_DIR" || fail "hashing failed"
+  # Default archive NEVER includes raw-profiler artifacts (section 11):
+  # they are already deleted by default, and --exclude is a second,
+  # belt-and-suspenders guarantee for the --retain-raw-profiler-data case
+  # (retained on disk for local inspection, but never bundled into the
+  # archive a maintainer copies off-host as "the" evidence package).
+  TAR_EXCLUDES=(--exclude='*perf.data' --exclude='*perf-c2c.data' --exclude='*.jfr')
   ARCHIVE="${OUT_ROOT}/${LAB_ID}-${RUN_ID}-linux-evidence.tar"
   if command -v zstd >/dev/null 2>&1; then
-    tar --zstd -cf "${ARCHIVE}.zst" -C "${OUT_ROOT}/${LAB_ID}" "${RUN_ID}"
+    tar "${TAR_EXCLUDES[@]}" --zstd -cf "${ARCHIVE}.zst" -C "${OUT_ROOT}/${LAB_ID}" "${RUN_ID}"
     ARCHIVE="${ARCHIVE}.zst"
   else
-    tar -czf "${ARCHIVE}.gz" -C "${OUT_ROOT}/${LAB_ID}" "${RUN_ID}"
+    tar "${TAR_EXCLUDES[@]}" -czf "${ARCHIVE}.gz" -C "${OUT_ROOT}/${LAB_ID}" "${RUN_ID}"
     ARCHIVE="${ARCHIVE}.gz"
+  fi
+  # Separate, optional raw-profiler archive (section 11): only when raw
+  # data was explicitly retained AND some actually exists. Paths are
+  # relative-ized with sed (portable across GNU/BSD find — no reliance on
+  # GNU find's -printf) so the archive members match the RUN_ID-rooted
+  # layout the default archive uses.
+  RAW_FILES="$(find "$RUN_DIR" \( -name 'perf.data' -o -name 'perf-c2c.data' \) 2>/dev/null | sed "s|^${RUN_DIR%/*}/||")"
+  if [ "$RETAIN_RAW_PROFILER_DATA" = "1" ] && [ -n "$RAW_FILES" ]; then
+    RAW_ARCHIVE="${OUT_ROOT}/${LAB_ID}-${RUN_ID}-raw-profiler.tar"
+    if command -v zstd >/dev/null 2>&1; then
+      printf '%s\n' "$RAW_FILES" | tar --zstd -cf "${RAW_ARCHIVE}.zst" -C "${OUT_ROOT}/${LAB_ID}" -T -
+      RAW_ARCHIVE="${RAW_ARCHIVE}.zst"
+    else
+      printf '%s\n' "$RAW_FILES" | tar -czf "${RAW_ARCHIVE}.gz" -C "${OUT_ROOT}/${LAB_ID}" -T -
+      RAW_ARCHIVE="${RAW_ARCHIVE}.gz"
+    fi
+    echo "Raw-profiler archive (explicitly requested, --retain-raw-profiler-data): ${RAW_ARCHIVE}"
   fi
   echo
   echo "== DONE"

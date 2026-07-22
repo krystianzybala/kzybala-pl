@@ -123,23 +123,32 @@ physical cores, no SMT siblings, same socket/NUMA node by default.
 ```sh
 # preflight first on a new host (validates everything, measures nothing):
 ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
-  --profile publication --cpus <CPU_A>,<CPU_B> --preflight-only
+  --profile publication-core --cpus <CPU_A>,<CPU_B> --preflight-only
 
-# per-lab publication runs:
+# per-lab publication runs (representative variants, full rigor):
 ./scripts/performance-lab/run-linux-evidence.sh false-sharing \
-  --profile publication --cpus <CPU_A>,<CPU_B>
+  --profile publication-core --cpus <CPU_A>,<CPU_B>
 ./scripts/performance-lab/run-linux-evidence.sh spsc-ring-buffer \
-  --profile publication --cpus <CPU_A>,<CPU_B>
+  --profile publication-core --cpus <CPU_A>,<CPU_B>
 ./scripts/performance-lab/run-linux-evidence.sh cas-contention \
-  --profile publication --cpus <CPU0>,<CPU1>,<CPU2>,<CPU3>,<CPU4>,<CPU5>,<CPU6>,<CPU7>
+  --profile publication-core --cpus <CPU0>,<CPU1>,<CPU2>,<CPU3>,<CPU4>,<CPU5>,<CPU6>,<CPU7>
+
+# full parameter matrix, lightweight instrumentation (no c2c per point):
+./scripts/performance-lab/run-linux-evidence.sh spsc-ring-buffer \
+  --profile publication-sweep --cpus <CPU_A>,<CPU_B>
 
 # or the whole reference tier in one batch (fill the cpu_sets in the host
 # config from lscpu first):
 ./scripts/performance-lab/run-all-benchmarks.sh \
-  --profile publication \
+  --profile publication-core \
   --host-config config/benchmark-hosts/precision-5810.yaml \
   --repetitions 2
 ```
+
+`--profile publication` is accepted as a deprecated alias for
+`publication-core`. Evidence-storage discipline (filesystem preflight,
+per-variant/per-lab storage checks, profiler-policy-gated `perf c2c`,
+raw-profiler cleanup, bounded reports): `docs/evidence-storage-retention.md`.
 
 `--cpus` is required — publication runs never silently choose CPUs. Pick
 logical CPU ids from `lscpu -e` (two distinct physical cores for the
@@ -155,10 +164,15 @@ validated against `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE`:
 - same socket and same NUMA node by default; `--allow-cross-socket` runs
   the explicitly separate `cross-socket` scenario.
 
-Other flags: `--profile publication|full|development|smoke`, `--out <dir>`,
-`--preflight-only`, `--allow-virtualized`, `--dry-run` (prints every
-planned command, creates the metadata skeleton, executes no measurement),
-`--skip-load-check` (non-publication runs only).
+Other flags: `--profile publication-core|publication-sweep|full|development|smoke`,
+`--out <dir>` / `--results-root <dir>` (equivalent; also settable via
+`PERFORMANCE_LAB_RESULTS_ROOT`), `--preflight-only`, `--allow-virtualized`,
+`--dry-run` (prints every planned command, creates the metadata skeleton,
+executes no measurement), `--skip-load-check` (non-publication runs only),
+`--retain-raw-profiler-data` / `--retain-failed-raw` (see
+`docs/evidence-storage-retention.md` — by default, raw `perf.data`/
+`perf-c2c.data` is deleted once its bounded summary report is validated,
+or immediately on a rejected/timed-out run).
 
 ### Virtualization detection (exit status, never stdout text)
 

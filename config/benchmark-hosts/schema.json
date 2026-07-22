@@ -87,6 +87,19 @@
       "minimum": 1,
       "default": 5,
       "description": "Seconds between stability samples."
+    },
+    "storage": {
+      "type": "object",
+      "description": "Optional evidence-storage thresholds (docs/evidence-storage-retention.md). Every key is optional; an absent key or an absent `storage` section falls back to the documented default. Values are GiB/MiB for human readability; scripts/performance-lab/run-all-benchmarks.sh converts and exports them as bytes.",
+      "additionalProperties": false,
+      "properties": {
+        "min_available_before_batch_gib": { "type": "integer", "minimum": 1, "default": 80 },
+        "abort_threshold_during_batch_gib": { "type": "integer", "minimum": 1, "default": 40 },
+        "max_total_batch_size_gib": { "type": "integer", "minimum": 1, "default": 30 },
+        "max_raw_profiler_bytes_per_variant_gib": { "type": "integer", "minimum": 1, "default": 2 },
+        "max_generated_text_report_size_mib": { "type": "integer", "minimum": 1, "default": 200 },
+        "smoke_budget_gib": { "type": "integer", "minimum": 1, "default": 2 }
+      }
     }
   }
 }

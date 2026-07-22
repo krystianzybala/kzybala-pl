@@ -108,7 +108,7 @@ commands. Every implementation completion report includes a
 ```sh
 ./scripts/performance-lab/run-linux-evidence.sh \
   false-sharing \
-  --profile publication \
+  --profile publication-core \
   --cpus <CPU_A>,<CPU_B>
 ```
 

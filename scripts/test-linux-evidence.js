@@ -526,7 +526,9 @@ test("runner: --allow-virtualized is rejected with the publication profile", () 
   try {
     const r = runRunner(["--profile", "publication", "--cpus", "0,1", "--allow-virtualized"], stubs, out);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /--allow-virtualized cannot be used with profile 'publication'/);
+    // "publication" is a deprecated alias, normalized to "publication-core"
+    // before this error is raised — the message reports the canonical name.
+    assert.match(r.stderr, /--allow-virtualized cannot be used with profile 'publication-core'/);
   } finally {
     rmSync(stubs, { recursive: true, force: true });
     rmSync(out, { recursive: true, force: true });

@@ -25,6 +25,18 @@ cooldown_seconds:
   standard: 120
   long: 300
 
+# Evidence-storage thresholds (docs/evidence-storage-retention.md), added
+# after the 2026-07 incident where results/ reached ~131 GB and filled a
+# 295 GB /home filesystem to zero headroom. Every key is optional and
+# falls back to the same default shown here if omitted.
+storage:
+  min_available_before_batch_gib: 80
+  abort_threshold_during_batch_gib: 40
+  max_total_batch_size_gib: 30
+  max_raw_profiler_bytes_per_variant_gib: 2
+  max_generated_text_report_size_mib: 200
+  smoke_budget_gib: 2
+
 # Named CPU sets — comma-separated logical CPU ids, no spaces.
 # EMPTY values are intentionally invalid: the batch refuses to run until
 # you fill them from the live lscpu output.
