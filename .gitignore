@@ -13,3 +13,12 @@
 # Regenerable on your own hardware; committed only when it is the specific
 # evidence backing a benchmark.md number.
 /results/
+
+# Worker-placement artifacts (WorkerPin.record, every lab's Java code):
+# only ever written when -Dplab.placementDir is set by run-linux-evidence.sh
+# or a manual smoke run, and belong under results/<lab>/<run-id>/<variant>/,
+# never in a lab's code/java/ source tree. A manual local run (e.g.
+# -Dplab.placementDir=. from inside code/java/) leaks these into source —
+# 16 such stray files (real PIDs from an actual pinned run) were found
+# committed under content/labs/thread-per-core/code/java/ and removed.
+**/code/java/worker-placement-*.json
