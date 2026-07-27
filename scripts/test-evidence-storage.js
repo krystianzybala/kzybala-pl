@@ -646,7 +646,7 @@ test("run-total budget: a run whose total bytes exceed its configured budget abo
   }
 });
 
-test("provenance: environment.json and the manifest record the output root, its filesystem, and whether it shares the repository's filesystem", () => {
+test("provenance: environment.json and the manifest record the output root, storage-target, and whether it shares the repository's filesystem", () => {
   const out = tmp("plab-full-out-");
   try {
     const stubs = preflightStubDir();
@@ -660,9 +660,10 @@ test("provenance: environment.json and the manifest record the output root, its 
     const runDir = findRunDir(out, "mesi");
     const env = JSON.parse(readFileSync(join(runDir, "environment.json"), "utf8"));
     assert.equal(env.outputRoot, out);
-    assert.equal(typeof env.outputFilesystem.availableBytes, "number");
-    assert.equal(typeof env.outputFilesystem.sameFilesystemAsRepo, "boolean");
-    assert.equal(env.outputFilesystem.sameFilesystemAsRepo, true, "both are under the OS tmp dir in this test");
+    assert.equal(env.storageBudgetTarget, out, "defaults to --out when --storage-target is not given");
+    assert.equal(typeof env.storage.resultsFilesystem.availableBytes, "number");
+    assert.equal(typeof env.storage.sameFilesystemAsRepo, "boolean");
+    assert.equal(env.storage.sameFilesystemAsRepo, true, "both are under the OS tmp dir in this test");
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
@@ -947,6 +948,351 @@ tar -czf "$out/\${lab}-linux-fake1-linux-evidence.tar.gz" -C "$out" "\${lab}"
     assert.equal(r.status, 0, r.stderr);
     const log = readFileSync(join(env.base, "invoke.log"), "utf8");
     assert.match(log, /--retain-raw-profiler-data/);
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+// =============================================================================
+// --storage-target: decoupling "where do I write" (--out) from "what
+// filesystem must have capacity" (storage-target/results root). Regression
+// tests for the batch-storage-target-bug incident (2026-07): the batch's
+// live per-lab preflight passed a throwaway mktemp -d under /tmp as --out,
+// and the runner's capacity check evaluated THAT ephemeral directory
+// instead of the real results root, blocking every lab even though the
+// real target had ample space. Everything here uses PLAB_FAKE_FS_MAP
+// (per-path fake filesystem stats) so two DIFFERENT paths can be given two
+// DIFFERENT simulated capacities without touching a real disk.
+// =============================================================================
+
+function fakeFsMap(entries) {
+  return JSON.stringify(entries);
+}
+
+function runPreflight(lab, { out, storageTarget, fakeMap, extraArgs = [], extraEnv = {} }) {
+  const stubs = preflightStubDir();
+  try {
+    const args = [RUNNER, lab, "--profile", "publication-core", "--cpus", labCpus(lab), "--preflight-only", "--out", out];
+    if (storageTarget) args.push("--storage-target", storageTarget);
+    args.push(...extraArgs);
+    const stdout = execFileSync("bash", args, {
+      env: { ...process.env, PATH: `${stubs}:/usr/bin:/bin`, ...(fakeMap ? { PLAB_FAKE_FS_MAP: fakeMap } : {}), ...extraEnv },
+      encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+  } finally {
+    rmSync(stubs, { recursive: true, force: true });
+  }
+}
+
+test("storage-target #1: a 25 GiB /tmp-like --out never blocks a run whose --storage-target has 100 GiB", () => {
+  const scratch = tmp("plab-st-scratch-");
+  const results = tmp("plab-st-results-");
+  try {
+    const map = fakeFsMap({
+      [scratch]: { totalBytes: 26843545600, usedBytes: 5000000000, availableBytes: 21843545600, statDev: 111 },
+      [results]: { totalBytes: 107374182400, usedBytes: 5000000000, availableBytes: 102374182400, statDev: 222 },
+      [ROOT]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 333 },
+    });
+    const r = runPreflight("mesi", { out: scratch, storageTarget: results, fakeMap: map });
+    assert.doesNotMatch(r.stderr, /failed-storage-preflight/, r.stderr);
+    const runDir = findRunDir(scratch, "mesi");
+    const fsPreflight = JSON.parse(readFileSync(join(runDir, "filesystem-preflight.json"), "utf8"));
+    assert.equal(fsPreflight.temporaryOutputDirectory, scratch);
+    assert.equal(fsPreflight.storageBudgetTarget, results);
+    assert.equal(fsPreflight.resultsFilesystem.withinBudget, true);
+    assert.equal(fsPreflight.resultsFilesystem.availableBytes, 102374182400);
+  } finally {
+    rmAll(scratch, results);
+  }
+});
+
+test("storage-target #2: a 100 GiB /tmp-like --out never rescues a run whose --storage-target has only 25 GiB", () => {
+  const scratch = tmp("plab-st-scratch-");
+  const results = tmp("plab-st-results-");
+  try {
+    const map = fakeFsMap({
+      [scratch]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 111 },
+      [results]: { totalBytes: 26843545600, usedBytes: 20000000000, availableBytes: 6843545600, statDev: 222 },
+      [ROOT]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 333 },
+    });
+    const r = runPreflight("mesi", { out: scratch, storageTarget: results, fakeMap: map });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /failed-storage-preflight/);
+    assert.match(r.stderr, new RegExp(results.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the message must name the real target, not the scratch directory");
+    const runDir = findRunDir(scratch, "mesi");
+    const status = JSON.parse(readFileSync(join(runDir, "run-status.json"), "utf8"));
+    assert.equal(status.runStatus, "rejected");
+    assert.equal(status.storageDiagnostics.checkedPath, results);
+    assert.equal(status.storageDiagnostics.availableBytes, 6843545600);
+  } finally {
+    rmAll(scratch, results);
+  }
+});
+
+test("storage-target: defaults to --out when not given (standalone invocation, unchanged prior behavior)", () => {
+  const out = tmp("plab-st-default-");
+  try {
+    const map = fakeFsMap({
+      [out]: { totalBytes: 26843545600, usedBytes: 20000000000, availableBytes: 6843545600, statDev: 111 },
+      [ROOT]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 333 },
+    });
+    const r = runPreflight("mesi", { out, fakeMap: map });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /failed-storage-preflight/);
+    const runDir = findRunDir(out, "mesi");
+    const fsPreflight = JSON.parse(readFileSync(join(runDir, "filesystem-preflight.json"), "utf8"));
+    assert.equal(fsPreflight.storageBudgetTarget, out, "no --storage-target given: falls back to --out, exactly as before this fix");
+  } finally {
+    rmAll(out);
+  }
+});
+
+test("storage-target #6: smoke profile with a tiny --out still resolves capacity against --storage-target, not the tiny scratch dir", () => {
+  const scratch = tmp("plab-st-scratch-");
+  const results = tmp("plab-st-results-");
+  try {
+    const map = fakeFsMap({
+      [scratch]: { totalBytes: 2147483648, usedBytes: 1000000000, availableBytes: 1147483648, statDev: 111 }, // ~2 GiB tiny /tmp
+      [results]: { totalBytes: 107374182400, usedBytes: 5000000000, availableBytes: 102374182400, statDev: 222 },
+      [ROOT]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 333 },
+    });
+    const r = runPreflight("mesi", { out: scratch, storageTarget: results, fakeMap: map, extraArgs: ["--profile", "smoke"] });
+    assert.doesNotMatch(r.stderr, /failed-storage-preflight/, r.stderr);
+  } finally {
+    rmAll(scratch, results);
+  }
+});
+
+test("storage-target #7: an empty/missing storage target is rejected explicitly, never silently substituted", () => {
+  const r = libCall(`validate_storage_target ''`);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /empty path/);
+});
+
+test("storage-target #8: an unwritable storage target is rejected explicitly", () => {
+  const parent = tmp("plab-st-unwritable-");
+  const target = join(parent, "readonly-child");
+  mkdirSync(target);
+  try {
+    chmodSync(target, 0o555);
+    const r = libCall(`validate_storage_target '${target}'`);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /not writable/);
+  } finally {
+    chmodSync(target, 0o755);
+    rmAll(parent);
+  }
+});
+
+test("storage-target #9/#11: repository and results on the same filesystem produce sameFilesystemAsRepo: true (never null)", () => {
+  const out = tmp("plab-st-same-");
+  try {
+    const map = fakeFsMap({
+      [out]: { totalBytes: 107374182400, usedBytes: 5000000000, availableBytes: 102374182400, statDev: 999 },
+      [ROOT]: { totalBytes: 107374182400, usedBytes: 5000000000, availableBytes: 102374182400, statDev: 999 },
+    });
+    const r = runPreflight("mesi", { out, fakeMap: map });
+    assert.doesNotMatch(r.stderr, /failed-storage-preflight/, r.stderr);
+    const runDir = findRunDir(out, "mesi");
+    const fsPreflight = JSON.parse(readFileSync(join(runDir, "filesystem-preflight.json"), "utf8"));
+    assert.strictEqual(fsPreflight.sameFilesystemAsRepo, true);
+  } finally {
+    rmAll(out);
+  }
+});
+
+test("storage-target #10/#11: different filesystems produce sameFilesystemAsRepo: false (never null)", () => {
+  const out = tmp("plab-st-diff-");
+  try {
+    const map = fakeFsMap({
+      [out]: { totalBytes: 107374182400, usedBytes: 5000000000, availableBytes: 102374182400, statDev: 111 },
+      [ROOT]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 222 },
+    });
+    const r = runPreflight("mesi", { out, fakeMap: map });
+    assert.doesNotMatch(r.stderr, /failed-storage-preflight/, r.stderr);
+    const runDir = findRunDir(out, "mesi");
+    const fsPreflight = JSON.parse(readFileSync(join(runDir, "filesystem-preflight.json"), "utf8"));
+    assert.strictEqual(fsPreflight.sameFilesystemAsRepo, false);
+  } finally {
+    rmAll(out);
+  }
+});
+
+test("storage-target #12: rejection carries structured, untruncated storage diagnostics (never a clipped human string)", () => {
+  const scratch = tmp("plab-st-scratch-");
+  const results = tmp("plab-st-results-");
+  try {
+    const map = fakeFsMap({
+      [scratch]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 111 },
+      [results]: { totalBytes: 26843545600, usedBytes: 20000000000, availableBytes: 6843545600, statDev: 222 },
+      [ROOT]: { totalBytes: 500000000000, usedBytes: 5000000000, availableBytes: 495000000000, statDev: 333 },
+    });
+    const r = runPreflight("mesi", { out: scratch, storageTarget: results, fakeMap: map });
+    assert.notEqual(r.status, 0);
+    const runDir = findRunDir(scratch, "mesi");
+    const status = JSON.parse(readFileSync(join(runDir, "run-status.json"), "utf8"));
+    const diag = status.storageDiagnostics;
+    assert.equal(diag.reasonCode, "failed-storage-preflight");
+    assert.equal(diag.checkedPath, results);
+    assert.equal(typeof diag.mountPoint, "string");
+    assert.equal(diag.availableBytes, 6843545600);
+    assert.equal(diag.requiredBytes, 85899345920);
+    assert.ok(diag.message.length > 20, "message must be the full, untruncated explanation, not a clipped fragment");
+  } finally {
+    rmAll(scratch, results);
+  }
+});
+
+// --- batch-level: storage-target wiring through run-all-benchmarks.sh -------
+
+test("batch #3: live per-lab preflight writes to a throwaway --out but always passes --storage-target pointing at the real results root", () => {
+  const env = makeBatchEnv();
+  writeFileSync(join(env.bin, "stub-runner.sh"), `#!/usr/bin/env bash
+echo "ARGS: $*" >> "${env.base}/invoke.log"
+lab="$1"; shift
+preflight=0; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --preflight-only) preflight=1; shift ;;
+    --out) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ "$preflight" = "1" ] && exit 0
+mkdir -p "$out/\${lab}/linux-fake-1"
+echo evidence-marker > "$out/\${lab}/linux-fake-1/marker.txt"
+tar -czf "$out/\${lab}-linux-fake1-linux-evidence.tar.gz" -C "$out" "\${lab}"
+`);
+  chmodSync(join(env.bin, "stub-runner.sh"), 0o755);
+  try {
+    const r = runBatch(env, ["--profile", "smoke", "--repetitions", "1", "--diagnostic", "--host-config", env.host]);
+    assert.equal(r.status, 0, r.stderr);
+    const log = readFileSync(join(env.base, "invoke.log"), "utf8");
+    const preflightLine = log.split("\n").find((l) => l.includes("--preflight-only"));
+    assert.ok(preflightLine, "expected a --preflight-only invocation to be logged");
+    assert.match(preflightLine, /--storage-target/, "the live per-lab preflight invocation must pass --storage-target");
+    // the --storage-target value must NOT be the ephemeral --out used for
+    // this same invocation — they are deliberately different directories
+    const outMatch = preflightLine.match(/--out (\S+)/);
+    const targetMatch = preflightLine.match(/--storage-target (\S+)/);
+    assert.ok(outMatch && targetMatch, preflightLine);
+    assert.notEqual(outMatch[1], targetMatch[1], "--out (ephemeral) and --storage-target (real results root) must differ");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("batch #4: the whole-batch storage preflight runs against the results root BEFORE any per-lab live preflight", () => {
+  const env = makeBatchEnv();
+  try {
+    const r = runBatch(env, ["--profile", "smoke", "--repetitions", "1", "--diagnostic", "--host-config", env.host], {
+      PLAB_FAKE_FS_TOTAL_BYTES: "1000000000000", PLAB_FAKE_FS_AVAIL_BYTES: "1000",
+    });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /failed-storage-preflight/);
+    assert.doesNotMatch(r.stdout, /Live preflight/, "the live-preflight phase must never start once the whole-batch check has failed");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+test("batch #5: per-variant storage checks (inside a real measurement, not preflight) use the real results filesystem", () => {
+  // Exercised at the unit level: check_storage_or_abort inside
+  // run-linux-evidence.sh reads $STORAGE_TARGET, and STORAGE_TARGET
+  // defaults to $OUT_ROOT for a real (non-preflight) measurement — this is
+  // already covered end-to-end by the pre-existing "run-total budget"
+  // test (scripts/test-evidence-storage.js) using the synthetic-lab
+  // harness; this test adds the explicit-storage-target variant.
+  const lab = makeSyntheticLab("stat", ["v1", "v2", "v3"], null);
+  const out = tmp("plab-full-out-");
+  const storageTarget = tmp("plab-full-storage-");
+  try {
+    const r = runFull(lab, ["--storage-target", storageTarget], { PLAB_MAX_BATCH_BYTES: "50" }, out);
+    assert.equal(r.status, 4, r.stderr);
+    assert.match(r.stderr, /STORAGE ABORT/);
+    const runDir = findRunDir(out, lab.labId);
+    const status = JSON.parse(readFileSync(join(runDir, "run-status.json"), "utf8"));
+    assert.match(status.runStatus, /failed-storage-budget/);
+    assert.equal(status.storageDiagnostics.checkedPath, runDir, "the total-run-bytes-budget check reports the run directory itself, which lives under the explicit storage target");
+  } finally {
+    rmAll(lab.labsDir, lab.javaDir, out, storageTarget);
+  }
+});
+
+test("batch #13: TMPDIR may influence where the live-preflight scratch directory is created, but never affects storage-target selection", () => {
+  // run-all-benchmarks.sh creates its ephemeral live-preflight directory
+  // with a bare `mktemp -d` — GNU mktemp (the real Linux measurement host)
+  // honors $TMPDIR there by default, which is all "correctness must not
+  // DEPEND on TMPDIR, but MAY use it" requires; this dev/test machine's
+  // BSD mktemp does not honor $TMPDIR for a bare `mktemp -d` at all
+  // (verified: `env TMPDIR=/custom mktemp -d` still prints a path under
+  // the real system temp dir), so this test does not assert on --out's
+  // location — only on the invariant that is actually this fix's
+  // contract: --storage-target is always the real results root,
+  // completely unaffected by whatever TMPDIR is set to.
+  const env = makeBatchEnv();
+  const customTmp = tmp("plab-st-customtmp-");
+  writeFileSync(join(env.bin, "stub-runner.sh"), `#!/usr/bin/env bash
+echo "ARGS: $*" >> "${env.base}/invoke.log"
+lab="$1"; shift
+preflight=0; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --preflight-only) preflight=1; shift ;;
+    --out) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ "$preflight" = "1" ] && exit 0
+mkdir -p "$out/\${lab}/linux-fake-1"
+echo evidence-marker > "$out/\${lab}/linux-fake-1/marker.txt"
+tar -czf "$out/\${lab}-linux-fake1-linux-evidence.tar.gz" -C "$out" "\${lab}"
+`);
+  chmodSync(join(env.bin, "stub-runner.sh"), 0o755);
+  try {
+    const r = runBatch(env, ["--profile", "smoke", "--repetitions", "1", "--diagnostic", "--host-config", env.host], { TMPDIR: customTmp });
+    assert.equal(r.status, 0, r.stderr);
+    const log = readFileSync(join(env.base, "invoke.log"), "utf8");
+    const preflightLine = log.split("\n").find((l) => l.includes("--preflight-only"));
+    const targetMatch = preflightLine.match(/--storage-target (\S+)/);
+    assert.ok(targetMatch, preflightLine);
+    assert.ok(!targetMatch[1].startsWith(customTmp), "the storage-target must be the real results root, never redirected by TMPDIR");
+  } finally {
+    rmSync(env.base, { recursive: true, force: true });
+    rmSync(customTmp, { recursive: true, force: true });
+  }
+});
+
+test("batch #14: no per-lab measurement ever starts after a genuine results-filesystem storage failure", () => {
+  const env = makeBatchEnv();
+  writeFileSync(join(env.bin, "stub-runner.sh"), `#!/usr/bin/env bash
+echo "INVOKE: $*" >> "${env.base}/invoke.log"
+lab="$1"; shift
+preflight=0; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --preflight-only) preflight=1; shift ;;
+    --out) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ "$preflight" = "1" ] && exit 0
+echo "REAL MEASUREMENT STARTED" >> "${env.base}/invoke.log"
+mkdir -p "$out/\${lab}/linux-fake-1"
+echo evidence-marker > "$out/\${lab}/linux-fake-1/marker.txt"
+tar -czf "$out/\${lab}-linux-fake1-linux-evidence.tar.gz" -C "$out" "\${lab}"
+`);
+  chmodSync(join(env.bin, "stub-runner.sh"), 0o755);
+  try {
+    const r = runBatch(env, ["--profile", "smoke", "--repetitions", "1", "--diagnostic", "--host-config", env.host], {
+      PLAB_FAKE_FS_TOTAL_BYTES: "1000000000000", PLAB_FAKE_FS_AVAIL_BYTES: "1000",
+    });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /failed-storage-preflight/);
+    assert.equal(existsSync(join(env.base, "invoke.log")), false, "the per-lab runner must never be invoked at all — neither preflight nor real measurement");
   } finally {
     rmSync(env.base, { recursive: true, force: true });
   }

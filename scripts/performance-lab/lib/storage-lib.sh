@@ -23,9 +23,47 @@
 #
 # Test hook: PLAB_FAKE_FS_TOTAL_BYTES / PLAB_FAKE_FS_USED_BYTES /
 # PLAB_FAKE_FS_AVAIL_BYTES short-circuit the real statvfs call so tests can
-# simulate a nearly-full disk without creating one.
+# simulate a nearly-full disk without creating one. PLAB_FAKE_FS_STATDEV
+# (default 1) lets a test simulate two paths being the same/different
+# filesystem without touching real device ids — two fs_stats_json calls
+# with the same PLAB_FAKE_FS_STATDEV compare as "same filesystem". This
+# flat form applies the SAME fake stats to every path checked, which is
+# fine for single-filesystem scenarios but cannot simulate "two different
+# paths, two different filesystems" (exactly the storage-target-vs-
+# ephemeral-tmp bug class this file exists to regression-test) — for that,
+# use PLAB_FAKE_FS_MAP: a JSON object mapping an exact path to its own
+# {totalBytes, usedBytes, availableBytes, statDev, filesystem, mountPoint}
+# (missing keys default sanely). PLAB_FAKE_FS_MAP is checked first; the
+# flat PLAB_FAKE_FS_AVAIL_BYTES hook is checked next; real statvfs last.
 fs_stats_json() {
   local path="$1"
+  if [ -n "${PLAB_FAKE_FS_MAP:-}" ]; then
+    PLAB_FS_PATH="$path" PLAB_FS_MAP="$PLAB_FAKE_FS_MAP" python3 - <<'PYEOF'
+import json, os, sys
+path = os.environ["PLAB_FS_PATH"]
+fake_map = json.loads(os.environ["PLAB_FS_MAP"])
+if path not in fake_map:
+    print(f"fs_stats_json: PLAB_FAKE_FS_MAP has no entry for '{path}'", file=sys.stderr)
+    sys.exit(1)
+entry = fake_map[path]
+total = int(entry.get("totalBytes", 0))
+used = int(entry.get("usedBytes", 0))
+avail = int(entry.get("availableBytes", 0))
+pct = round((avail / total) * 100, 2) if total > 0 else 0.0
+print(json.dumps({
+    "path": path,
+    "filesystem": entry.get("filesystem", "fake0"),
+    "mountPoint": entry.get("mountPoint", "/fake"),
+    "totalBytes": total,
+    "usedBytes": used,
+    "availableBytes": avail,
+    "availablePercent": pct,
+    "statDev": int(entry.get("statDev", 1)),
+    "source": "fake (PLAB_FAKE_FS_MAP test hook)",
+}))
+PYEOF
+    return $?
+  fi
   if [ -n "${PLAB_FAKE_FS_AVAIL_BYTES:-}" ]; then
     PLAB_FS_PATH="$path" \
     PLAB_FS_TOTAL="${PLAB_FAKE_FS_TOTAL_BYTES:-0}" \
@@ -33,6 +71,7 @@ fs_stats_json() {
     PLAB_FS_AVAIL="${PLAB_FAKE_FS_AVAIL_BYTES}" \
     PLAB_FS_NAME="${PLAB_FAKE_FS_FILESYSTEM:-fake0}" \
     PLAB_FS_MOUNT="${PLAB_FAKE_FS_MOUNT:-/fake}" \
+    PLAB_FS_STATDEV="${PLAB_FAKE_FS_STATDEV:-1}" \
     python3 - <<'PYEOF'
 import json, os
 total = int(os.environ["PLAB_FS_TOTAL"])
@@ -47,6 +86,7 @@ print(json.dumps({
     "usedBytes": used,
     "availableBytes": avail,
     "availablePercent": pct,
+    "statDev": int(os.environ["PLAB_FS_STATDEV"]),
     "source": "fake (PLAB_FAKE_FS_* test hook)",
 }))
 PYEOF
@@ -55,8 +95,12 @@ PYEOF
   PLAB_FS_PATH="$path" python3 - <<'PYEOF'
 import json, os, subprocess, sys
 path = os.environ["PLAB_FS_PATH"]
-os.makedirs(path, exist_ok=True) if False else None
-st = os.statvfs(path)
+try:
+    st = os.statvfs(path)
+    stat_dev = os.stat(path).st_dev
+except OSError as e:
+    print(json.dumps({"error": str(e), "path": path}), file=sys.stderr)
+    sys.exit(1)
 total = st.f_frsize * st.f_blocks
 avail = st.f_frsize * st.f_bavail
 free_incl_reserved = st.f_frsize * st.f_bfree
@@ -81,14 +125,123 @@ print(json.dumps({
     "usedBytes": used,
     "availableBytes": avail,
     "availablePercent": pct,
+    "statDev": stat_dev,
     "source": "statvfs (f_bavail — respects filesystem-reserved blocks)",
 }))
+PYEOF
+}
+
+# filesystem_relationship_json <path-a> <path-b>
+#
+# Compares the filesystems containing two paths by device id (os.stat's
+# st_dev — the reliable identity check; device NAME strings from `df` can
+# differ across bind mounts even on the same filesystem, and are shown here
+# only for human readability, never used for the comparison itself). Prints
+# { pathA: {filesystem, mountPoint, statDev}, pathB: {...}, same: bool }.
+# `same` is a JSON boolean, never null, as long as both paths resolve —
+# resolution failure on either path is a hard error (non-zero return),
+# never a silent null.
+filesystem_relationship_json() {
+  local path_a="$1" path_b="$2"
+  local stats_a stats_b
+  stats_a="$(fs_stats_json "$path_a")" || { echo "filesystem_relationship_json: cannot resolve filesystem for '${path_a}'" >&2; return 1; }
+  stats_b="$(fs_stats_json "$path_b")" || { echo "filesystem_relationship_json: cannot resolve filesystem for '${path_b}'" >&2; return 1; }
+  python3 - "$stats_a" "$stats_b" <<'PYEOF'
+import json, sys
+a = json.loads(sys.argv[1])
+b = json.loads(sys.argv[2])
+print(json.dumps({
+    "pathA": {"path": a["path"], "filesystem": a["filesystem"], "mountPoint": a["mountPoint"], "device": a["filesystem"], "statDev": a["statDev"]},
+    "pathB": {"path": b["path"], "filesystem": b["filesystem"], "mountPoint": b["mountPoint"], "device": b["filesystem"], "statDev": b["statDev"]},
+    "same": a["statDev"] == b["statDev"],
+}, indent=2))
 PYEOF
 }
 
 # fs_available_bytes <path> — convenience: just the availableBytes integer.
 fs_available_bytes() {
   fs_stats_json "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["availableBytes"])'
+}
+
+# --- Storage-target validation --------------------------------------------------
+# validate_storage_target <path>
+#
+# The storage TARGET (docs/evidence-storage-retention.md — "the filesystem
+# that will hold the real evidence") is a distinct concept from the
+# temporary --out directory a preflight-only invocation writes small
+# diagnostic files to (batch-storage-target-bug incident, 2026-07: the
+# batch's per-lab live preflight passed a throwaway mktemp -d under /tmp as
+# --out, and the runner's capacity check evaluated THAT ephemeral
+# directory instead of the real results root, blocking every lab even
+# though the real target had ample space).
+#
+# Validates, in order: non-empty path; exists or has a creatable parent
+# (mkdir -p); is writable (create+remove a probe file — catches a
+# read-only remount that mkdir -p's own success wouldn't); resolves to a
+# real filesystem with valid (>0) byte counts. Prints the resolved absolute
+# path on success; prints the specific failing reason to stderr and
+# returns 1 on ANY failure — never silently substitutes a different
+# directory.
+validate_storage_target() {
+  local target="$1"
+  if [ -z "$target" ]; then
+    echo "storage-target: empty path" >&2
+    return 1
+  fi
+  if ! mkdir -p "$target" 2>/dev/null; then
+    echo "storage-target: cannot create '${target}' (or a parent directory) — check permissions" >&2
+    return 1
+  fi
+  local resolved
+  resolved="$(cd "$target" 2>/dev/null && pwd)" || {
+    echo "storage-target: cannot resolve '${target}' to an absolute path" >&2
+    return 1
+  }
+  local probe="${resolved}/.storage-target-write-probe-$$"
+  if ! ( : > "$probe" ) 2>/dev/null; then
+    echo "storage-target: '${resolved}' is not writable" >&2
+    return 1
+  fi
+  rm -f "$probe"
+  local stats total
+  if ! stats="$(fs_stats_json "$resolved")"; then
+    echo "storage-target: cannot determine filesystem statistics for '${resolved}'" >&2
+    return 1
+  fi
+  total="$(printf '%s' "$stats" | python3 -c 'import json,sys; print(json.load(sys.stdin)["totalBytes"])' 2>/dev/null)"
+  if [ -z "$total" ] || [ "$total" -le 0 ]; then
+    echo "storage-target: '${resolved}' reports invalid filesystem byte counts (totalBytes=${total:-unknown})" >&2
+    return 1
+  fi
+  printf '%s' "$resolved"
+}
+
+# storage_diagnostics_json <reason-code> <checked-path> <mount-point> <available-bytes> <required-bytes> <message>
+#
+# Structured, UNTRUNCATED storage-failure diagnostics (docs/evidence-
+# storage-retention.md section 6) — printed for embedding into
+# run-status.json's storageDiagnostics field and, from there, into the
+# batch orchestrator's per-lab manifest entry. Replaces the old pattern of
+# clipping a human-readable reason string into a plain JSON string field.
+storage_diagnostics_json() {
+  local reason_code="$1" checked_path="$2" mount_point="$3" available_bytes="$4" required_bytes="$5" message="$6"
+  python3 - "$reason_code" "$checked_path" "$mount_point" "$available_bytes" "$required_bytes" "$message" <<'PYEOF'
+import json, sys
+reason_code, checked_path, mount_point, available_bytes, required_bytes, message = sys.argv[1:7]
+def maybe_int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+print(json.dumps({
+    "reasonCode": reason_code,
+    "checkedPath": checked_path,
+    "mountPoint": mount_point,
+    "availableBytes": maybe_int(available_bytes),
+    "requiredBytes": maybe_int(required_bytes),
+    "message": message,
+}, indent=2))
+PYEOF
 }
 
 # --- Directory sizing ---------------------------------------------------------

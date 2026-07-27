@@ -169,19 +169,57 @@ export PLAB_MAX_TEXT_REPORT_BYTES="${PLAB_MAX_TEXT_REPORT_BYTES:-$((MAX_TEXT_REP
 export PLAB_SMOKE_BUDGET_BYTES="${PLAB_SMOKE_BUDGET_BYTES:-$((SMOKE_BUDGET_GIB * 1024 * 1024 * 1024))}"
 export PERFORMANCE_LAB_RESULTS_ROOT="$RESULTS_ROOT"
 
-# Filesystem preflight (section 5): checked before ANY build or measurement
-# — the 2026-07 incident's disk filled to zero headroom mid-batch; refusing
-# to start when there is already insufficient headroom is cheap.
-mkdir -p "$RESULTS_ROOT" 2>/dev/null || true
+# Filesystem preflight (section 5): the ONE full storage/capacity check —
+# minimum available before batch, results filesystem identity, repository/
+# results filesystem relationship — runs ONCE here, against the resolved
+# RESULTS_ROOT, BEFORE any build or measurement, and before the per-lab
+# live-preflight loop below. Per-lab live preflight (further down) does
+# NOT repeat this 80 GiB check against some other, unrelated directory —
+# it validates topology/tools/permissions/config/profiler-support instead
+# (docs/evidence-storage-retention.md; batch-storage-target-bug incident,
+# 2026-07 — the disk filled to zero headroom mid-batch, and separately,
+# every lab was later blocked because live preflight checked capacity on
+# an ephemeral scratch directory instead of RESULTS_ROOT).
+#
+# RESULTS_ROOT is validated explicitly (exists-or-creatable, writable,
+# resolves to a real filesystem with valid byte counts) via
+# validate_storage_target — the same validation run-linux-evidence.sh
+# applies to --storage-target, so a batch and a standalone invocation
+# reject an unusable target identically rather than one of them silently
+# tolerating it.
+#
+# repositoryFilesystem/resultsFilesystem/sameFilesystemAsRepo are computed
+# HERE (not later, inside the "Sequential execution" section) specifically
+# so they are available to write_batch_manifest even when the batch aborts
+# during live preflight or earlier — sameFilesystemAsRepo must never render
+# as JSON null once both paths resolve, and previously did exactly that
+# whenever the batch failed before reaching the sequential-execution block.
 if [ "$DRY_RUN" != "1" ] && [ "$STABILITY_CHECK_ONLY" != "1" ]; then
-  BATCH_FS_STATS="$(fs_stats_json "$RESULTS_ROOT")"
-  BATCH_FS_AVAIL="$(printf '%s' "$BATCH_FS_STATS" | python3 -c 'import json,sys; print(json.load(sys.stdin)["availableBytes"])')"
+  RESOLVED_RESULTS_ROOT="$(validate_storage_target "$RESULTS_ROOT")" \
+    || fail "invalid results root '${RESULTS_ROOT}' — see the specific reason above (failed-storage-preflight)"
+  RESULTS_ROOT="$RESOLVED_RESULTS_ROOT"
+  BATCH_ROOT="${PLAB_BATCH_ROOT:-${RESULTS_ROOT}/batches}"
+  export PERFORMANCE_LAB_RESULTS_ROOT="$RESULTS_ROOT"
+
+  FS_RELATIONSHIP_JSON="$(filesystem_relationship_json "$RESULTS_ROOT" "$REPO_ROOT")" \
+    || fail "cannot resolve the results-root/repository filesystem relationship"
+  RESULTS_FS_STATS="$(fs_stats_json "$RESULTS_ROOT")" || fail "cannot determine filesystem statistics for results root '${RESULTS_ROOT}'"
+  BATCH_FS_AVAIL="$(printf '%s' "$RESULTS_FS_STATS" | python3 -c 'import json,sys; print(json.load(sys.stdin)["availableBytes"])')"
+  REPOSITORY_FILESYSTEM_JSON="$(printf '%s' "$FS_RELATIONSHIP_JSON" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["pathB"]))')"
+  SAME_FS_AS_REPO="$(printf '%s' "$FS_RELATIONSHIP_JSON" | python3 -c 'import json,sys; print("true" if json.load(sys.stdin)["same"] else "false")')"
   if [ "$BATCH_FS_AVAIL" -lt "$PLAB_MIN_AVAILABLE_BEFORE_BATCH_BYTES" ]; then
     echo "run-all-benchmarks: failed-storage-preflight — ${RESULTS_ROOT} has ${BATCH_FS_AVAIL} bytes available, below the ${PLAB_MIN_AVAILABLE_BEFORE_BATCH_BYTES}-byte minimum required before starting a batch:" >&2
-    printf '%s\n' "$BATCH_FS_STATS" >&2
+    printf '%s\n' "$RESULTS_FS_STATS" >&2
+    # No batch directory exists yet at this earliest possible check (BATCH_ID
+    # is minted further below) — nothing started, so there is no manifest to
+    # write; this matches the pre-existing "no measurements started" contract.
     fail "no measurements started (failed-storage-preflight)"
   fi
-  echo "Storage preflight: ${RESULTS_ROOT} has $((BATCH_FS_AVAIL / 1024 / 1024 / 1024)) GiB available (minimum required: ${MIN_AVAILABLE_BEFORE_BATCH_GIB} GiB)"
+  echo "Storage preflight: ${RESULTS_ROOT} has $((BATCH_FS_AVAIL / 1024 / 1024 / 1024)) GiB available (minimum required: ${MIN_AVAILABLE_BEFORE_BATCH_GIB} GiB); sameFilesystemAsRepo=${SAME_FS_AS_REPO}"
+else
+  mkdir -p "$RESULTS_ROOT" 2>/dev/null || true
+  SAME_FS_AS_REPO="null"
+  REPOSITORY_FILESYSTEM_JSON="null"
 fi
 
 cooldown_for_class() {
@@ -406,6 +444,18 @@ echo "   source state: commit ${SOURCE_COMMIT} tracked-clean=$([ -z "$SOURCE_STA
 # The per-lab runner validates OS/virt/topology/perf/toolchain/correctness/
 # permissions itself; this phase runs it for EVERY lab before any
 # measurement. Aggregated report; any failure stops the batch.
+#
+# --storage-target "$RESULTS_ROOT" is REQUIRED here (batch-storage-target-
+# bug incident, 2026-07): --out points at a throwaway PREFLIGHT_TMP under
+# the OS temp directory so this dry pass never touches the real results
+# tree, but without an explicit --storage-target the runner's own capacity
+# check would evaluate THAT throwaway directory instead of the real
+# results filesystem — a small /tmp then blocks every lab even though
+# RESULTS_ROOT has ample space. The whole-batch capacity/identity check
+# already ran once, above, against RESULTS_ROOT; this per-lab pass does
+# not re-require the 80 GiB minimum against an unrelated filesystem, it
+# validates topology/tools/permissions/config/profiler-support with the
+# correct target wired through.
 echo
 echo "Live preflight (per-lab runner, no measurement)"
 LIVE_FAIL=0
@@ -413,15 +463,37 @@ PREFLIGHT_TMP="$(mktemp -d)"
 for lab in $ORDERED_LABS; do
   if [ "$DRY_RUN" = "1" ]; then
     lab_set "$lab" preflight "SKIPPED (dry-run)"
+    lab_set "$lab" preflightDiagnostics "null"
     printf '  %-20s %s\n' "$lab" "$(lab_get "$lab" preflight)"
     continue
   fi
-  if "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --preflight-only --out "$PREFLIGHT_TMP" \
+  if "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --preflight-only --out "$PREFLIGHT_TMP" --storage-target "$RESULTS_ROOT" \
       > "${PREFLIGHT_TMP}/${lab}.preflight.log" 2>&1; then
     lab_set "$lab" preflight "READY"
+    lab_set "$lab" preflightDiagnostics "null"
   else
     lab_set "$lab" preflight "BLOCKED: $(tail -1 "${PREFLIGHT_TMP}/${lab}.preflight.log" | head -c 200)"
     LIVE_FAIL=1
+    # Structured, UNTRUNCATED failure detail (docs/evidence-storage-
+    # retention.md section 6): the failed lab's own run-status.json (under
+    # its actual run dir inside the shared PREFLIGHT_TMP) carries a
+    # storageDiagnostics object for storage-classed rejections — surfaced
+    # here as a nested JSON field rather than the 200-char tail-line above,
+    # which stays only as a quick human-scannable summary.
+    LAB_RUN_STATUS="$(find "${PREFLIGHT_TMP}/${lab}" -mindepth 2 -maxdepth 2 -name run-status.json 2>/dev/null | head -1)"
+    if [ -n "$LAB_RUN_STATUS" ] && [ -f "$LAB_RUN_STATUS" ]; then
+      lab_set "$lab" preflightDiagnostics "$(python3 -c "
+import json
+try:
+    with open('${LAB_RUN_STATUS}') as fh:
+        data = json.load(fh)
+    print(json.dumps(data.get('storageDiagnostics')))
+except (OSError, ValueError):
+    print('null')
+")"
+    else
+      lab_set "$lab" preflightDiagnostics "null"
+    fi
   fi
   printf '  %-20s %s\n' "$lab" "$(lab_get "$lab" preflight)"
 done
@@ -451,12 +523,12 @@ write_batch_manifest() { # <state>
     for lab in $ORDERED_LABS; do
       [ "$first" = "1" ] || echo ","
       first=0
-      printf '    "%s": { "cpus": "%s", "preflight": "%s", "runs": [%s] }' \
-        "$lab" "$(lab_get "$lab" cpuset)" "$(lab_get "$lab" preflight)" "$(lab_get "$lab" runs)"
+      printf '    "%s": { "cpus": "%s", "preflight": "%s", "preflightDiagnostics": %s, "runs": [%s] }' \
+        "$lab" "$(lab_get "$lab" cpuset)" "$(lab_get "$lab" preflight)" "$(lab_get "$lab" preflightDiagnostics)" "$(lab_get "$lab" runs)"
     done
     echo
     echo "  },"
-    echo "  \"storage\": { \"resultsRoot\": \"${RESULTS_ROOT}\", \"sameFilesystemAsRepo\": ${SAME_FS_AS_REPO:-null}, \"thresholds\": { \"minAvailableBeforeBatchGib\": ${MIN_AVAILABLE_BEFORE_BATCH_GIB:-80}, \"abortThresholdGib\": ${ABORT_THRESHOLD_GIB:-40}, \"maxBatchGib\": ${MAX_BATCH_GIB:-30}, \"maxRawProfilerGibPerVariant\": ${MAX_RAW_PROFILER_GIB:-2}, \"smokeBudgetGib\": ${SMOKE_BUDGET_GIB:-2} }, \"rawProfilerRetained\": $([ "${RETAIN_RAW_PROFILER_DATA:-0}" = "1" ] && echo true || echo false) },"
+    echo "  \"storage\": { \"resultsRoot\": \"${RESULTS_ROOT}\", \"repositoryFilesystem\": ${REPOSITORY_FILESYSTEM_JSON:-null}, \"resultsFilesystem\": ${RESULTS_FS_STATS:-null}, \"sameFilesystemAsRepo\": ${SAME_FS_AS_REPO:-null}, \"thresholds\": { \"minAvailableBeforeBatchGib\": ${MIN_AVAILABLE_BEFORE_BATCH_GIB:-80}, \"abortThresholdGib\": ${ABORT_THRESHOLD_GIB:-40}, \"maxBatchGib\": ${MAX_BATCH_GIB:-30}, \"maxRawProfilerGibPerVariant\": ${MAX_RAW_PROFILER_GIB:-2}, \"smokeBudgetGib\": ${SMOKE_BUDGET_GIB:-2} }, \"rawProfilerRetained\": $([ "${RETAIN_RAW_PROFILER_DATA:-0}" = "1" ] && echo true || echo false) },"
     echo "  \"state\": \"${state}\""
     echo "}"
   } > "${BATCH_DIR}/batch-manifest.json"
@@ -512,15 +584,12 @@ fi
 
 # --- Sequential execution -------------------------------------------------------
 mkdir -p "$BATCH_DIR/host-environment" "$BATCH_DIR/failed-runs"
-# Provenance (section 9): if the results root and the repository sit on the
-# same filesystem, say so explicitly in the batch manifest.
-SAME_FS_AS_REPO="$(python3 -c "
-import os
-try:
-    print('true' if os.stat('${RESULTS_ROOT}').st_dev == os.stat('${REPO_ROOT}').st_dev else 'false')
-except OSError:
-    print('null')
-" 2>/dev/null || echo null)"
+# Provenance (section 9): SAME_FS_AS_REPO/REPOSITORY_FILESYSTEM_JSON were
+# already computed during the whole-batch storage preflight above (as a
+# JSON boolean/object via device-id comparison, never null once both
+# RESULTS_ROOT and REPO_ROOT resolve) — reused here rather than
+# recomputed, since write_batch_manifest must render the identical value
+# whether the batch aborts here or earlier.
 STABILITY_SAMPLES_FILE="${BATCH_DIR}/host-stability-samples.jsonl"
 : > "$STABILITY_SAMPLES_FILE"
 BATCH_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -587,8 +656,13 @@ for rep in $(seq 1 "$REPETITIONS"); do
     # bash 3.2 (macOS's default /bin/bash) treats "${arr[@]}" on an EMPTY
     # array as unbound under `set -u` — the ${arr[@]+...} guard is the
     # portable idiom (evaluates to nothing when the array has no elements).
+    # --storage-target "$RESULTS_ROOT" explicitly, even though $REP_DIR
+    # (this invocation's --out) already lives under RESULTS_ROOT and would
+    # resolve to the same filesystem by default — explicit is safer than
+    # relying on "happens to be a subdirectory of the same mount" and
+    # matches exactly what the live-preflight pass above already does.
     RUNNER_RC=0
-    "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --out "$REP_DIR" ${RETAIN_ARGS[@]+"${RETAIN_ARGS[@]}"} \
+    "$LAB_RUNNER" "$lab" --profile "$PROFILE" --cpus "$(lab_get "$lab" cpuset)" --out "$REP_DIR" --storage-target "$RESULTS_ROOT" ${RETAIN_ARGS[@]+"${RETAIN_ARGS[@]}"} \
         > "${REP_DIR}/${lab}.console.log" 2>&1 &
     CURRENT_LAB_PID=$!
     wait "$CURRENT_LAB_PID" || RUNNER_RC=$?

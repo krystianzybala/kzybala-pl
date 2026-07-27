@@ -166,7 +166,11 @@ validated against `lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE`:
 
 Other flags: `--profile publication-core|publication-sweep|full|development|smoke`,
 `--out <dir>` / `--results-root <dir>` (equivalent; also settable via
-`PERFORMANCE_LAB_RESULTS_ROOT`), `--preflight-only`, `--allow-virtualized`,
+`PERFORMANCE_LAB_RESULTS_ROOT`), `--storage-target <dir>` (also settable
+via `PLAB_STORAGE_TARGET` — the filesystem that must have capacity,
+decoupled from `--out`; defaults to `--out` when not given; see
+`docs/evidence-storage-retention.md#storage-target-vs-output-directory---storage-target`),
+`--preflight-only`, `--allow-virtualized`,
 `--dry-run` (prints every planned command, creates the metadata skeleton,
 executes no measurement), `--skip-load-check` (non-publication runs only),
 `--retain-raw-profiler-data` / `--retain-failed-raw` (see

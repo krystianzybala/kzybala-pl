@@ -191,13 +191,66 @@ checkout:
 
 - `--results-root <dir>` / `PERFORMANCE_LAB_RESULTS_ROOT` (both
   `run-linux-evidence.sh` and `run-all-benchmarks.sh`),
-- recorded in `environment.json` (`outputRoot`, `outputFilesystem`) and
-  the batch manifest (`storage.resultsRoot`, `storage.sameFilesystemAsRepo`),
+- recorded in `environment.json` (`outputRoot`, `storageBudgetTarget`,
+  `storage`) and the batch manifest (`storage.resultsRoot`,
+  `storage.resultsFilesystem`, `storage.repositoryFilesystem`,
+  `storage.sameFilesystemAsRepo`),
 - if the results root and the repository sit on the same filesystem, that
   is reported explicitly rather than silently assumed safe.
 
 `/tmp` is never assumed to be large enough — no default in this system
 points there.
+
+## Storage target vs. output directory (`--storage-target`)
+
+**`--out`** (`run-linux-evidence.sh`) is where *this invocation's*
+artifacts are written. **`--storage-target`** (also `PLAB_STORAGE_TARGET`)
+is the filesystem that must have *capacity* — a deliberately separate
+concept, because they are not always the same directory.
+
+This distinction exists because of a real incident
+(`docs/incidents/2026-07-20-storage-preflight-ephemeral-target-bug.md`):
+`run-all-benchmarks.sh`'s live per-lab preflight phase runs every lab's
+`--preflight-only` pass against a single, shared, throwaway `mktemp -d`
+scratch directory under the OS temp dir — deliberately never touching the
+real results tree for a dry pass. Before `--storage-target` existed, the
+runner's capacity check evaluated `--out` unconditionally, so it checked
+the *scratch directory's* filesystem instead of the real results root. On
+the 5810, `/tmp` is a separate, much smaller filesystem (25 GiB) than
+`/home` (295 GiB, where `results/` actually lives) — every lab was
+rejected with `failed-storage-preflight` even though the real target had
+ample space.
+
+The fix: `--storage-target` defaults to `--out` (preserving prior
+standalone behavior, where they were always the same directory), but
+`run-all-benchmarks.sh` always passes `--storage-target` explicitly — set
+to the resolved, validated results root — to every per-lab invocation, live
+preflight and real measurement alike. `validate_storage_target`
+(`lib/storage-lib.sh`) resolves and validates the target explicitly before
+any capacity check runs against it: non-empty, exists or has a creatable
+parent, writable (create+remove probe), and resolves to a real filesystem
+with valid (`>0`) byte counts. Validation failure is its own explicit
+rejection — never a silent fallback to a different directory.
+
+The batch orchestrator performs the full storage/capacity preflight
+(minimum available, filesystem identity, repository/results relationship)
+**once**, against the results root, before the per-lab live-preflight loop
+even starts; live preflight itself validates topology, tools, permissions,
+benchmark configuration and profiler support — it does not re-require the
+80 GiB minimum against an unrelated scratch filesystem, though it does
+re-check the (correctly-targeted) results filesystem defensively via the
+same mechanism.
+
+`sameFilesystemAsRepo` is resolved by comparing device ids (`os.stat`'s
+`st_dev`, never the human-readable device name, which can differ across
+bind mounts on the same filesystem) between the storage target and the
+repository root, and is a JSON boolean — `true` or `false` — never `null`,
+as long as both paths resolve. Storage-failure diagnostics are structured
+and untruncated: `run-status.json`'s `storageDiagnostics` object
+(`reasonCode`, `checkedPath`, `mountPoint`, `availableBytes`,
+`requiredBytes`, `message`) and the batch manifest's per-lab
+`preflightDiagnostics` field carry the full detail — never a string
+clipped to fit a summary line.
 
 ## Storage inventory
 
@@ -274,3 +327,5 @@ for a standalone `run-linux-evidence.sh` invocation outside a batch.
 - `docs/linux-evidence-runner.md` — the runner's full preflight/measurement contract.
 - `docs/benchmark-artifact-layout.md` — the (separate) local/dev `results/<lab>/<run-id>/` convention for `full`/`publication`-profile numbers hand-published into a lab page.
 - `docs/incidents/2026-07-17-spsc-jmh-hang.md` — the prior hard-timeout incident this system's exit-code conventions (3 = timeout, 4 = storage abort) were extended from.
+- `docs/incidents/2026-07-20-evidence-storage-exhaustion.md` — the incident that motivated this whole document.
+- `docs/incidents/2026-07-20-storage-preflight-ephemeral-target-bug.md` — the real-host follow-up incident (every lab blocked because live preflight checked an ephemeral scratch directory instead of the real results root) that motivated `--storage-target`.

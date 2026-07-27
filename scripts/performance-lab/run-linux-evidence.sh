@@ -17,7 +17,13 @@
 # — never publication-core|publication-sweep|full), --out <dir> /
 # --results-root <dir> (equivalent — where evidence is written; also
 # settable via the PERFORMANCE_LAB_RESULTS_ROOT environment variable),
-# --dry-run, --skip-load-check, --variant <name> (run ONE variant only —
+# --storage-target <dir> (also settable via PLAB_STORAGE_TARGET — the
+# filesystem that must have capacity, DECOUPLED from --out: a batch's live
+# per-lab preflight writes small diagnostic files to a throwaway --out
+# under /tmp while --storage-target still points at the real results root,
+# so a small /tmp never blocks a batch whose real target has capacity and
+# vice versa; defaults to --out when not given, preserving standalone
+# behavior), --dry-run, --skip-load-check, --variant <name> (run ONE variant only —
 # focused smoke/diagnosis; recorded as a focused run in the manifest,
 # never presented as the full variant matrix), --component all|rust-harness
 # (rust-harness runs ONLY the Rust persistent-worker harness — no Maven
@@ -103,6 +109,13 @@ SKIP_LOAD_CHECK=0
 SELECTED_VARIANT=""
 COMPONENT="all"
 OUT_ROOT="${PERFORMANCE_LAB_RESULTS_ROOT:-${REPO_ROOT}/results}"
+# STORAGE_TARGET starts empty (sentinel "unset") so we can tell, after
+# argument parsing, whether the caller gave us an explicit target (CLI
+# flag wins over the env var) or whether we must fall back to OUT_ROOT —
+# never inferring the storage target from a throwaway --out directory
+# without an explicit signal that OUT_ROOT and the storage target are
+# actually meant to be the same thing.
+STORAGE_TARGET="${PLAB_STORAGE_TARGET:-}"
 RETAIN_RAW_PROFILER_DATA=0
 RETAIN_FAILED_RAW=0
 
@@ -116,6 +129,7 @@ while [ $# -gt 0 ]; do
     --allow-virtualized) ALLOW_VIRTUALIZED=1; shift ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
     --out|--results-root) OUT_ROOT="$2"; shift 2 ;;
+    --storage-target) STORAGE_TARGET="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --skip-load-check) SKIP_LOAD_CHECK=1; shift ;;
     --retain-raw-profiler-data) RETAIN_RAW_PROFILER_DATA=1; shift ;;
@@ -123,6 +137,12 @@ while [ $# -gt 0 ]; do
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
+# Default: when no explicit --storage-target/PLAB_STORAGE_TARGET was
+# given, the storage target IS the output root (the pre-fix, still-correct
+# behavior for a standalone invocation where --out already points at the
+# real results tree). A batch orchestrator invocation always passes
+# --storage-target explicitly instead of relying on this fallback.
+STORAGE_TARGET="${STORAGE_TARGET:-$OUT_ROOT}"
 
 fail() { echo "run-linux-evidence: $*" >&2; exit 1; }
 
@@ -332,7 +352,7 @@ export EV_SELECTOR EV_FORKS EV_WI EV_W EV_I EV_R EV_PERF_EVENTS
 # resolves these from the host config's `storage:` section and exports
 # them before invoking this runner; a standalone invocation gets the
 # hardcoded defaults below, never an unbounded assumption).
-MIN_AVAILABLE_BYTES="$(storage_default_abort_threshold_bytes)"
+MIN_AVAILABLE_BYTES="$(storage_default_min_available_before_batch_bytes)"
 ABORT_THRESHOLD_BYTES="$(storage_default_abort_threshold_bytes)"
 MAX_RUN_BYTES="$(storage_default_max_batch_bytes)"
 MAX_RAW_PROFILER_BYTES_PER_VARIANT="$(storage_default_max_raw_profiler_bytes_per_variant)"
@@ -405,13 +425,20 @@ PYEOF
 
 # --- Run-status / rejection / timeout helpers (defined early: also used by
 # the filesystem preflight, below, not only by post-measurement paths) -------
+# write_run_status <status> [<rejection-reason>] [<storage-diagnostics-json>]
+# The third argument, when given, is a raw JSON object (from
+# storage_diagnostics_json, lib/storage-lib.sh) spliced in verbatim as
+# storageDiagnostics — structured, untruncated failure detail for storage-
+# classified rejections (docs/evidence-storage-retention.md section 6),
+# replacing the old pattern of clipping a human-readable string into JSON.
 write_run_status() {
   cat > "${RUN_DIR}/run-status.json" <<STATEOF
 {
   "runStatus": "$1",
   "publicationEligible": $([ "$1" = "collected" ] && echo "${PUBLICATION_ELIGIBLE:-false}" || echo "false"),
   "canonicalEvidenceEligible": $([ "$1" = "collected" ] && echo "true" || echo "false"),
-  "rejectionReason": $([ -n "${2:-}" ] && json_escape "$2" || printf 'null')
+  "rejectionReason": $([ -n "${2:-}" ] && json_escape "$2" || printf 'null'),
+  "storageDiagnostics": ${3:-null}
 }
 STATEOF
 }
@@ -453,18 +480,19 @@ mark_timeout() {
   exit 3
 }
 
-# mark_storage_abort <reason-code> <message> — section 5/6: a crossed
-# storage threshold is its own terminal state, never "benchmark
-# instability". Stops the current profiler/child, finalizes a partial
-# diagnostic manifest, removes temporary files, preserves bounded
-# diagnostics, and exits 4 (a distinct code so batch orchestration aborts
-# the whole batch exactly as it does for exit 3 timeouts).
+# mark_storage_abort <reason-code> <message> [<storage-diagnostics-json>]
+# — section 5/6: a crossed storage threshold is its own terminal state,
+# never "benchmark instability". Stops the current profiler/child,
+# finalizes a partial diagnostic manifest, removes temporary files,
+# preserves bounded diagnostics, and exits 4 (a distinct code so batch
+# orchestration aborts the whole batch exactly as it does for exit 3
+# timeouts).
 mark_storage_abort() {
-  local reason_code="$1" message="$2"
+  local reason_code="$1" message="$2" diag="${3:-null}"
   echo "run-linux-evidence: STORAGE ABORT (${reason_code}) — ${message}" >&2
   cleanup_children
   mkdir -p "$RUN_DIR" 2>/dev/null || true
-  write_run_status "$reason_code" "$message"
+  write_run_status "$reason_code" "$message" "$diag"
   cleanup_raw_profiler_files_in "$RUN_DIR" "$RETAIN_FAILED_RAW"
   find "$RUN_DIR" -name '*.tmp' -o -name '.perf-c2c-report-raw.txt' 2>/dev/null | xargs -r rm -f 2>/dev/null || true
   write_sha256sums "$RUN_DIR" >/dev/null 2>&1 || true
@@ -473,15 +501,20 @@ mark_storage_abort() {
 }
 
 # check_storage_or_abort <label> — section 6 checkpoint: fails the run
-# (mark_storage_abort) if the output filesystem is below the abort
-# threshold or this run has exceeded its total-bytes budget. Called before
-# every variant, after every profiler invocation, after every variant and
-# before archive generation.
+# (mark_storage_abort) if the STORAGE TARGET filesystem (never the
+# ephemeral --out a preflight-only invocation might be using) is below the
+# abort threshold or this run has exceeded its total-bytes budget. Called
+# before every variant, after every profiler invocation, after every
+# variant and before archive generation — during a real measurement this
+# continues to check the real results filesystem, exactly as it did
+# before, because STORAGE_TARGET defaults to OUT_ROOT (which IS the real
+# results filesystem for any real, non-preflight-only run).
 check_storage_or_abort() {
   local label="$1"
   [ "$DRY_RUN" = "1" ] && return 0
-  local fs_avail run_bytes raw_bytes within=1
-  fs_avail="$(fs_available_bytes "$OUT_ROOT")"
+  local fs_avail run_bytes raw_bytes within=1 mount_point
+  fs_avail="$(fs_available_bytes "$STORAGE_TARGET")"
+  mount_point="$(fs_stats_json "$STORAGE_TARGET" | python3 -c 'import json,sys; print(json.load(sys.stdin)["mountPoint"])' 2>/dev/null || echo "unavailable")"
   run_bytes="$(dir_size_bytes "$RUN_DIR")"
   raw_bytes=0
   [ -d "$RUN_DIR" ] && raw_bytes="$(python3 -c "
@@ -509,9 +542,11 @@ print(total)
   fi
   if [ "$within" = "0" ]; then
     if [ "$fs_avail" -lt "$ABORT_THRESHOLD_BYTES" ]; then
-      mark_storage_abort "failed-storage-budget" "filesystem available (${fs_avail} bytes) fell below the abort threshold (${ABORT_THRESHOLD_BYTES} bytes) at: ${label}"
+      mark_storage_abort "failed-storage-budget" "filesystem available (${fs_avail} bytes) fell below the abort threshold (${ABORT_THRESHOLD_BYTES} bytes) at: ${label}" \
+        "$(storage_diagnostics_json "failed-storage-budget" "$STORAGE_TARGET" "$mount_point" "$fs_avail" "$ABORT_THRESHOLD_BYTES" "filesystem available (${fs_avail} bytes) fell below the abort threshold (${ABORT_THRESHOLD_BYTES} bytes) at: ${label}")"
     else
-      mark_storage_abort "failed-storage-budget" "run exceeded its total-bytes budget (${run_bytes} > ${MAX_RUN_BYTES} bytes) at: ${label}"
+      mark_storage_abort "failed-storage-budget" "run exceeded its total-bytes budget (${run_bytes} > ${MAX_RUN_BYTES} bytes) at: ${label}" \
+        "$(storage_diagnostics_json "failed-storage-budget" "$RUN_DIR" "$mount_point" "$run_bytes" "$MAX_RUN_BYTES" "run exceeded its total-bytes budget (${run_bytes} > ${MAX_RUN_BYTES} bytes) at: ${label}")"
     fi
   fi
 }
@@ -654,35 +689,63 @@ fi
 mkdir -p "$RUN_DIR" 2>/dev/null || fail "cannot create output directory ${RUN_DIR}"
 [ -w "$RUN_DIR" ] || fail "output directory ${RUN_DIR} is not writable"
 
-# 7b. Filesystem preflight (section 5 — docs/evidence-storage-retention.md):
-# checked BEFORE any build/measurement starts. A physical host under real
-# load is exactly the scenario the 2026-07 incident happened on — refusing
-# to start a run when the disk is already nearly full is cheap; discovering
-# it mid-batch after hours of measurement is what filled it to zero.
-FS_STATS_JSON="$(fs_stats_json "$OUT_ROOT")"
+# 7b. Storage-target resolution (docs/evidence-storage-retention.md —
+# batch-storage-target-bug incident, 2026-07): $STORAGE_TARGET is the
+# filesystem that must have capacity, explicitly DECOUPLED from $OUT_ROOT
+# (where THIS invocation's own artifacts land). A batch's live per-lab
+# preflight writes small diagnostic files to a throwaway --out under /tmp
+# while always passing --storage-target pointing at the real results root
+# — a small /tmp must never block a batch whose real target has capacity,
+# and vice versa. Validated explicitly (exists-or-creatable, writable,
+# resolves to a real filesystem with valid byte counts) before any
+# capacity check runs against it; validation failure is its own explicit
+# rejection, never a silent fallback to a different directory.
+RESOLVED_STORAGE_TARGET="$(validate_storage_target "$STORAGE_TARGET")" \
+  || fail "invalid --storage-target '${STORAGE_TARGET}' — see the specific reason above"
+STORAGE_TARGET="$RESOLVED_STORAGE_TARGET"
+
+# 7c. Filesystem preflight (section 5): checked BEFORE any build/
+# measurement starts, against STORAGE_TARGET — never against the ephemeral
+# $OUT_ROOT a preflight-only invocation might be using. A physical host
+# under real load is exactly the scenario the 2026-07 incident happened
+# on — refusing to start a run when the disk is already nearly full is
+# cheap; discovering it mid-batch after hours of measurement is what
+# filled it to zero.
+FS_RELATIONSHIP_JSON="$(filesystem_relationship_json "$STORAGE_TARGET" "$REPO_ROOT")" \
+  || fail "cannot resolve the storage-target/repository filesystem relationship"
+STORAGE_TARGET_STATS="$(fs_stats_json "$STORAGE_TARGET")" \
+  || fail "cannot determine filesystem statistics for storage target '${STORAGE_TARGET}'"
+STORAGE_MOUNT_POINT="$(printf '%s' "$STORAGE_TARGET_STATS" | python3 -c 'import json,sys; print(json.load(sys.stdin)["mountPoint"])')"
 cat > "${RUN_DIR}/filesystem-preflight.json" <<FSEOF
-$(printf '%s' "$FS_STATS_JSON" | python3 -c "
+$(python3 - "$OUT_ROOT" "$STORAGE_TARGET" "$MIN_AVAILABLE_BYTES" "$STORAGE_TARGET_STATS" "$FS_RELATIONSHIP_JSON" <<'PYEOF'
 import json, sys
-stats = json.load(sys.stdin)
-stats['minimumRequiredBytes'] = ${MIN_AVAILABLE_BYTES}
-stats['withinBudget'] = stats['availableBytes'] >= ${MIN_AVAILABLE_BYTES}
-stats['repoRootDevice'] = None
-try:
-    import os
-    stats['sameFilesystemAsRepo'] = os.stat('${OUT_ROOT}').st_dev == os.stat('${REPO_ROOT}').st_dev
-except OSError:
-    stats['sameFilesystemAsRepo'] = None
-print(json.dumps(stats, indent=2))
-")
+out_root, storage_target, min_bytes, target_stats_raw, relationship_raw = sys.argv[1:6]
+target_stats = json.loads(target_stats_raw)
+relationship = json.loads(relationship_raw)
+min_bytes = int(min_bytes)
+target_stats["minimumRequiredBytes"] = min_bytes
+target_stats["withinBudget"] = target_stats["availableBytes"] >= min_bytes
+print(json.dumps({
+    "temporaryOutputDirectory": out_root,
+    "storageBudgetTarget": storage_target,
+    "resultsFilesystem": target_stats,
+    "repositoryFilesystem": relationship["pathB"],
+    "sameFilesystemAsRepo": relationship["same"],
+}, indent=2))
+PYEOF
+)
 FSEOF
-FS_WITHIN_BUDGET="$(python3 -c "import json; print(json.load(open('${RUN_DIR}/filesystem-preflight.json'))['withinBudget'])")"
+FS_WITHIN_BUDGET="$(python3 -c "import json; print(json.load(open('${RUN_DIR}/filesystem-preflight.json'))['resultsFilesystem']['withinBudget'])")"
 if [ "$FS_WITHIN_BUDGET" != "True" ] && [ "$DRY_RUN" != "1" ]; then
-  write_run_status "rejected" "failed-storage-preflight"
-  echo "run-linux-evidence: failed-storage-preflight — ${OUT_ROOT} has insufficient available space (see ${RUN_DIR}/filesystem-preflight.json, minimum required ${MIN_AVAILABLE_BYTES} bytes)" >&2
+  STORAGE_AVAIL="$(python3 -c "import json; print(json.load(open('${RUN_DIR}/filesystem-preflight.json'))['resultsFilesystem']['availableBytes'])")"
+  STORAGE_MSG="storage target ${STORAGE_TARGET} (mount ${STORAGE_MOUNT_POINT}) has ${STORAGE_AVAIL} bytes available, below the ${MIN_AVAILABLE_BYTES}-byte minimum required before starting a run"
+  STORAGE_DIAG="$(storage_diagnostics_json "failed-storage-preflight" "$STORAGE_TARGET" "$STORAGE_MOUNT_POINT" "$STORAGE_AVAIL" "$MIN_AVAILABLE_BYTES" "$STORAGE_MSG")"
+  write_run_status "rejected" "failed-storage-preflight" "$STORAGE_DIAG"
+  echo "run-linux-evidence: failed-storage-preflight — ${STORAGE_MSG} (see ${RUN_DIR}/filesystem-preflight.json)" >&2
   exit 1
 fi
-SAME_FS_AS_REPO="$(python3 -c "import json; v=json.load(open('${RUN_DIR}/filesystem-preflight.json')).get('sameFilesystemAsRepo'); print('true' if v else 'false')")"
-[ "$SAME_FS_AS_REPO" = "true" ] && echo "   NOTE: results root ${OUT_ROOT} is on the SAME filesystem as the repository — recorded in filesystem-preflight.json"
+SAME_FS_AS_REPO="$(python3 -c "import json; print('true' if json.load(open('${RUN_DIR}/filesystem-preflight.json'))['sameFilesystemAsRepo'] else 'false')")"
+[ "$SAME_FS_AS_REPO" = "true" ] && echo "   NOTE: storage target ${STORAGE_TARGET} is on the SAME filesystem as the repository — recorded in filesystem-preflight.json"
 
 # 8. Java/Maven toolchain present and actually runnable — `command -v`
 #    alone is fooled by broken shims (e.g. macOS's /usr/bin/java stub with
@@ -788,7 +851,8 @@ cat > "${RUN_DIR}/environment.json" <<ENVEOF
   "dirtyTree": ${GIT_DIRTY},
   "diffHash": ${GIT_DIFF_HASH},
   "outputRoot": $(json_escape "$OUT_ROOT"),
-  "outputFilesystem": $(cat "${RUN_DIR}/filesystem-preflight.json")
+  "storageBudgetTarget": $(json_escape "$STORAGE_TARGET"),
+  "storage": $(cat "${RUN_DIR}/filesystem-preflight.json")
 }
 ENVEOF
 
@@ -1193,6 +1257,7 @@ done; printf '\n')
   "componentSelection": "${COMPONENT}",
   "hardTimeoutSecondsPerInvocation": ${EV_TIMEOUT_SECONDS},
   "outputRoot": $(json_escape "$OUT_ROOT"),
+  "storageBudgetTarget": $(json_escape "$STORAGE_TARGET"),
   "canonical": { "pendingImport": true, "importer": "scripts/performance-lab/import-evidence.sh (adds canonical-jmh.json, canonical-perf-stat.json, comparison.json on the repository machine)" },
   "review": { "verifiedMaturityRequiresHumanReview": true, "importDoesNotPromote": true }
 }
