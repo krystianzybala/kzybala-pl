@@ -272,7 +272,12 @@ test("runner: missing Java fails at Java discovery, before the correctness gate"
   const stubs = gateStubs({ java: `echo "no java runtime" >&2; exit 127`, mvn: `exit 0` });
   const out = mkdtempSync(join(tmpdir(), "ev-out-"));
   try {
-    const r = runRunner(["--profile", "publication", "--cpus", "0,1"], stubs, out);
+    // profile=development (not publication-core): this test exercises
+    // java-discovery ordering, unrelated to publication-eligibility/
+    // dirty-tree gating — a real (non-preflight-only) publication-core
+    // invocation would abort on the repo's own working-tree state before
+    // ever reaching the java check.
+    const r = runRunner(["--profile", "development", "--cpus", "0,1"], stubs, out);
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /java is not installed/);
     assert.doesNotMatch(r.stderr, /correctness gate failed/);
@@ -286,7 +291,9 @@ test("runner: fails before measurement when the correctness gate fails (Java pre
   const stubs = gateStubs({ java: `exit 0`, mvn: `echo "simulated test failure" >&2; exit 1` });
   const out = mkdtempSync(join(tmpdir(), "ev-out-"));
   try {
-    const r = runRunner(["--profile", "publication", "--cpus", "0,1"], stubs, out);
+    // profile=development — see the previous test's comment: this exercises
+    // correctness-gate-failure ordering, not publication eligibility.
+    const r = runRunner(["--profile", "development", "--cpus", "0,1"], stubs, out);
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /correctness gate failed/);
     // and nothing was measured: no variant directories were created
@@ -460,14 +467,21 @@ test("runner: physical host (none/exit-1) passes preflight for the publication p
     const r = runRunner(["--profile", "publication", "--cpus", "0,1", "--preflight-only"], stubs, out);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Preflight passed\./);
+    // Eligibility now genuinely depends on this checkout's own
+    // tracked-source dirtiness (the provenance invariant this suite is
+    // otherwise built around) — this test runs against the real repo, not
+    // a fixture copy, so it must read that real state rather than assume
+    // a clean tree.
+    const trackedDirty = execSync("git status --porcelain", { cwd: ROOT, encoding: "utf8" })
+      .split("\n").some((l) => l && !l.startsWith("??"));
+    assert.match(r.stdout, trackedDirty ? /Publication profile eligible: no/ : /Publication profile eligible: yes/);
     assert.match(r.stdout, /Host type: physical/);
-    assert.match(r.stdout, /Publication profile eligible: yes/);
     assert.match(r.stdout, /Selected CPUs: 0,1/);
     assert.match(r.stdout, /Measurement was not started because --preflight-only was supplied\./);
     const runDir = execSync(`find '${out}/false-sharing' -mindepth 1 -maxdepth 1 -type d`, { encoding: "utf8" }).trim();
     const caps = JSON.parse(readFileSync(join(runDir, "capabilities.json"), "utf8"));
     assert.deepEqual(caps.virtualization, {
-      detected: false, vmType: null, containerType: null, environmentKind: "physical", publicationEligible: true,
+      detected: false, vmType: null, containerType: null, environmentKind: "physical", publicationEligible: !trackedDirty,
     });
   } finally {
     rmSync(stubs, { recursive: true, force: true });

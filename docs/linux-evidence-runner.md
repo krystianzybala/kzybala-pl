@@ -350,6 +350,42 @@ SHA-256 hashed; the manifest references source commit, dirty-tree state +
 diff hash, environment, correctness, profile, raw artifacts and (after
 import) canonical artifacts and the derived comparison.
 
+## Evidence-manifest component model
+
+Since the `batch-20260727T121031Z` false-verification-failure incident
+(`docs/incidents/2026-07-27-verify-evidence-unconditional-artifact-declaration.md`
+— 18 genuinely-good runs rejected because the manifest declared a fixed
+artifact path per component regardless of whether policy ever scheduled it),
+`evidence-manifest.json`'s `variants` object is never a static per-variant
+template. Every variant is `{"kind": "jmh"|"aux", "components": {...}}`, and
+every one of the six fixed component keys — `jmh`, `auxHarness`, `perfStat`,
+`perfC2c`, `rustHarness`, `workerPlacement` — is exactly one status:
+
+- **`completed`** — the component ran and its declared artifact(s) exist.
+  Validated against the real filesystem (`assert_completed_artifact`)
+  *before* the manifest is written; a missing artifact here aborts the run
+  as a manifest-generation defect, never silently ships a dangling path.
+- **`retained-summary-only`** — `perfC2c` only: the bounded text report and
+  retention metadata exist, the raw `perf-c2c.data` was deleted by the
+  default retention policy (see `docs/evidence-storage-retention.md`).
+- **`not-scheduled`** — the profiler policy for this variant/profile chose
+  not to run this component this time (e.g. `stat`-only policy skips
+  `perfC2c`; `smoke`/`publication-sweep` never run `perfC2c` at all).
+- **`not-applicable`** — this variant/lab can never have this component
+  (a lab with no Rust harness; `jmh` for an `aux`-kind variant; every
+  component but `rustHarness` under `--component rust-harness`).
+- **`failed`** / **`timed-out`** — the component was supposed to produce
+  evidence and didn't. Not acceptable evidence on its own; in normal live
+  execution a manifest with either status here is never finalized
+  (`mark_rejected`/`mark_timeout` exit first) — seeing one means a repair
+  tool's honest "still broken" finding, not a live-run outcome.
+
+`not-scheduled`/`not-applicable` declare zero required artifact paths;
+`completed`/`retained-summary-only` are the only ones `verify-evidence.sh`
+requires to exist on disk. `verify-evidence.sh` also independently
+re-checks the `dirtyTree=true && publicationEligible=true` provenance
+invariant rather than trusting the generator's own claim.
+
 ## After the run
 
 The runner prints and produces one archive, e.g.
@@ -360,7 +396,20 @@ The runner prints and produces one archive, e.g.
 ./scripts/performance-lab/import-evidence.sh false-sharing-<run-id>-linux-evidence.tar.zst
 ```
 
-`verify` checks every hash and manifest reference. `import` copies the run
+For a whole batch produced by `run-all-benchmarks.sh`, use
+`verify-benchmark-batch.sh --strict <archive>` before
+`import-benchmark-batch.sh` (which always runs `--strict` itself).
+`--integrity-only` checks only archive/hash/manifest structure — it can
+pass even for a batch every run of which was legitimately rejected, so it
+is never sufficient grounds to import. If a batch's manifests were written
+by a since-fixed buggy generator (this component model's own motivating
+incident), `reindex-evidence.sh --batch-dir <dir> --output-dir <new-dir>
+--dry-run` repairs manifests/hashes from real on-disk artifacts and the
+lab's real resolved policy, without rerunning any measurement and without
+fabricating a missing artifact.
+
+`verify` checks every hash and manifest reference according to each
+component's declared status. `import` copies the run
 into `results/false-sharing/<run-id>/` (immutable — an existing directory
 is never overwritten), runs the plab-003 importers (JMH + perf-counter) to
 produce schema-validated canonical records, and generates

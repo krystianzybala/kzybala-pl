@@ -13,7 +13,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ARCHIVE="${1:-}"
 [ -n "$ARCHIVE" ] && [ -f "$ARCHIVE" ] || { echo "usage: import-benchmark-batch.sh <performance-lab-<batch-id>.tar.zst|.tar.gz>" >&2; exit 2; }
 
-"${SCRIPT_DIR}/verify-benchmark-batch.sh" "$ARCHIVE"
+# --strict, never the bare/--integrity-only form: importing is exactly the
+# action evidence-acceptance gates (every requested repetition actually
+# collected, every per-lab evidence verification passing, no
+# verification-failed/rejected-or-failed runs, valid provenance
+# invariants) — archive integrity alone (extraction/hashes/manifest shape)
+# is not sufficient grounds to import a partial or rejected batch.
+"${SCRIPT_DIR}/verify-benchmark-batch.sh" --strict "$ARCHIVE"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

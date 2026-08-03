@@ -353,6 +353,40 @@ lab_append_run() { # <lab> <json-entry>
   local file="${STATE_DIR}/${1}.runs"
   if [ -s "$file" ]; then printf ', %s' "$2" >> "$file"; else printf '%s' "$2" > "$file"; fi
 }
+
+# classify_verification_failure <verify-log-file> — a bounded reasonCode
+# for a verification-failed run, so a batch manifest never records just
+# {"status": "verification-failed"} with no way to diagnose it without
+# re-running verify-evidence.sh by hand.
+classify_verification_failure() {
+  local log="$1"
+  [ -f "$log" ] || { echo "no-archive-produced"; return 0; }
+  if grep -q "HASH MISMATCH" "$log" 2>/dev/null; then echo "archive-hash-mismatch"
+  elif grep -q "provenance invariant violated" "$log" 2>/dev/null; then echo "provenance-invariant-violation"
+  elif grep -q "missing artifact" "$log" 2>/dev/null; then echo "manifest-references-missing-artifacts"
+  elif grep -q "unknown status" "$log" 2>/dev/null; then echo "manifest-unknown-component-status"
+  else echo "evidence-verification-failed"
+  fi
+}
+
+# missing_artifacts_json <verify-log-file> — bounded (50) JSON array of the
+# specific artifact paths verify-evidence.sh reported missing, extracted
+# from its "<context>: missing artifact <path>" problem lines.
+missing_artifacts_json() {
+  local log="$1"
+  [ -f "$log" ] || { echo '[]'; return 0; }
+  grep -o 'missing artifact [^ ]*' "$log" 2>/dev/null | sed 's/^missing artifact //' | python3 -c '
+import json, sys
+print(json.dumps(sys.stdin.read().splitlines()[:50]))
+' 2>/dev/null || echo '[]'
+}
+
+# json_string <value> — a small string-to-JSON-string-literal helper for
+# splicing free-text (rejection reasons, in particular) into hand-built
+# batch-manifest JSON without re-implementing an escaper inline each time.
+json_string() {
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1" 2>/dev/null || printf '"unavailable"'
+}
 ORDERED_LABS=""
 BLOCKED=0
 inspect_lab() {
@@ -422,8 +456,13 @@ fi
 # provenance still requires: committed source, clean tracked tree before
 # preflight, unchanged tracked tree after preflight, exact commit in the
 # manifest. Ignored build products never make the source dirty.
+# Tracked-source dirtiness ONLY (same rule run-linux-evidence.sh applies
+# per-run): `git status --porcelain` lines starting with "??" are
+# untracked (build output not yet .gitignore'd, or a genuinely ignored
+# path git chose not to list at all) — they must never contribute to
+# dirty-tree state or the before/after preflight comparison below.
 SOURCE_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-SOURCE_STATE_BEFORE="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)"
+SOURCE_STATE_BEFORE="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | grep -v '^??' | grep -v '^$' || true)"
 SOURCE_SUBMODULES="$(git -C "$REPO_ROOT" submodule status 2>/dev/null || true)"
 PUBLICATION_ELIGIBLE_BATCH="true"
 if [ "$DRY_RUN" != "1" ]; then
@@ -541,7 +580,7 @@ write_batch_manifest() { # <state>
 # failed-preflight-source-mutation with the exact paths, never as user
 # dirty-tree state.
 if [ "$DRY_RUN" != "1" ]; then
-  SOURCE_STATE_AFTER="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)"
+  SOURCE_STATE_AFTER="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | grep -v '^??' | grep -v '^$' || true)"
   if [ "$SOURCE_STATE_AFTER" != "$SOURCE_STATE_BEFORE" ]; then
     echo "run-all-benchmarks: failed-preflight-source-mutation — live preflight modified tracked/non-ignored files:" >&2
     diff <(printf '%s' "$SOURCE_STATE_BEFORE") <(printf '%s' "$SOURCE_STATE_AFTER") | grep '^[<>]' >&2 || true
@@ -669,11 +708,18 @@ for rep in $(seq 1 "$REPETITIONS"); do
     CURRENT_LAB_PID=""
     if [ "$RUNNER_RC" = "0" ]; then
       ARCHIVE="$(ls "${REP_DIR}/${lab}-"*"-linux-evidence.tar."* 2>/dev/null | head -1 || true)"
-      if [ -n "$ARCHIVE" ] && "$VERIFY_EVIDENCE" "$ARCHIVE" > "${REP_DIR}/${lab}.verify.log" 2>&1; then
+      VERIFY_LOG="${REP_DIR}/${lab}.verify.log"
+      if [ -n "$ARCHIVE" ] && "$VERIFY_EVIDENCE" "$ARCHIVE" > "$VERIFY_LOG" 2>&1; then
         HASH="$(shasum -a 256 "$ARCHIVE" 2>/dev/null || sha256sum "$ARCHIVE")"
         lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"collected\", \"archive\": \"${ARCHIVE#"$BATCH_DIR"/}\", \"sha256\": \"${HASH%% *}\", \"preHostState\": ${PRE_STATE}}"
       else
-        lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"verification-failed\"}"
+        [ -n "$ARCHIVE" ] || : > "$VERIFY_LOG"
+        # Structured diagnostics (never just {"status": "verification-
+        # failed"}): reasonCode classifies WHY verify-evidence.sh rejected
+        # this run, verificationLog points at its full output, and
+        # missingArtifacts lists the specific paths it flagged (bounded,
+        # never truncated to a single tail line).
+        lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"verification-failed\", \"reasonCode\": \"$(classify_verification_failure "$VERIFY_LOG")\", \"verificationLog\": \"run-${rep}/${lab}.verify.log\", \"missingArtifacts\": $(missing_artifacts_json "$VERIFY_LOG")}"
         BATCH_STATE="partial"
       fi
     elif [ "$RUNNER_RC" = "4" ]; then
@@ -702,7 +748,23 @@ for rep in $(seq 1 "$REPETITIONS"); do
       # Methodological failures are never silently retried (retry budget: 0).
       mkdir -p "${BATCH_DIR}/failed-runs/${lab}-run-${rep}"
       mv "${REP_DIR}/${lab}" "${BATCH_DIR}/failed-runs/${lab}-run-${rep}/" 2>/dev/null || true
-      lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"rejected-or-failed\", \"console\": \"run-${rep}/${lab}.console.log\"}"
+      # The exact reason (never just the status string): the runner's own
+      # run-status.json (moved into failed-runs alongside everything else
+      # it preserved) carries rejectionReason — read it back rather than
+      # re-deriving a summary from the console log's tail.
+      REJECTION_REASON="unspecified"
+      FAILED_RUN_STATUS="$(find "${BATCH_DIR}/failed-runs/${lab}-run-${rep}" -mindepth 2 -maxdepth 2 -name run-status.json 2>/dev/null | head -1)"
+      if [ -n "$FAILED_RUN_STATUS" ] && [ -f "$FAILED_RUN_STATUS" ]; then
+        REJECTION_REASON="$(python3 -c "
+import json
+try:
+    with open('${FAILED_RUN_STATUS}') as fh:
+        print(json.load(fh).get('rejectionReason') or 'unspecified')
+except (OSError, ValueError):
+    print('unspecified')
+" 2>/dev/null || echo unspecified)"
+      fi
+      lab_append_run "$lab" "{\"repetition\": ${rep}, \"status\": \"rejected-or-failed\", \"console\": \"run-${rep}/${lab}.console.log\", \"reason\": $(json_string "$REJECTION_REASON")}"
       BATCH_STATE="partial"
     fi
   done

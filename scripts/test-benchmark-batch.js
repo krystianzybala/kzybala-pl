@@ -14,6 +14,8 @@ import { join } from "node:path";
 const ROOT = join(import.meta.dirname, "..");
 const BATCH = join(ROOT, "scripts", "performance-lab", "run-all-benchmarks.sh");
 const VERIFY_BATCH = join(ROOT, "scripts", "performance-lab", "verify-benchmark-batch.sh");
+const REINDEX = join(ROOT, "scripts", "performance-lab", "reindex-evidence.sh");
+const VERIFY_EVIDENCE = join(ROOT, "scripts", "performance-lab", "verify-evidence.sh");
 const LIB = join(ROOT, "scripts", "performance-lab", "lib", "evidence-lib.sh");
 
 // --- fixture builders --------------------------------------------------------
@@ -414,14 +416,246 @@ function makeMiniBatch(stateOverride = "complete") {
   return { base, batchDir, batchArchive };
 }
 
-function runVerifyBatch(archive) {
+function runVerifyBatch(archive, flags = []) {
   try {
-    const stdout = execFileSync("bash", [VERIFY_BATCH, archive], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const stdout = execFileSync("bash", [VERIFY_BATCH, ...flags, archive], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     return { status: 0, stdout, stderr: "" };
   } catch (err) {
     return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
   }
 }
+
+function runVerifyBatchStrict(archive) {
+  return runVerifyBatch(archive, ["--strict"]);
+}
+
+// makeStructurallySoundPartialBatch: no collected archives at all — every
+// requested repetition failed acceptance, but the batch package itself
+// (manifest structure, hashes, containment) is perfectly intact. This is
+// the exact shape of the real batch-20260727T121031Z partial batch: an
+// archive that is fully trustworthy as a PACKAGE while carrying zero
+// accepted evidence.
+function makeStructurallySoundPartialBatch() {
+  const base = mkdtempSync(join(tmpdir(), "plab-vbatch-partial-"));
+  const batchId = "batch-partial-test";
+  const batchDir = join(base, batchId);
+  mkdirSync(join(batchDir, "run-1"), { recursive: true });
+  writeFileSync(join(batchDir, "batch-manifest.json"), JSON.stringify({
+    batchId, hostName: "test", profile: "publication-core", repetitions: 1,
+    sourceCommit: "abc", dirtyTree: false, publicationEligible: false, startedAt: "x", completedAt: "y",
+    executionOrder: ["lab-a"],
+    labs: {
+      "lab-a": {
+        cpus: "0,1", preflight: "READY",
+        runs: [{
+          repetition: 1, status: "verification-failed",
+          reasonCode: "manifest-references-missing-artifacts",
+          verificationLog: "run-1/lab-a.verify.log",
+          missingArtifacts: ["singleWriter/perf-c2c-report.txt"],
+        }],
+      },
+    },
+    state: "partial",
+  }, null, 2));
+  execFileSync("bash", ["-c", `source '${LIB}'; write_sha256sums '${batchDir}'`]);
+  const batchArchive = join(batchDir, `performance-lab-${batchId}.tar.gz`);
+  execSync(`tar -czf '${batchArchive}' -C '${base}' '${batchId}'`);
+  return { base, batchDir, batchArchive };
+}
+
+test("verify-batch: --integrity-only passes for a structurally sound partial batch (test 14)", () => {
+  const { base, batchArchive } = makeStructurallySoundPartialBatch();
+  try {
+    const r = runVerifyBatch(batchArchive, ["--integrity-only"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.match(r.stdout, /archive integrity verified/);
+    assert.doesNotMatch(r.stdout, /^OK: batch verified\.$/m, "never a bare unqualified OK");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("verify-batch: --strict fails for the same partial batch (test 15)", () => {
+  const { base, batchArchive } = makeStructurallySoundPartialBatch();
+  try {
+    const r = runVerifyBatchStrict(batchArchive);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout + r.stderr, /evidence acceptance/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("verify-batch: --strict fails on a verification-failed run, with its reasonCode surfaced (test 16)", () => {
+  const { base, batchArchive } = makeStructurallySoundPartialBatch();
+  try {
+    const r = runVerifyBatchStrict(batchArchive);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout + r.stderr, /verification-failed/);
+    assert.match(r.stdout + r.stderr, /manifest-references-missing-artifacts/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("verify-batch: --strict fails on a rejected-or-failed run, with its reason surfaced (test 17)", () => {
+  const base = mkdtempSync(join(tmpdir(), "plab-vbatch-rejected-"));
+  const batchId = "batch-rejected-test";
+  const batchDir = join(base, batchId);
+  mkdirSync(join(batchDir, "run-1"), { recursive: true });
+  writeFileSync(join(batchDir, "batch-manifest.json"), JSON.stringify({
+    batchId, hostName: "test", profile: "publication-core", repetitions: 1,
+    sourceCommit: "abc", dirtyTree: false, publicationEligible: false, startedAt: "x", completedAt: "y",
+    executionOrder: ["lab-a"],
+    labs: {
+      "lab-a": {
+        cpus: "0,1", preflight: "READY",
+        runs: [{ repetition: 1, status: "rejected-or-failed", console: "run-1/lab-a.console.log", reason: "worker-placement-or-migration-policy" }],
+      },
+    },
+    state: "partial",
+  }, null, 2));
+  execFileSync("bash", ["-c", `source '${LIB}'; write_sha256sums '${batchDir}'`]);
+  const batchArchive = join(batchDir, `performance-lab-${batchId}.tar.gz`);
+  execSync(`tar -czf '${batchArchive}' -C '${base}' '${batchId}'`);
+  try {
+    const r = runVerifyBatchStrict(batchArchive);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout + r.stderr, /rejected-or-failed/);
+    assert.match(r.stdout + r.stderr, /worker-placement-or-migration-policy/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("verify-batch: never prints a bare unqualified OK — wording distinguishes integrity from evidence acceptance", () => {
+  const { base, batchArchive } = makeMiniBatch();
+  try {
+    const integrityOnly = runVerifyBatch(batchArchive, ["--integrity-only"]);
+    assert.equal(integrityOnly.status, 0, integrityOnly.stderr);
+    assert.match(integrityOnly.stdout, /archive integrity verified/);
+    assert.doesNotMatch(integrityOnly.stdout, /^OK: batch verified\.$/m);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// --- reindex-evidence.sh: repair without re-measurement (tests 18/19) -------
+// reindex-evidence.sh sources the REAL scripts/performance-lab/labs/*.conf
+// files (never PLAB_LABS_DIR-redirectable), so these fixtures use the real
+// "false-sharing" lab id for its policy resolution (LAB_PROFILER_POLICY,
+// lab_variant_kind, LAB_RUST_DIR) — never a live measurement.
+
+function makeReindexFixtureBatch({ completeVariant }) {
+  const originalBase = mkdtempSync(join(tmpdir(), "plab-reindex-orig-"));
+  const batchDir = join(originalBase, "batch-reindex-fixture");
+  const runDir = join(batchDir, "run-1", "false-sharing", "linux-r1");
+  mkdirSync(join(runDir, "shared"), { recursive: true });
+  for (const f of ["environment.json", "topology.txt", "capabilities.json", "toolchain.json", "benchmark-profile.json", "correctness.json"]) {
+    writeFileSync(join(runDir, f), "{}");
+  }
+  writeFileSync(join(runDir, "shared", "jmh.json"), JSON.stringify({ result: "ok" }));
+  writeFileSync(join(runDir, "shared", "jmh-placement.csv"), "x");
+  writeFileSync(join(runDir, "shared", "placement-policy.json"), "{}");
+  if (completeVariant) {
+    // false-sharing's "shared" variant, under publication-core, resolves
+    // RUN_STAT=1 and RUN_C2C=1 (both variants are its c2c-representative
+    // set) — genuinely completing both makes the run collectible without
+    // ever rerunning a measurement.
+    writeFileSync(join(runDir, "shared", "perf-stat.csv"), "cycles,,1000");
+    writeFileSync(join(runDir, "shared", "perf-stat-jmh.json"), "{}");
+    writeFileSync(join(runDir, "shared", "perf-c2c-report.txt"), "# summary\n");
+    writeFileSync(join(runDir, "shared", "raw-profiler-retention.json"), JSON.stringify({
+      rawProfilerFile: "perf-c2c.data", summaryReport: "perf-c2c-report.txt",
+      rawProfilerOriginalBytes: 123, rawProfilerSha256: "b".repeat(64), rawProfilerRetained: false,
+    }));
+  }
+  writeFileSync(join(runDir, "evidence-manifest.json"), JSON.stringify({
+    manifestVersion: 1, labId: "false-sharing", runId: "linux-r1", profile: "publication-core",
+    componentSelection: "all", sourceCommit: "abc123", dirtyTree: false, diffHash: null, publicationEligible: true,
+    environment: "environment.json", topology: "topology.txt", capabilities: "capabilities.json",
+    toolchain: "toolchain.json", benchmarkProfile: "benchmark-profile.json", correctness: "correctness.json",
+    variants: {},
+  }, null, 2));
+  execFileSync("bash", ["-c", `source '${LIB}'; write_sha256sums '${runDir}'`]);
+  const innerArchive = join(batchDir, "run-1", "false-sharing-linux-r1-linux-evidence.tar.gz");
+  execSync(`tar -czf '${innerArchive}' -C '${join(batchDir, "run-1", "false-sharing")}' 'linux-r1'`);
+  writeFileSync(join(batchDir, "batch-manifest.json"), JSON.stringify({
+    batchId: "batch-reindex-fixture", hostName: "test", profile: "publication-core", repetitions: 1,
+    sourceCommit: "abc123", dirtyTree: false, publicationEligible: true,
+    executionOrder: ["false-sharing"],
+    labs: {
+      "false-sharing": {
+        cpus: "0,1", preflight: "READY",
+        runs: [{ repetition: 1, status: "verification-failed", reasonCode: "manifest-references-missing-artifacts", verificationLog: "run-1/false-sharing.verify.log", missingArtifacts: [] }],
+      },
+    },
+    state: "partial",
+  }, null, 2));
+  execFileSync("bash", ["-c", `source '${LIB}'; write_sha256sums '${batchDir}'`]);
+  return { originalBase, batchDir, runDir };
+}
+
+function snapshotTree(dir) {
+  const out = execSync(`find '${dir}' -type f -print0 | xargs -0 shasum -a 256 2>/dev/null | sed "s|${dir}||" | sort`, { encoding: "utf8" });
+  return out;
+}
+
+test("reindex-evidence: never modifies the original batch directory (test 18)", () => {
+  const { originalBase, batchDir } = makeReindexFixtureBatch({ completeVariant: false });
+  const outputDir = join(originalBase, "..", `plab-reindex-out-${Date.now()}`);
+  try {
+    const before = snapshotTree(batchDir);
+    const r = execFileSync("bash", [REINDEX, "--batch-dir", batchDir, "--output-dir", outputDir], { encoding: "utf8" });
+    assert.match(r, /measurements were NOT rerun/i);
+    const after = snapshotTree(batchDir);
+    assert.equal(after, before, "the original batch directory's file contents/hashes must be byte-identical after a repair run");
+  } finally {
+    rmSync(originalBase, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("reindex-evidence: never fabricates a missing artifact — a genuinely incomplete variant stays failed, not collected (test 19a)", () => {
+  const { originalBase, batchDir } = makeReindexFixtureBatch({ completeVariant: false });
+  const outputDir = join(originalBase, "..", `plab-reindex-out-${Date.now()}`);
+  try {
+    execFileSync("bash", [REINDEX, "--batch-dir", batchDir, "--output-dir", outputDir], { encoding: "utf8" });
+    const manifest = JSON.parse(readFileSync(join(outputDir, "run-1", "false-sharing", "linux-r1", "evidence-manifest.json"), "utf8"));
+    assert.equal(manifest.variants.shared.components.perfStat.status, "failed");
+    assert.match(manifest.variants.shared.components.perfStat.reason, /genuinely missing/);
+    const batchManifest = JSON.parse(readFileSync(join(outputDir, "batch-manifest.json"), "utf8"));
+    assert.equal(batchManifest.labs["false-sharing"].runs[0].status, "verification-failed", "never upgraded when the regenerated manifest still fails verification");
+    assert.equal(batchManifest.measurementsRerun, false);
+  } finally {
+    rmSync(originalBase, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("reindex-evidence: a genuinely complete variant is derived from real artifacts and the run is reclassified collected (test 19b)", () => {
+  const { originalBase, batchDir } = makeReindexFixtureBatch({ completeVariant: true });
+  const outputDir = join(originalBase, "..", `plab-reindex-out-${Date.now()}`);
+  try {
+    execFileSync("bash", [REINDEX, "--batch-dir", batchDir, "--output-dir", outputDir], { encoding: "utf8" });
+    const manifest = JSON.parse(readFileSync(join(outputDir, "run-1", "false-sharing", "linux-r1", "evidence-manifest.json"), "utf8"));
+    assert.equal(manifest.variants.shared.components.perfStat.status, "completed");
+    assert.equal(manifest.variants.shared.components.rustHarness.status, "not-applicable", "false-sharing has no Rust harness");
+    const archive = join(outputDir, "run-1", "false-sharing-linux-r1-linux-evidence.tar.gz");
+    const verify = (() => {
+      try { return { status: 0, out: execFileSync("bash", [VERIFY_EVIDENCE, archive], { encoding: "utf8" }) }; }
+      catch (err) { return { status: err.status ?? 1, out: (err.stdout ?? "") + (err.stderr ?? "") }; }
+    })();
+    assert.equal(verify.status, 0, verify.out);
+    const batchManifest = JSON.parse(readFileSync(join(outputDir, "batch-manifest.json"), "utf8"));
+    assert.equal(batchManifest.labs["false-sharing"].runs[0].status, "collected", "reclassified only because it now genuinely, independently re-verifies");
+    assert.equal(batchManifest.measurementsRerun, false);
+    assert.equal(batchManifest.derivedFrom, "batch-reindex-fixture");
+  } finally {
+    rmSync(originalBase, { recursive: true, force: true });
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
 
 test("verify-batch: an intact mini batch passes", () => {
   const { base, batchArchive } = makeMiniBatch();
@@ -475,9 +709,12 @@ test("verify-batch: rejected runs are never counted toward the repetition requir
     writeFileSync(join(batchDir, "batch-manifest.json"), JSON.stringify(manifest, null, 2));
     execFileSync("bash", ["-c", `source '${LIB}'; write_sha256sums '${batchDir}'`]);
     execSync(`tar -czf '${batchArchive}' -C '${base}' 'batch-test'`);
-    const r = runVerifyBatch(batchArchive);
+    // Repetition-acceptance counting is an evidence-acceptance question,
+    // only evaluated under --strict (integrity-only never inspects run
+    // statuses beyond "does the collected archive's hash match").
+    const r = runVerifyBatchStrict(batchArchive);
     assert.notEqual(r.status, 0);
-    assert.match(r.stdout + r.stderr, /only 1\/2 collected repetitions/);
+    assert.match(r.stdout + r.stderr, /only 1\/2.*repetitions were accepted/);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
@@ -662,8 +899,14 @@ exit 0
     const pub = runBatch(env, [...BASE_ARGS, "--host-config", env.host]);
     assert.notEqual(pub.status, 0);
     assert.match(pub.stderr, /dirty working tree/);
+    // Tracked mutation: blocks publication and is named explicitly.
     assert.match(pub.stderr, /content\/labs\/false-sharing\/theory\.md/);
-    assert.match(pub.stderr, /scratch\.txt/);
+    // Untracked (build output/result artifact never covered by
+    // .gitignore, or genuinely ignored): never contributes to dirty-tree
+    // state and is never named as a blocking path (provenance invariant —
+    // "do not compute dirty state from ignored result or build
+    // directories").
+    assert.doesNotMatch(pub.stderr, /scratch\.txt/);
     assert.equal(readLog(env).filter((l) => l.includes("MEASURE-START")).length, 0);
 
     const smoke = runBatch(env, ["--profile", "smoke", "--repetitions", "1", "--diagnostic", "--host-config", env.host]);

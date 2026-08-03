@@ -7,7 +7,7 @@
 // a "disk is full" or "artifact too big" path.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import {
   chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync,
 } from "node:fs";
@@ -16,8 +16,10 @@ import { join, relative } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..");
 const STORAGE_LIB = join(ROOT, "scripts", "performance-lab", "lib", "storage-lib.sh");
+const EVIDENCE_LIB = join(ROOT, "scripts", "performance-lab", "lib", "evidence-lib.sh");
 const RUNNER = join(ROOT, "scripts", "performance-lab", "run-linux-evidence.sh");
 const BATCH = join(ROOT, "scripts", "performance-lab", "run-all-benchmarks.sh");
+const VERIFY_EVIDENCE = join(ROOT, "scripts", "performance-lab", "verify-evidence.sh");
 const AUDIT = join(ROOT, "scripts", "performance-lab", "audit-evidence-storage.sh");
 const CLEANUP = join(ROOT, "scripts", "performance-lab", "cleanup-evidence.sh");
 const FIXTURES = join(ROOT, "scripts", "performance-lab", "__fixtures__");
@@ -450,8 +452,15 @@ function runFull(labSpec, args, env, out, c2cReportFile) {
   fixLabJavaDir(labSpec.labsDir, labSpec.labId, labSpec.javaDir);
   const stubs = fullStubDir({ c2cReportFile: c2cReportFile ?? join(labSpec.javaDir, "empty-report.txt") });
   if (!existsSync(join(labSpec.javaDir, "empty-report.txt"))) writeFileSync(join(labSpec.javaDir, "empty-report.txt"), "# empty c2c report\nTotal records: 0\n");
+  // Default to profile=development unless the caller names one explicitly.
+  // This is a real (non-dry-run) measurement invocation against the real
+  // repo checkout (cwd=ROOT): publication-core/sweep/full now hard-abort
+  // on a dirty tracked source tree before measurement (the provenance
+  // invariant these fixtures have nothing to do with), and this repo is
+  // routinely dirty while its own tests are being developed/run.
+  const finalArgs = args.includes("--profile") ? args : ["--profile", "development", ...args];
   try {
-    const stdout = execFileSync("bash", [RUNNER, labSpec.labId, "--cpus", "0,1", "--skip-load-check", "--out", out, ...args], {
+    const stdout = execFileSync("bash", [RUNNER, labSpec.labId, "--cpus", "0,1", "--skip-load-check", "--out", out, ...finalArgs], {
       env: { ...process.env, PATH: `${stubs}:/usr/bin:/bin`, PLAB_LABS_DIR: labSpec.labsDir, ...env },
       encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
     });
@@ -1295,5 +1304,301 @@ tar -czf "$out/\${lab}-linux-fake1-linux-evidence.tar.gz" -C "$out" "\${lab}"
     assert.equal(existsSync(join(env.base, "invoke.log")), false, "the per-lab runner must never be invoked at all — neither preflight nor real measurement");
   } finally {
     rmSync(env.base, { recursive: true, force: true });
+  }
+});
+
+// =============================================================================
+// Evidence-manifest component model (2026-07-27 manifest-generation defect —
+// batch-20260727T121031Z, 18 verification-failed runs): a variant is a
+// parameter combination; JMH, an aux harness, perf stat, perf c2c, the Rust
+// harness and worker-placement evidence are COMPONENTS of that variant, each
+// one of exactly six states, never a static path placeholder for a
+// component that was never scheduled or does not apply.
+// =============================================================================
+
+test("component model: a stat-only variant declares perfC2c not-scheduled with no artifact paths", () => {
+  const lab = makeSyntheticLab("stat", ["v1"], null);
+  const out = tmp("plab-full-out-");
+  try {
+    const r = runFull(lab, [], {}, out);
+    assert.equal(r.status, 0, r.stderr);
+    const runDir = findRunDir(out, lab.labId);
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    const c2c = manifest.variants.v1.components.perfC2c;
+    assert.equal(c2c.status, "not-scheduled");
+    assert.equal("report" in c2c, false, "not-scheduled must declare zero required artifact paths");
+    assert.equal("retentionMetadata" in c2c, false);
+    assert.equal(existsSync(join(runDir, "v1", "perf-c2c-report.txt")), false);
+  } finally {
+    rmAll(lab.labsDir, lab.javaDir, out);
+  }
+});
+
+test("component model: a c2c-policy variant is retained-summary-only and verify-evidence.sh accepts it without the raw perf-c2c.data", () => {
+  const lab = makeSyntheticLab("c2c", ["v1"], null);
+  const reportFile = join(lab.javaDir, "report.txt");
+  writeFileSync(reportFile, "Total records processed: 10\nShared Data Cache Line Table\nHITM local 1 remote 0\n");
+  const out = tmp("plab-full-out-");
+  try {
+    const r = runFull(lab, [], {}, out, reportFile);
+    assert.equal(r.status, 0, r.stderr);
+    const runDir = findRunDir(out, lab.labId);
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    const c2c = manifest.variants.v1.components.perfC2c;
+    assert.equal(c2c.status, "retained-summary-only");
+    assert.equal(c2c.rawProfiler.retained, false);
+    assert.equal(c2c.rawProfiler.sha256BeforeDeletion.length, 64);
+    assert.equal(existsSync(join(runDir, "v1", "perf-c2c.data")), false);
+    const archive = execFileSync("bash", ["-c", `ls '${out}'/${lab.labId}-*-linux-evidence.tar.* 2>/dev/null | head -1`], { encoding: "utf8" }).trim();
+    const verify = (() => {
+      try { return { status: 0, out: execFileSync("bash", [VERIFY_EVIDENCE, archive], { encoding: "utf8" }) }; }
+      catch (err) { return { status: err.status ?? 1, out: (err.stdout ?? "") + (err.stderr ?? "") }; }
+    })();
+    assert.equal(verify.status, 0, verify.out);
+  } finally {
+    rmAll(lab.labsDir, lab.javaDir, out);
+  }
+});
+
+test("component model: a lab with no Rust harness declares rustHarness not-applicable, never rustEvidence", () => {
+  const lab = makeSyntheticLab("stat", ["v1"], null);
+  const out = tmp("plab-full-out-");
+  try {
+    const r = runFull(lab, [], {}, out);
+    assert.equal(r.status, 0, r.stderr);
+    const runDir = findRunDir(out, lab.labId);
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    const rust = manifest.variants.v1.components.rustHarness;
+    assert.equal(rust.status, "not-applicable");
+    assert.equal("artifacts" in rust, false);
+    assert.equal(existsSync(join(runDir, "v1", "rust-evidence.json")), false);
+  } finally {
+    rmAll(lab.labsDir, lab.javaDir, out);
+  }
+});
+
+// A lab that DOES have a Rust harness in general, but whose evidence
+// command is only defined for one of its two variants (mirrors SPSC's
+// harness-* variants, which deliberately never get a Rust run).
+function makeSyntheticLabWithPartialRust() {
+  const labsDir = tmp("plab-synth-labs-");
+  const javaDir = tmp("plab-synth-java-");
+  const rustDir = tmp("plab-synth-rust-");
+  const labId = "storage-synthetic-rust-lab";
+  const conf = `#!/usr/bin/env bash
+LAB_BENCHMARK_READY=1
+LAB_CPUS_EXACT=2
+LAB_MIN_CPUS=2
+LAB_JAVA_DIR_ABS="${javaDir}"
+LAB_JAVA_DIR="\${LAB_JAVA_DIR_ABS#\${REPO_ROOT}/}"
+LAB_RUST_DIR_ABS="${rustDir}"
+LAB_RUST_DIR="\${LAB_RUST_DIR_ABS#\${REPO_ROOT}/}"
+EV_SELECTOR="fake.Selector"
+LAB_C2C_REQUIRED=0
+LAB_PROFILER_POLICY="stat"
+lab_variants() { echo "supported unsupported"; }
+lab_jmh_args() { echo ""; }
+lab_threads() { echo 1; }
+lab_cpu_count() { echo 1; }
+lab_worker_props() { echo ""; }
+lab_rust_evidence_cmd() { case "\$1" in supported) echo "echo fake-rust-run" ;; *) echo "" ;; esac; }
+`;
+  writeFileSync(join(labsDir, `${labId}.conf`), conf);
+  return { labsDir, javaDir, rustDir, labId };
+}
+
+test("component model: a variant unsupported by the lab's own Rust harness is not-applicable (never not-scheduled)", () => {
+  const lab = makeSyntheticLabWithPartialRust();
+  const out = tmp("plab-full-out-");
+  try {
+    const rel = relative(ROOT, lab.rustDir);
+    let conf = readFileSync(join(lab.labsDir, `${lab.labId}.conf`), "utf8");
+    conf = conf.replace(/LAB_RUST_DIR_ABS=.*\n/, "").replace(/LAB_RUST_DIR=.*\n/, `LAB_RUST_DIR="${rel}"\n`);
+    writeFileSync(join(lab.labsDir, `${lab.labId}.conf`), conf);
+    const r = runFull(lab, [], {}, out);
+    assert.equal(r.status, 0, r.stderr);
+    const runDir = findRunDir(out, lab.labId);
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    assert.equal(manifest.variants.unsupported.components.rustHarness.status, "not-applicable");
+    assert.equal("artifacts" in manifest.variants.unsupported.components.rustHarness, false);
+    // the supported variant still gets a real completed Rust component —
+    // "no rust for this lab" and "no rust for this variant" are genuinely
+    // distinct, never collapsed into the same reason.
+    assert.equal(manifest.variants.supported.components.rustHarness.status, "completed");
+  } finally {
+    rmAll(lab.labsDir, lab.javaDir, lab.rustDir, out);
+  }
+});
+
+test("component model: component names and variant names remain distinct — six fixed component keys regardless of variant naming", () => {
+  const lab = makeSyntheticLab("stat", ["harness-v1", "v2"], null);
+  const out = tmp("plab-full-out-");
+  try {
+    const r = runFull(lab, [], {}, out);
+    assert.equal(r.status, 0, r.stderr);
+    const runDir = findRunDir(out, lab.labId);
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    assert.deepEqual(Object.keys(manifest.variants).sort(), ["harness-v1", "v2"].sort());
+    for (const v of Object.keys(manifest.variants)) {
+      assert.deepEqual(
+        Object.keys(manifest.variants[v].components).sort(),
+        ["auxHarness", "jmh", "perfC2c", "perfStat", "rustHarness", "workerPlacement"].sort(),
+        `variant ${v} must use the fixed component-name set, never a synthetic "harness-<variant>" entry`,
+      );
+    }
+    // No synthetic top-level "harness-<variant>" manifest entries — variant
+    // names are exactly what lab_variants() returned, nothing derived.
+    assert.equal(Object.keys(manifest.variants).some((v) => v.startsWith("harness-harness-")), false);
+  } finally {
+    rmAll(lab.labsDir, lab.javaDir, out);
+  }
+});
+
+test("component model: every artifact path a finalized manifest declares for a completed/retained component actually exists on disk", () => {
+  const lab = makeSyntheticLab("c2c", ["v1"], null);
+  const reportFile = join(lab.javaDir, "report.txt");
+  writeFileSync(reportFile, "Total records processed: 10\n");
+  const out = tmp("plab-full-out-");
+  try {
+    const r = runFull(lab, [], {}, out, reportFile);
+    assert.equal(r.status, 0, r.stderr);
+    const runDir = findRunDir(out, lab.labId);
+    const manifest = JSON.parse(readFileSync(join(runDir, "evidence-manifest.json"), "utf8"));
+    const missing = [];
+    const checkPath = (p) => { if (typeof p === "string" && !existsSync(join(runDir, p))) missing.push(p); };
+    for (const variant of Object.values(manifest.variants)) {
+      for (const comp of Object.values(variant.components)) {
+        if (comp.status !== "completed" && comp.status !== "retained-summary-only") continue;
+        if (comp.report) checkPath(comp.report);
+        if (comp.retentionMetadata) checkPath(comp.retentionMetadata);
+        for (const v of Object.values(comp.artifacts ?? {})) {
+          if (Array.isArray(v)) v.forEach(checkPath); else checkPath(v);
+        }
+        if (comp.perWorkerArtifact) checkPath(comp.perWorkerArtifact);
+      }
+    }
+    assert.deepEqual(missing, [], "a finalized manifest must never point at a nonexistent artifact");
+  } finally {
+    rmAll(lab.labsDir, lab.javaDir, out);
+  }
+});
+
+// --- verify-evidence.sh: component-status-aware rejection (fixture archives,
+// no live measurement) -------------------------------------------------------
+
+function makeManifestFixture(variantsObj) {
+  const base = tmp("plab-verify-fixture-");
+  const dir = join(base, "linux-fixture");
+  mkdirSync(dir, { recursive: true });
+  for (const f of ["environment.json", "topology.txt", "capabilities.json", "toolchain.json", "benchmark-profile.json", "correctness.json"]) {
+    writeFileSync(join(dir, f), "{}");
+  }
+  writeFileSync(join(dir, "evidence-manifest.json"), JSON.stringify({
+    labId: "fixture-lab", runId: "linux-fixture", sourceCommit: "abc123def456", dirtyTree: false, publicationEligible: true, scenario: "same-socket",
+    environment: "environment.json", topology: "topology.txt", capabilities: "capabilities.json",
+    toolchain: "toolchain.json", benchmarkProfile: "benchmark-profile.json", correctness: "correctness.json",
+    variants: variantsObj,
+  }));
+  execFileSync("bash", ["-c", `source '${EVIDENCE_LIB}'; write_sha256sums '${dir}'`]);
+  const archive = join(base, "fixture-lab-linux-fixture-linux-evidence.tar.gz");
+  execSync(`tar -czf '${archive}' -C '${base}' 'linux-fixture'`);
+  return { dir, base, archive };
+}
+
+function rehashAndRetar(dir, base, archive) {
+  execFileSync("bash", ["-c", `source '${EVIDENCE_LIB}'; write_sha256sums '${dir}'`]);
+  execSync(`rm -f '${archive}' && tar -czf '${archive}' -C '${base}' 'linux-fixture'`);
+}
+
+function runVerifyEvidence(archive) {
+  try {
+    const stdout = execFileSync("bash", [VERIFY_EVIDENCE, archive], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    return { status: err.status ?? 1, stdout: err.stdout?.toString() ?? "", stderr: err.stderr?.toString() ?? "" };
+  }
+}
+
+test("verify-evidence: retained-summary-only fails when the bounded report is missing", () => {
+  const { dir, base, archive } = makeManifestFixture({
+    v1: { kind: "jmh", components: {
+      jmh: { status: "not-applicable", reason: "x" }, auxHarness: { status: "not-applicable", reason: "x" },
+      perfStat: { status: "not-scheduled", reason: "x" },
+      perfC2c: { status: "retained-summary-only", report: "v1/perf-c2c-report.txt", retentionMetadata: "v1/raw-profiler-retention.json", rawProfiler: { retained: false, sha256BeforeDeletion: "a".repeat(64), originalBytes: 10 } },
+      rustHarness: { status: "not-applicable", reason: "x" }, workerPlacement: { status: "not-applicable", reason: "x" },
+    } },
+  });
+  try {
+    mkdirSync(join(dir, "v1"), { recursive: true });
+    writeFileSync(join(dir, "v1", "raw-profiler-retention.json"), "{}");
+    // perf-c2c-report.txt deliberately NOT created
+    rehashAndRetar(dir, base, archive);
+    const r = runVerifyEvidence(archive);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout + r.stderr, /missing artifact/);
+  } finally {
+    rmAll(base);
+  }
+});
+
+test("verify-evidence: retained-summary-only fails when the retention metadata is missing", () => {
+  const { dir, base, archive } = makeManifestFixture({
+    v1: { kind: "jmh", components: {
+      jmh: { status: "not-applicable", reason: "x" }, auxHarness: { status: "not-applicable", reason: "x" },
+      perfStat: { status: "not-scheduled", reason: "x" },
+      perfC2c: { status: "retained-summary-only", report: "v1/perf-c2c-report.txt", retentionMetadata: "v1/raw-profiler-retention.json", rawProfiler: { retained: false, sha256BeforeDeletion: "a".repeat(64), originalBytes: 10 } },
+      rustHarness: { status: "not-applicable", reason: "x" }, workerPlacement: { status: "not-applicable", reason: "x" },
+    } },
+  });
+  try {
+    mkdirSync(join(dir, "v1"), { recursive: true });
+    writeFileSync(join(dir, "v1", "perf-c2c-report.txt"), "# summary\n");
+    // raw-profiler-retention.json deliberately NOT created
+    rehashAndRetar(dir, base, archive);
+    const r = runVerifyEvidence(archive);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout + r.stderr, /missing artifact/);
+  } finally {
+    rmAll(base);
+  }
+});
+
+test("verify-evidence: a completed rustHarness component requires its evidence file to exist", () => {
+  const { dir, base, archive } = makeManifestFixture({
+    v1: { kind: "jmh", components: {
+      jmh: { status: "completed", artifacts: { result: "v1/jmh.json" } }, auxHarness: { status: "not-applicable", reason: "x" },
+      perfStat: { status: "not-scheduled", reason: "x" }, perfC2c: { status: "not-scheduled", reason: "x" },
+      rustHarness: { status: "completed", artifacts: { evidence: "v1/rust-evidence.json", perfStat: "v1/rust-perf-stat.csv" } },
+      workerPlacement: { status: "not-applicable", reason: "x" },
+    } },
+  });
+  try {
+    mkdirSync(join(dir, "v1"), { recursive: true });
+    writeFileSync(join(dir, "v1", "jmh.json"), "{}");
+    writeFileSync(join(dir, "v1", "rust-perf-stat.csv"), "x");
+    // rust-evidence.json deliberately NOT created
+    rehashAndRetar(dir, base, archive);
+    const r = runVerifyEvidence(archive);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout + r.stderr, /rust-evidence\.json/);
+  } finally {
+    rmAll(base);
+  }
+});
+
+test("verify-evidence: provenance invariant — dirtyTree=true with publicationEligible=true is rejected independently of the generator", () => {
+  const { base, archive } = makeManifestFixture({});
+  const manifestPath = join(base, "linux-fixture", "evidence-manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.dirtyTree = true;
+  manifest.publicationEligible = true;
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  try {
+    rehashAndRetar(join(base, "linux-fixture"), base, archive);
+    const r = runVerifyEvidence(archive);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout + r.stderr, /provenance invariant violated/);
+  } finally {
+    rmAll(base);
   }
 });

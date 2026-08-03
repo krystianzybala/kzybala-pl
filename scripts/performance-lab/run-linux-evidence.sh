@@ -423,6 +423,134 @@ print(json.dumps(sys.argv[1]))
 PYEOF
 }
 
+json_field_raw() {
+  # json_field_raw <json-file> <field> — the field's value as a raw JSON
+  # scalar (number/bool/quoted-string/null), for splicing an already-
+  # validated small metadata file's fields directly into a larger document
+  # (e.g. raw-profiler-retention.json's rawProfilerRetained/rawProfilerSha256
+  # /rawProfilerOriginalBytes into the evidence manifest) without re-quoting
+  # or re-typing them by hand.
+  local file="$1" field="$2"
+  [ -f "$file" ] || { printf 'null'; return 0; }
+  python3 - "$file" "$field" <<'PYEOF' 2>/dev/null || printf 'null'
+import json, sys
+with open(sys.argv[1]) as fh:
+    data = json.load(fh)
+print(json.dumps(data.get(sys.argv[2])))
+PYEOF
+}
+
+# assert_completed_artifact <path> <context> — plab evidence-manifest
+# invariant (section 6, docs/linux-evidence-runner.md): before the manifest
+# is finalized, any component recorded as "completed" or
+# "retained-summary-only" must have its declared artifact actually on disk.
+# A missing artifact here is a manifest-generation defect, not a legitimate
+# run outcome — a genuinely failed/absent measurement must never reach this
+# call with one of those two statuses — so this aborts the run rather than
+# silently writing a dangling path (the exact defect this invariant exists
+# to catch: unconditional path declarations for components that were never
+# scheduled).
+assert_completed_artifact() {
+  local path="$1" ctx="$2"
+  [ -f "$path" ] || fail "manifest generation: ${ctx} is declared complete but its artifact is missing: ${path}"
+}
+
+# --- Component-status JSON builders ("variants" object of
+# evidence-manifest.json) --------------------------------------------------
+# A benchmark variant is one parameter combination; JMH, an aux harness,
+# perf stat, perf c2c, the Rust harness and worker-placement evidence are
+# COMPONENTS of that variant's execution, never separate variants. Every
+# component is exactly one of six states, never a static path placeholder:
+#   completed | not-scheduled | not-applicable | failed | timed-out |
+#   retained-summary-only
+# not-scheduled/not-applicable declare zero required artifact paths;
+# completed/retained-summary-only are validated against the real
+# filesystem (assert_completed_artifact) before the manifest is finalized.
+comp_not_applicable() { printf '{"status":"not-applicable","reason":%s}' "$(json_escape "$1")"; }
+comp_not_scheduled()  { printf '{"status":"not-scheduled","reason":%s}' "$(json_escape "$1")"; }
+
+comp_jmh_completed() {
+  local v="$1"
+  assert_completed_artifact "${RUN_DIR}/${v}/jmh.json" "jmh component (${v})"
+  printf '{"status":"completed","artifacts":{"result":"%s/jmh.json"}}' "$v"
+}
+
+comp_aux_completed() {
+  local v="$1"
+  assert_completed_artifact "${RUN_DIR}/${v}/aux-evidence.json" "auxHarness component (${v})"
+  printf '{"status":"completed","artifacts":{"result":"%s/aux-evidence.json"}}' "$v"
+}
+
+comp_perfstat_completed() {
+  local v="$1" reps="$2" i csv jjson counters="" summaries=""
+  for ((i = 1; i <= reps; i++)); do
+    if [ "$i" = "1" ]; then csv="${v}/perf-stat.csv"; jjson="${v}/perf-stat-jmh.json"
+    else csv="${v}/perf-stat-r${i}.csv"; jjson="${v}/perf-stat-jmh-r${i}.json"; fi
+    assert_completed_artifact "${RUN_DIR}/${csv}" "perfStat component (${v}, rep ${i})"
+    assert_completed_artifact "${RUN_DIR}/${jjson}" "perfStat component (${v}, rep ${i})"
+    [ -n "$counters" ] && counters="${counters}, "
+    counters="${counters}\"${csv}\""
+    [ -n "$summaries" ] && summaries="${summaries}, "
+    summaries="${summaries}\"${jjson}\""
+  done
+  printf '{"status":"completed","artifacts":{"counters":[%s],"jmhSummaries":[%s]}}' "$counters" "$summaries"
+}
+
+comp_perfc2c_from_retention() {
+  # Profiler-retention contract: the bounded report and the retention
+  # metadata are always required; the raw perf-c2c.data is required ONLY
+  # when the retention record says it was retained — never for the
+  # (default) delete-after-validated-summary path, and its
+  # sha256/original-byte-count are read back from that same retention
+  # record rather than recomputed.
+  local v="$1"
+  local retention="${RUN_DIR}/${v}/raw-profiler-retention.json" report="${v}/perf-c2c-report.txt"
+  assert_completed_artifact "${RUN_DIR}/${report}" "perfC2c component (${v})"
+  assert_completed_artifact "$retention" "perfC2c component (${v})"
+  local retained sha bytes status
+  retained="$(json_field_raw "$retention" rawProfilerRetained)"
+  sha="$(json_field_raw "$retention" rawProfilerSha256)"
+  bytes="$(json_field_raw "$retention" rawProfilerOriginalBytes)"
+  if [ "$retained" = "true" ]; then
+    status="completed"
+    assert_completed_artifact "${RUN_DIR}/${v}/perf-c2c.data" "perfC2c component (${v}, retained raw profiler)"
+  else
+    status="retained-summary-only"
+  fi
+  printf '{"status":"%s","report":"%s","retentionMetadata":"%s/raw-profiler-retention.json","rawProfiler":{"retained":%s,"sha256BeforeDeletion":%s,"originalBytes":%s}}' \
+    "$status" "$report" "$v" "$retained" "$sha" "$bytes"
+}
+
+comp_rust_completed() {
+  local v="$1"
+  assert_completed_artifact "${RUN_DIR}/${v}/rust-evidence.json" "rustHarness component (${v})"
+  assert_completed_artifact "${RUN_DIR}/${v}/rust-perf-stat.csv" "rustHarness component (${v})"
+  printf '{"status":"completed","artifacts":{"evidence":"%s/rust-evidence.json","perfStat":"%s/rust-perf-stat.csv"}}' "$v" "$v"
+}
+
+comp_workerplacement_completed() {
+  local v="$1" per_worker_state="$2" per_worker="null"
+  assert_completed_artifact "${RUN_DIR}/${v}/jmh-placement.csv" "workerPlacement component (${v})"
+  assert_completed_artifact "${RUN_DIR}/${v}/placement-policy.json" "workerPlacement component (${v})"
+  if [ "$per_worker_state" = "verified" ]; then
+    assert_completed_artifact "${RUN_DIR}/${v}/worker-placement.json" "workerPlacement component (${v}, per-worker)"
+    per_worker="\"${v}/worker-placement.json\""
+  fi
+  printf '{"status":"completed","artifacts":{"aggregate":"%s/jmh-placement.csv","policy":"%s/placement-policy.json"},"perWorkerPinning":"%s","perWorkerArtifact":%s}' \
+    "$v" "$v" "$per_worker_state" "$per_worker"
+}
+
+# finalize_variant_entry <variant> <kind> <jmh-json> <aux-json> <perfStat-json>
+# <perfC2c-json> <rustHarness-json> <workerPlacement-json> — appends this
+# variant's fully-resolved component object to VARIANT_MANIFEST_ENTRIES (the
+# in-memory artifact/outcome registry the final manifest is spliced from;
+# never a fixed template of every theoretically possible filename).
+declare -a VARIANT_MANIFEST_ENTRIES=()
+finalize_variant_entry() {
+  local v="$1" kind="$2" jmh="$3" aux="$4" perfstat="$5" perfc2c="$6" rust="$7" placement="$8"
+  VARIANT_MANIFEST_ENTRIES+=("\"${v}\": {\"kind\":\"${kind}\",\"components\":{\"jmh\":${jmh},\"auxHarness\":${aux},\"perfStat\":${perfstat},\"perfC2c\":${perfc2c},\"rustHarness\":${rust},\"workerPlacement\":${placement}}}")
+}
+
 # --- Run-status / rejection / timeout helpers (defined early: also used by
 # the filesystem preflight, below, not only by post-measurement paths) -------
 # write_run_status <status> [<rejection-reason>] [<storage-diagnostics-json>]
@@ -667,14 +795,56 @@ fi
 GIT_REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)" || fail "cannot identify the source revision (not a git checkout?)"
 GIT_DIRTY="false"
 GIT_DIFF_HASH="null"
-if [ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ]; then
+GIT_DIRTY_PATHS_JSON="[]"
+# Tracked-source dirtiness ONLY. `git status --porcelain` lines starting
+# with "??" are untracked (build output not yet covered by .gitignore,
+# result artifacts, generated temporary files — .gitignore already keeps
+# genuinely ignored paths like target/ out of this listing entirely); they
+# must never contribute to dirtyTree. Every other line is a real tracked
+# mutation (modified/added/deleted/renamed, staged or not) — that is what
+# dirtyTree/publicationEligible are computed from, and the corrected
+# example that motivated this: a batch-manifest showing
+# publicationEligible=true alongside dirtyTree=true was possible only
+# because dirtiness and eligibility were computed independently, with no
+# invariant tying them together.
+GIT_STATUS_PORCELAIN="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null || true)"
+GIT_TRACKED_LINES="$(printf '%s\n' "$GIT_STATUS_PORCELAIN" | grep -v '^??' | grep -v '^$' || true)"
+if [ -n "$GIT_TRACKED_LINES" ]; then
   GIT_DIRTY="true"
+  # Record the exact changed tracked paths (bounded to 200) — a real dirty
+  # tree is never represented by a bare boolean.
+  GIT_DIRTY_PATHS_JSON="$(printf '%s\n' "$GIT_TRACKED_LINES" | cut -c4- | python3 -c '
+import json, sys
+print(json.dumps([l for l in sys.stdin.read().splitlines() if l][:200]))
+' 2>/dev/null || echo '[]')"
   # A dirty tree must hash its diff (plab-003 schema rule) so the canonical
   # records can prove exactly which uncommitted state was measured.
   if command -v sha256sum >/dev/null 2>&1; then
     GIT_DIFF_HASH="\"$(git -C "$REPO_ROOT" diff HEAD | sha256sum | awk '{print $1}')\""
   else
     GIT_DIFF_HASH="\"$(git -C "$REPO_ROOT" diff HEAD | shasum -a 256 | awk '{print $1}')\""
+  fi
+fi
+
+# Provenance invariant: dirtyTree == true must NEVER coexist with
+# publicationEligible == true. This is recorded unconditionally, including
+# under --preflight-only/--dry-run (a preflight report must be honest about
+# eligibility even though it never measures anything). The hard abort is
+# narrower: publication-grade profiles (publication-core, publication-
+# sweep, full) refuse to actually MEASURE on a dirty tracked tree — but
+# --preflight-only never reaches measurement at all, so a preflight dry
+# pass against a working checkout that happens to be mid-edit (the normal
+# state of this repo during its own development/tests) still reports
+# "not eligible" without aborting the wiring check itself.
+if [ "$GIT_DIRTY" = "true" ]; then
+  PUBLICATION_ELIGIBLE="false"
+  PUBLICATION_INELIGIBLE_REASON="${PUBLICATION_INELIGIBLE_REASON:+${PUBLICATION_INELIGIBLE_REASON}; }dirty tracked source tree"
+  if [ "$PREFLIGHT_ONLY" != "1" ] && [ "$DRY_RUN" != "1" ]; then
+    case "$PROFILE" in
+      publication-core|publication-sweep|full)
+        fail "dirty tracked source tree — ${PROFILE} requires a clean checkout before measurement starts (changed tracked paths: $(printf '%s\n' "$GIT_TRACKED_LINES" | cut -c4- | tr '\n' ' '))"
+        ;;
+    esac
   fi
 fi
 
@@ -781,6 +951,23 @@ elif [ "$DRY_RUN" != "1" ]; then
       || fail "mvn package failed"
     [ -f "$EV_JAR" ] || fail "benchmarks.jar missing after build"
   fi
+
+  # 9b. Post-build source-mutation integrity: the correctness gate and the
+  # benchmark build must never modify tracked source — if either did, what
+  # was built/measured no longer corresponds to the tree preflighted in
+  # step 5. Compared against the exact tracked-mutation snapshot from step
+  # 5 (never a fresh clean/dirty boolean) so a tree already, legitimately,
+  # dirty at preflight (smoke/development) is never confused with NEW
+  # mutations the build itself introduced. Ignored target/ and Cargo/build
+  # output never appear here (they are untracked "??" lines, already
+  # excluded from GIT_TRACKED_LINES in step 5).
+  GIT_TRACKED_LINES_AFTER_BUILD="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | grep -v '^??' | grep -v '^$' || true)"
+  NEW_TRACKED_MUTATIONS="$(comm -13 <(printf '%s\n' "$GIT_TRACKED_LINES" | sort) <(printf '%s\n' "$GIT_TRACKED_LINES_AFTER_BUILD" | sort) 2>/dev/null || true)"
+  if [ -n "$NEW_TRACKED_MUTATIONS" ]; then
+    MUTATED_PATHS="$(printf '%s\n' "$NEW_TRACKED_MUTATIONS" | cut -c4- | tr '\n' ' ')"
+    write_run_status "failed-preflight-source-mutation" "correctness gate / benchmark build modified tracked source: ${MUTATED_PATHS}"
+    fail "failed-preflight-source-mutation — the correctness gate or benchmark build modified tracked source, which must never happen (changed tracked paths: ${MUTATED_PATHS})"
+  fi
 fi
 
 # =============================================================================
@@ -849,6 +1036,7 @@ cat > "${RUN_DIR}/environment.json" <<ENVEOF
   "backgroundLoad": $(json_escape "$LOAD_SNAPSHOT"),
   "sourceCommit": "${GIT_REVISION}",
   "dirtyTree": ${GIT_DIRTY},
+  "dirtyTreePaths": ${GIT_DIRTY_PATHS_JSON},
   "diffHash": ${GIT_DIFF_HASH},
   "outputRoot": $(json_escape "$OUT_ROOT"),
   "storageBudgetTarget": $(json_escape "$STORAGE_TARGET"),
@@ -1049,12 +1237,21 @@ for VARIANT in $(effective_variants); do
     VKIND="jmh"
   fi
   resolve_profiler_action "$VARIANT"
+  C2C_HOST_DEGRADED=0
   echo "   scenario kind=${VKIND} cpus=${SCEN_CPUS} threads=${VTHREADS} args='${EV_JMH_EXTRA}' hard-timeout=${EV_TIMEOUT_SECONDS}s/invocation profiler(stat=${RUN_STAT},c2c=${RUN_C2C})"
 
   if [ "$COMPONENT" = "rust-harness" ]; then
     RUST_CMD="$(lab_rust_evidence_cmd "$VARIANT")"
+    RUST_NOT_APPLICABLE_REASON="component=rust-harness — no JMH/aux/perf/placement execution in this focused mode"
     if [ -z "$RUST_CMD" ]; then
       echo "-- component=rust-harness: variant ${VARIANT} has no Rust command — skipped"
+      finalize_variant_entry "$VARIANT" "$VKIND" \
+        "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+        "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+        "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+        "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+        "$(comp_not_applicable "variant ${VARIANT} does not support a Rust harness (lab_rust_evidence_cmd returned no command)")" \
+        "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")"
       continue
     fi
     echo "-- Rust persistent-worker harness (component-only run)"
@@ -1071,6 +1268,13 @@ for VARIANT in $(effective_variants); do
         mark_rejected "rust-harness-violation (variant ${VARIANT}) — sequence/affinity/diagnostics failure, see ${VDIR}/rust-evidence.json"
       fi
     fi
+    finalize_variant_entry "$VARIANT" "$VKIND" \
+      "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+      "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+      "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+      "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")" \
+      "$([ "$DRY_RUN" = "1" ] && comp_not_scheduled "dry-run (--dry-run): no measurement executed" || comp_rust_completed "$VARIANT")" \
+      "$(comp_not_applicable "$RUST_NOT_APPLICABLE_REASON")"
     continue
   fi
 
@@ -1105,6 +1309,7 @@ for VARIANT in $(effective_variants); do
       # whole run over an optional profiler.
       echo "-- perf c2c: policy selected variant ${VARIANT} but perf c2c is unavailable on this host — recorded as absent"
       RUN_C2C=0
+      C2C_HOST_DEGRADED=1
     fi
     if [ "$RUN_C2C" = "1" ]; then
       echo "-- perf c2c record + bounded report"
@@ -1194,6 +1399,57 @@ PLACEOF
     fi
   fi
 
+  # --- Component-status registry entry for this variant (COMPONENT=all is
+  # the only value reaching this point — --component rust-harness returns
+  # earlier via its own `continue`s above). Driven entirely by what actually
+  # ran (VKIND, RUN_STAT, RUN_C2C, RUST_CMD, WORKER_PLACEMENT_STATE), never
+  # by a fixed per-variant template.
+  if [ "$DRY_RUN" = "1" ]; then
+    DRYRUN_REASON="dry-run (--dry-run): no measurement executed"
+    JMH_JSON="$(comp_not_scheduled "$DRYRUN_REASON")"
+    AUX_JSON="$(comp_not_scheduled "$DRYRUN_REASON")"
+    PERFSTAT_JSON="$(comp_not_scheduled "$DRYRUN_REASON")"
+    PERFC2C_JSON="$(comp_not_scheduled "$DRYRUN_REASON")"
+    RUST_JSON="$(comp_not_scheduled "$DRYRUN_REASON")"
+    PLACEMENT_JSON="$(comp_not_scheduled "$DRYRUN_REASON")"
+  else
+    if [ "$VKIND" = "aux" ]; then
+      JMH_JSON="$(comp_not_applicable "variant kind=aux — no JMH invocation for this variant")"
+      AUX_JSON="$(comp_aux_completed "$VARIANT")"
+      PERFSTAT_JSON="$(comp_not_applicable "variant kind=aux — perf stat is only collected for jmh-kind variants")"
+      PERFC2C_JSON="$(comp_not_applicable "variant kind=aux — perf c2c is only collected for jmh-kind variants")"
+    else
+      JMH_JSON="$(comp_jmh_completed "$VARIANT")"
+      AUX_JSON="$(comp_not_applicable "variant kind=jmh — no aux harness for this variant")"
+      if [ "$RUN_STAT" = "1" ]; then
+        PERFSTAT_JSON="$(comp_perfstat_completed "$VARIANT" "$PERF_STAT_REPS")"
+      else
+        PERFSTAT_JSON="$(comp_not_scheduled "profiler policy ($(variant_profiler_policy "$VARIANT")) does not select perf stat for variant ${VARIANT} under profile ${PROFILE}")"
+      fi
+      if [ "$RUN_C2C" = "1" ]; then
+        PERFC2C_JSON="$(comp_perfc2c_from_retention "$VARIANT")"
+      elif [ "$C2C_HOST_DEGRADED" = "1" ]; then
+        PERFC2C_JSON="$(comp_not_scheduled "perf c2c selected by policy but unavailable on this host (perf c2c cannot open its required memory events)")"
+      else
+        PERFC2C_JSON="$(comp_not_scheduled "profiler policy ($(variant_profiler_policy "$VARIANT")) does not select perf c2c for variant ${VARIANT} under profile ${PROFILE}")"
+      fi
+    fi
+    if [ -z "${LAB_RUST_DIR:-}" ]; then
+      RUST_JSON="$(comp_not_applicable "lab ${LAB_ID} has no Rust harness (LAB_RUST_DIR unset)")"
+    elif [ -z "$RUST_CMD" ]; then
+      # The lab has a Rust harness in general, but lab_rust_evidence_cmd
+      # says this specific variant does not support it (e.g. SPSC's
+      # harness-* variants — the Rust side runs once per matrix case on
+      # the jmh-kind variant to avoid duplicating identical Rust runs) —
+      # unsupported, never "scheduled but skipped this time".
+      RUST_JSON="$(comp_not_applicable "variant ${VARIANT} does not support a Rust harness (lab_rust_evidence_cmd returned no command)")"
+    else
+      RUST_JSON="$(comp_rust_completed "$VARIANT")"
+    fi
+    PLACEMENT_JSON="$(comp_workerplacement_completed "$VARIANT" "$WORKER_PLACEMENT_STATE")"
+  fi
+  finalize_variant_entry "$VARIANT" "$VKIND" "$JMH_JSON" "$AUX_JSON" "$PERFSTAT_JSON" "$PERFC2C_JSON" "$RUST_JSON" "$PLACEMENT_JSON"
+
   check_storage_or_abort "after variant ${VARIANT}"
 done
 
@@ -1216,6 +1472,18 @@ fi
 # =============================================================================
 echo "== manifest + hashes"
 
+# Every effective variant must have a registry entry (finalize_variant_entry
+# runs at all three per-variant loop exit points above); a missing entry
+# here means a variant fell through without ever recording its component
+# outcomes — a runner defect, never silently omitted from the manifest.
+for V in $(effective_variants); do
+  FOUND=0
+  for ENTRY in "${VARIANT_MANIFEST_ENTRIES[@]}"; do
+    case "$ENTRY" in "\"${V}\":"*) FOUND=1; break ;; esac
+  done
+  [ "$FOUND" = "1" ] || fail "manifest generation: variant ${V} has no component-status registry entry"
+done
+
 cat > "${RUN_DIR}/evidence-manifest.json" <<MANEOF
 {
   "manifestVersion": 1,
@@ -1226,8 +1494,10 @@ cat > "${RUN_DIR}/evidence-manifest.json" <<MANEOF
   "scenario": $(json_escape "$SCENARIO"),
   "environmentKind": "${ENV_KIND}",
   "publicationEligible": ${PUBLICATION_ELIGIBLE},
+  "publicationIneligibleReason": $([ "$PUBLICATION_ELIGIBLE" = "true" ] && printf 'null' || json_escape "${PUBLICATION_INELIGIBLE_REASON:-unspecified}"),
   "sourceCommit": "${GIT_REVISION}",
   "dirtyTree": ${GIT_DIRTY},
+  "dirtyTreePaths": ${GIT_DIRTY_PATHS_JSON},
   "diffHash": ${GIT_DIFF_HASH},
   "environment": "environment.json",
   "topology": "topology.txt",
@@ -1236,20 +1506,10 @@ cat > "${RUN_DIR}/evidence-manifest.json" <<MANEOF
   "benchmarkProfile": "benchmark-profile.json",
   "correctness": "correctness.json",
   "variants": {
-$(FIRST=1; for V in $(effective_variants); do
+$(FIRST=1; for ENTRY in "${VARIANT_MANIFEST_ENTRIES[@]}"; do
   [ "$FIRST" = "1" ] || printf ',\n'
   FIRST=0
-  printf '    "%s": {\n' "$V"
-  printf '      "jmh": "%s/jmh.json",\n' "$V"
-  printf '      "jmhPlacement": "%s/jmh-placement.csv",\n' "$V"
-  printf '      "workerPlacement": "%s/worker-placement.json",\n' "$V"
-  printf '      "placementPolicy": "%s/placement-policy.json",\n' "$V"
-  printf '      "perfStat": ["%s/perf-stat.csv", "%s/perf-stat-r2.csv", "%s/perf-stat-r3.csv"],\n' "$V" "$V" "$V"
-  printf '      "perfStatJmh": ["%s/perf-stat-jmh.json", "%s/perf-stat-jmh-r2.json", "%s/perf-stat-jmh-r3.json"],\n' "$V" "$V" "$V"
-  printf '      "perfC2cReport": "%s/perf-c2c-report.txt",\n' "$V"
-  printf '      "rawProfilerRetention": "%s/raw-profiler-retention.json",\n' "$V"
-  printf '      "rustEvidence": "%s/rust-evidence.json"\n' "$V"
-  printf '    }'
+  printf '    %s' "$ENTRY"
 done; printf '\n')
   },
   "runStatusFile": "run-status.json",
