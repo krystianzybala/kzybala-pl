@@ -40,9 +40,30 @@ billion per lane) — massively beyond `int`'s ~2.1 billion range, so the
 lane silently wrapped. A scalar `long sum` never has this problem
 because it widens automatically; a 32-bit vector accumulator does not.
 The fix flushes the vector accumulator into a scalar `long` total every
-1,000 vector iterations (comfortably below overflow for this dataset's
-value range) and resets it to zero — the SAME fix, discovered
-independently, that the Rust track needed (rust.md).
+`FLUSH_INTERVAL` vector iterations and resets it to zero — the SAME fix,
+discovered independently, that the Rust track needed (rust.md).
+
+## A second, host-dependent instance of the same bug
+
+The first version of that fix hardcoded `FLUSH_INTERVAL = 1,000`, tuned
+only against this development machine's `SPECIES_PREFERRED` lane count
+(4, on this Arm/NEON host). It passed every local test — and then failed
+the correctness gate the first time it ran on the native-Linux
+publication host, where AVX2 gives `SPECIES_PREFERRED` 8 lanes. The
+reason: `IntVector.reduceLanesToLong` reduces all lanes together in
+native `int` arithmetic before widening the single result to `long` — it
+does not widen each lane independently first — so the real overflow
+bound is the sum **across all lanes** per flush, not the per-lane sum. At
+4 lanes that cross-lane total stayed just under `int32`'s range by luck;
+doubling to 8 lanes pushed it over, and the gate caught a large,
+obviously-wrong negative sum instead of silently accepting a corrupted
+one. The fix scales `FLUSH_INTERVAL` inversely with the runtime-detected
+lane count, so the cross-lane total per flush stays safely bounded
+regardless of which vector width the host actually has — hardcoding a
+flush interval derived from one developer's CPU is exactly the
+"comparing different vector widths without disclosure" trap this lab
+warns about (theory.md), just aimed inward at the lab's own code instead
+of outward at a benchmark chart.
 
 ## A real finding from development wiring (dev-only, never published)
 

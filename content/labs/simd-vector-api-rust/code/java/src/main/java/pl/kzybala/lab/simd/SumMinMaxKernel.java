@@ -59,11 +59,33 @@ public final class SumMinMaxKernel {
      * accumulator overflows by roughly 60x). A scalar {@code long sum}
      * never has this problem because it widens automatically; a vector
      * accumulator does not. The fix flushes the int accumulator into a
-     * scalar {@code long} total every {@link #FLUSH_INTERVAL} vector
-     * iterations — comfortably below int32 overflow for this dataset's
-     * value range — then resets it to zero (java.md).
+     * scalar {@code long} total every {@code FLUSH_INTERVAL} vector
+     * iterations, then resets it to zero (java.md).
+     *
+     * <p>A SECOND, host-dependent instance of the same bug class was
+     * found when this lab first ran on the native-Linux publication
+     * host: a fixed {@code FLUSH_INTERVAL = 1000} was tuned only against
+     * this development machine's {@code SPECIES_PREFERRED} lane count
+     * (4, on this Arm/NEON host) and was safe there — but
+     * {@code reduceLanesToLong} reduces all lanes together in native
+     * {@code int} arithmetic before widening the single reduced value to
+     * {@code long} (it does not widen each lane independently first), so
+     * the real overflow bound is the SUM ACROSS ALL LANES per flush, not
+     * the per-lane sum. On the AVX2 publication host
+     * {@code SPECIES_PREFERRED} has 8 lanes, doubling that cross-lane
+     * total and silently wrapping {@code int32} — the correctness gate
+     * caught a wrong result (a large negative sum) the first time this
+     * ran on real x86_64 hardware. The fix below scales
+     * {@code FLUSH_INTERVAL} inversely with {@link #SPECIES}'s lane
+     * count so the cross-lane total per flush stays bounded regardless
+     * of host vector width — a fixed magic number tied to one
+     * developer's CPU is exactly the kind of "assumed vector width"
+     * portability trap this lab teaches (theory.md, exercises.md).
      */
-    private static final int FLUSH_INTERVAL = 1000;
+    private static final int MAX_VALUE_BOUND = 1_000_000; // exclusive upper bound of this dataset's values
+    private static final long SAFE_CROSS_LANE_SUM_BOUND = 200_000_000L; // well under Integer.MAX_VALUE even if reduced in native int32 first
+    private static final int FLUSH_INTERVAL =
+            Math.max(1, (int) (SAFE_CROSS_LANE_SUM_BOUND / ((long) SPECIES.length() * MAX_VALUE_BOUND)));
 
     /** Explicit jdk.incubator.vector: full-width lanes plus one masked tail — no separate scalar tail loop. */
     public static Result explicitSimd(int[] value, int offset, int length) {

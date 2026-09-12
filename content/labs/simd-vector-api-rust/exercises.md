@@ -75,15 +75,24 @@ third option in between.
 
 Flush the vector accumulator to a wide scalar total (`i64`/`long`)
 periodically — not every iteration, and not only at the very end — then
-reset the vector accumulator to zero and continue. This lab's own fix
-used a fixed `FLUSH_INTERVAL` (1,000 vector iterations) chosen so that,
-given this dataset's known value range, the vector accumulator cannot
-approach `i32`'s overflow bound between flushes. A scalar `long`/`i64`
+reset the vector accumulator to zero and continue. A scalar `long`/`i64`
 accumulator never has this problem because integer widening happens
 automatically; a fixed-width vector lane does not widen, so the
 periodic-flush pattern is the general fix whenever a narrow vector
 accumulator must run over more iterations than its width can safely
 absorb.
+
+This lab's own Java fix first hardcoded the flush interval as a plain
+constant (1,000 iterations), tuned against one development machine's
+vector width — and it silently assumed the wrong thing: the reduction
+that flushes several lanes to a scalar reduces them together in the
+narrow type *before* widening the single result, so the real bound is
+the sum **across all lanes** per flush, not the sum in any one lane. A
+flush interval safe for a 4-lane vector was not safe for an 8-lane one
+on different hardware (java.md documents the real failure this caused).
+The general fix scales the flush interval inversely with however many
+lanes the running vector actually has, rather than hardcoding a number
+that only happens to be safe for one specific vector width.
 </details>
 
 ## Exercise 3 — Evidence interpretation: reading a real speedup table
