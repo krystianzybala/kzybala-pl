@@ -1,0 +1,23 @@
+{
+  "labId": "safepoints-ttsp",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Every dataset processes the identical logical range [0, totalIterations) via sum(i), partitioned differently by worker count: numericLoop and nativeSleepDowncall use ONE worker summing the whole range; threadFleet splits it evenly across fleetSize workers. Because integer summation is partition-invariant, all three datasets produce the IDENTICAL total — worker count and native-call interleaving change TTSP/pause behavior, never the computed result. Variant-specific extras (idle threads, an additional native-blocked thread, organic-vs-explicit GC triggering, the -XX:-UseCountedLoopSafepoints launch flag) never contribute to the checksum.",
+  "semantics": {
+    "totalIterations": 400000000,
+    "chunkSize": 50000000,
+    "numChunks": 8,
+    "fleetSize": 16,
+    "perFleetWorkerIterations": 25000000,
+    "idleThreadCount": 300,
+    "nativeSleepMicros": 50000,
+    "operation": "sum(i) for i in [0, totalIterations), 64-bit wrapping",
+    "numericLoop": "one worker sums the full range in 8 chunks of 50,000,000, calling an explicit safepoint trigger between chunks",
+    "nativeSleepDowncall": "one worker, identical chunking, PLUS one usleep(50000) FFM downcall between each chunk",
+    "threadFleet": "16 workers, each summing a disjoint 25,000,000-element sub-range; only worker 0 chunks (8x) and triggers safepoints, the other 15 run their sub-range as one continuous pass",
+    "cooperativeLoop": "default JVM safepoint-poll behavior (no special flags) — the control",
+    "longLoopSparsePolls": "IDENTICAL Java code, launched with -XX:-UseCountedLoopSafepoints",
+    "threadInNativeCall": "adds one extra thread blocked in a long usleep FFM downcall for the duration of the run",
+    "manyIdleThreads": "adds idleThreadCount extra threads parked in Thread.sleep for the duration of the run",
+    "allocationPressureTrigger": "the trigger worker allocates a garbage array every chunk instead of calling an explicit safepoint trigger — GC-induced safepoints occur organically; the exact count is host/heap-dependent by design, unlike every other variant's exactly numChunks-triggered count"
+  },
+  "expectedTotal": "79999999800000000"
+}

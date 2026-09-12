@@ -90,3 +90,95 @@ don't re-check the head per item or you reintroduce the traffic you're
 trying to remove.
 
 </details>
+
+## Exercise 3 — Evidence interpretation (coordinated omission in a latency report)
+
+Below is a **synthetic teaching example** in HdrHistogram's percentile-table
+format — constructed for this exercise, not captured from any run. It is
+educational material for practicing latency-report interpretation only: it
+is never used as measurement evidence, never supports this lab's
+performance conclusions, and never enters a comparison or maturity
+calculation. (The lab's real one-way latency evidence comes exclusively
+from the native-Linux evidence runner and is imported with full
+provenance; see `benchmark.md`.) Two harnesses measured the *same*
+producer/consumer pair under the *same* steady send rate, one-way latency
+in microseconds, labels removed:
+
+```
+Report A                          Report B
+50.000%     8 us                 50.000%     9 us
+90.000%    12 us                 90.000%    14 us
+99.000%    15 us                 99.000%    41 us
+99.900%    19 us                 99.900%   812 us
+99.990%    22 us                 99.990%  4,930 us
+99.999%    26 us                 99.999%  9,105 us
+Max        31 us                 Max      11,220 us
+Count  10,000,000                Count  10,000,000
+```
+
+Both harnesses ran the identical ring-buffer implementation, at the
+identical send rate, for the identical duration. One harness times each
+message from the instant it *should* have been sent (its scheduled send
+time, given the fixed rate), even if the producer was blocked waiting for
+a free slot; the other times each message only from the instant it was
+*actually* sent.
+
+**Task:** decide which report (A or B) is the one still contaminated by
+coordinated omission, and justify it from the shape of the two
+distributions — not just from the fact that the numbers differ. Then state
+one conclusion this data **cannot** support.
+
+**Success criteria:** your identification is correct, your reasoning
+names what coordinated omission specifically hides (stalls counted as "no
+sample" instead of "a very late sample"), and your "cannot conclude"
+statement is genuinely unsupported by this data rather than merely
+cautious.
+
+<details>
+<summary>Hint</summary>
+
+Report A's tail barely grows from p50 to Max — every percentile stays
+within roughly 4x of the median. Ask what has to be true of the
+underlying system for a tail that flat: either the system truly never
+stalls, or the measurement method is discarding exactly the samples that
+would have shown a stall.
+
+</details>
+
+<details>
+<summary>Solution</summary>
+
+**Report A is the one still contaminated by coordinated omission.**
+
+- A real bounded SPSC ring under steady load, sharing the machine with an
+  OS scheduler, GC pauses (Java) or even brief page faults, will
+  occasionally stall the producer or consumer for a duration far longer
+  than its typical service time — that stall has to show up *somewhere*
+  in a distribution of 10 million samples. Report A's tail (p99.999 of
+  26 us, Max of 31 us — under 4x the median) is too flat to be honest
+  evidence of that; report B's tail (Max of 11,220 us, roughly 1,400x the
+  median) is the shape a real stall produces.
+- The mechanism: a harness that only starts the clock when a message is
+  *actually* sent skips the wait entirely when the producer is blocked on
+  a full buffer — the message that should have been sent during the stall
+  is simply sent late, timed as if it were on-schedule the moment it
+  finally goes out. The stall itself disappears from the sample set
+  instead of appearing as one very slow sample. This is exactly the
+  "ignoring shutdown and wraparound"-adjacent trap this lab names
+  separately as coordinated omission: the harness silently drops the
+  evidence that would have told you queuing existed at all.
+- Report B's harness times from the scheduled send instant, so a producer
+  stall is captured as one (or several) message(s) whose recorded latency
+  correctly includes the time spent waiting — which is why its tail
+  actually reflects the stall.
+
+**What this data cannot support:** any claim about *how often* stalls of
+this size occur in production, or that this specific ring-buffer
+implementation is unusually stall-prone — this is one synthetic pair of
+distributions illustrating a measurement artifact, not a captured
+duration, arrival-rate model, or host. It also cannot be used to compare
+this lab's Java and Rust implementations against each other; that
+comparison requires the real, provenance-tracked evidence in
+`benchmark.md`.
+
+</details>

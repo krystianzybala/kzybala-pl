@@ -1,0 +1,15 @@
+{
+  "id": "virtual-platform-event-loop",
+  "title": "Virtual Threads vs Platform Threads vs Event Loops",
+  "status": "draft",
+  "level": 8,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "scheduling", "production-engineering"],
+  "prerequisites": ["thread-per-core-sharding"],
+  "unlocks": ["backpressure-bounded-pipelines"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

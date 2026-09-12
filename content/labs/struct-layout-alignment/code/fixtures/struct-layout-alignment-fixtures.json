@@ -1,0 +1,47 @@
+{
+  "labId": "struct-layout-alignment",
+  "description": "Shared correctness fixtures for the five layout variants (natural, poorFieldOrder, optimizedFieldOrder, cacheLineAligned, packedUnaligned) over three datasets. Field order and alignment change bytes/record and ns/access, never the checksum (mixedPrimitiveRecord, headerPlusPayload) or the final counts (producerConsumerCounters).",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "mixedPrimitiveRecord": {
+      "n": 500000,
+      "seed": 90,
+      "fields": "active = xorshift64 stream unsigned-mod 2 (1 byte); category = xorshift64 stream unsigned-mod 16 (1 byte); quantity = xorshift64 stream unsigned-mod 100,000 (4 bytes); flags = xorshift64 stream unsigned-mod 1,000 (2 bytes); amountTicks = xorshift64 stream unsigned-mod 10,000,000 (8 bytes); timestamp = i (linear, 8 bytes) — per record, five xorshift64 advances in this order: active, category, quantity, flags, amountTicks",
+      "logicalBytes": 24,
+      "checksum": "wrapping sum of (active + timestamp + category + quantity + flags + amountTicks) over all records"
+    },
+    "headerPlusPayload": {
+      "n": 200000,
+      "seed": 91,
+      "fields": "msgType = xorshift64 stream unsigned-mod 8 (1 byte); msgFlags = xorshift64 stream unsigned-mod 256 (1 byte); sequence = xorshift64 stream unsigned-mod 1,000,000 (4 bytes); payload = 8 longs, xorshift64 stream unsigned-mod 1,000,000 each (64 bytes) — per record, one advance each for msgType/msgFlags/sequence then eight more for payload[0..8)",
+      "logicalBytes": 70,
+      "checksum": "wrapping sum of (msgType + msgFlags + sequence + sum(payload)) over all records"
+    },
+    "producerConsumerCounters": {
+      "incrementsPerThread": 5000000,
+      "oracle": "two threads, each incrementing only its OWN counter field exactly incrementsPerThread times; after both threads join, producerCount == incrementsPerThread AND consumerCount == incrementsPerThread, for every layout variant — layout changes coherence traffic and throughput, never the final counts (this dataset has no summed checksum; its oracle is the exact final count pair)"
+    }
+  },
+  "expectedTotals": {
+    "mixedPrimitiveRecord": {
+      "first5": [
+        {"active": 0, "timestamp": 0, "category": 7, "quantity": 17098, "flags": 759, "amountTicks": 884393},
+        {"active": 1, "timestamp": 1, "category": 0, "quantity": 326, "flags": 360, "amountTicks": 8109663},
+        {"active": 0, "timestamp": 2, "category": 7, "quantity": 82012, "flags": 180, "amountTicks": 7848963},
+        {"active": 0, "timestamp": 3, "category": 2, "quantity": 33601, "flags": 352, "amountTicks": 454447},
+        {"active": 1, "timestamp": 4, "category": 8, "quantity": 57384, "flags": 945, "amountTicks": 1446206}
+      ],
+      "total": "2648193599320"
+    },
+    "headerPlusPayload": {
+      "first5": [
+        {"msgType": 3, "msgFlags": 182, "sequence": 552163, "payload": [736058, 201548, 457028, 963857, 989483, 298455, 190129, 71790]},
+        {"msgType": 6, "msgFlags": 218, "sequence": 45679, "payload": [950759, 334973, 104039, 454640, 15399, 774515, 723697, 524641]},
+        {"msgType": 2, "msgFlags": 88, "sequence": 694020, "payload": [613283, 984230, 521902, 573729, 454569, 341572, 990985, 303192]},
+        {"msgType": 7, "msgFlags": 100, "sequence": 930968, "payload": [480149, 927706, 145707, 799845, 455599, 12954, 97105, 17277]},
+        {"msgType": 5, "msgFlags": 28, "sequence": 591830, "payload": [879697, 121932, 297985, 299808, 106034, 559972, 981239, 212710]}
+      ],
+      "total": "899586356734"
+    }
+  }
+}

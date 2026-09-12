@@ -1,0 +1,20 @@
+[package]
+name = "syscall-amortization-scatter-gather-lab"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "syscall_amortization_scatter_gather_lab"
+path = "src/lib.rs"
+
+[[bench]]
+name = "syscall_amortization_scatter_gather"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[profile.bench]
+inherits = "release"

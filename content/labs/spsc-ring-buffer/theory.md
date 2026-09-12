@@ -41,6 +41,18 @@ concrete correctness bugs a naive implementation can introduce.
   publication below depends on the same release/acquire discipline that
   lab establishes.
 
+## Pre-lab diagnostic
+
+An engineer writes an SPSC ring buffer where the head/tail cursors are
+plain `volatile` fields (Java) or `Relaxed`-ordered atomics (Rust), and the
+payload slots are ordinary, non-atomic memory. Their correctness tests
+pass every single time on their development laptop. Is the design correct
+on every CPU that might run it, or did the tests simply get lucky? Name
+the specific ordering guarantee that `volatile`/`Relaxed` access is
+missing.
+
+(Answer at the end of this page.)
+
 ## Why single-producer/single-consumer is a distinct case
 
 A ring buffer that must support many producers and many consumers (MPMC)
@@ -55,6 +67,18 @@ one-off comparison. The remaining work is not about avoiding contention —
 there isn't any — it's about correctly *publishing* what one thread wrote
 so the other thread observes it correctly, and correctly detecting full
 and empty without needing a lock.
+
+## Terminology
+
+| Term | Meaning in this lab |
+|---|---|
+| Cursor | A monotonically increasing counter (`head` or `tail`) owned by exactly one thread; the slot it refers to is `cursor % capacity`, never the raw value. |
+| Reservation | The producer claiming the next slot index before touching that slot's memory. |
+| Publication | The producer's release-store of `head`, making a slot's payload visible to the consumer only after the payload write has completed. |
+| Consumption acknowledgement | The consumer's release-store of `tail`, telling the producer a slot may legally be overwritten. |
+| Cached cursor | A thread's local, possibly-stale copy of the *other* side's cursor, refreshed only when the thread's own optimistic check says "maybe full" or "maybe empty." |
+| Wait strategy | What a thread does when it cannot immediately produce or consume: busy-spin (poll in a tight loop), yield (poll but cede the CPU), or park (block until woken). |
+| Coordinated omission | A latency-measurement bug where a load generator skips or delays issuing the next request while the system is busy/blocked, silently hiding the tail latency that real, uncoordinated traffic would have experienced. |
 
 ## Five separate phases, not two
 
@@ -180,3 +204,44 @@ nothing went wrong.
 - This lab does not cover multi-producer or multi-consumer variants —
   see the [CAS Contention and Backoff](/lab/cas-contention/) lab for the
   contention those variants introduce.
+
+## Assumptions and scope
+
+- Capacity is a fixed power of two, chosen so the slot index can be
+  derived from the cursor with a mask instead of a modulo division; this
+  is a common real-world choice, not a requirement of the correctness
+  argument itself.
+- Correctness (publication ordering, wrap-around, full/empty detection)
+  is verified by a shared fixture asserted identically by both languages'
+  test suites (see java.md, rust.md) before any timing is trusted — this
+  lab never asks you to trust the ownership argument above without that
+  gate passing first.
+- The batching discussion describes amortising publication cost across
+  several reserved slots; it does not model the exact nanosecond savings,
+  which is what the disclosed benchmark evidence is for (see "Benchmark
+  methodology" below).
+- This lab assumes the release/acquire publication discipline from the
+  [Memory Ordering](/lab/memory-ordering/) lab; it does not re-derive why
+  that ordering is necessary from first principles.
+
+## Pre-lab diagnostic — answer
+
+Volatile (Java) and `Relaxed` (Rust) both guarantee that a *single* read
+or write of that one field is atomic and eventually visible to other
+threads — but neither one orders that field's access relative to
+*other* memory, including the payload slot the field is meant to guard.
+Nothing stops the compiler or the CPU from making the payload write
+visible to the consumer *after* the cursor update that supposedly
+announces it, because nothing in `volatile`/`Relaxed` forbids reordering
+around it. What is missing is a **release** store on publication (every
+write program-order-before it becomes visible-before it) paired with an
+**acquire** load on the consumer's read of that cursor (nothing
+program-order-after it can be reordered before it) — exactly the
+release/acquire discipline from the [Memory Ordering](/lab/memory-ordering/)
+lab. Tests passing on a laptop prove nothing about correctness on a
+weaker memory model: x86's strong TSO ordering happens to forbid the
+store-store reordering this bug depends on, so the same buggy code can
+pass every test on x86 and fail silently on ARM or in the presence of
+compiler reordering under a different optimisation level. Passing tests
+on one architecture is not a substitute for the ordering being present
+in the code.

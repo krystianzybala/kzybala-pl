@@ -1,0 +1,15 @@
+{
+  "id": "shared-memory-ipc",
+  "title": "Shared-Memory IPC",
+  "status": "draft",
+  "level": 8,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["ipc", "shared-memory", "spsc", "cross-process"],
+  "prerequisites": ["memory-mapped-files"],
+  "unlocks": ["udp-ingest-batching"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

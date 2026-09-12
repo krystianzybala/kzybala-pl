@@ -1,0 +1,22 @@
+{
+  "lab": "memory-ordering-atomics",
+  "description": "Deterministic dataset parameters shared byte-for-byte between the Java and Rust suites. Every 'correct' variant is asserted against these exact values across a stress trial count; the 'plain broken publication' variant is never asserted to fail (that would be flaky) — its empirically observed forbidden-outcome rate is reported, not gated, per design.md's guardrail against treating absence-of-failure as proof of correctness.",
+  "singleSlotMailbox": {
+    "payloadA": 123456789,
+    "payloadB": 987654321,
+    "trials": 2000,
+    "note": "Writer publishes {a: payloadA, b: payloadB} exactly once per trial, then signals ready via the variant's mechanism; a fresh reader thread claims and reads the slot. Forbidden outcome: reader observes ready (or a successful claim) but reads a==0 or b==0 (the pre-publication default) instead of the exact published pair. Trial count is the correctness-suite count (kept small so `mvn test`/`cargo test` stay fast); a dedicated evidence run may use a larger count without changing the mechanism."
+  },
+  "sequenceFlagPlusPayload": {
+    "updateCount": 2000,
+    "payloadFormula": "payload(i) = i * 7 + 3, for i in [1, updateCount]",
+    "trials": 50,
+    "note": "Single writer thread performs updateCount sequential (payload, seq) publications; one reader thread samples continuously until it observes seq == updateCount. Forbidden outcome: at any observed seq == i, payload != payloadFormula(i) (a stale/reordered payload behind its own sequence number)."
+  },
+  "counterUpdate": {
+    "threadCount": 4,
+    "incrementsPerThread": 50000,
+    "expectedTotal": 200000,
+    "note": "expectedTotal = threadCount * incrementsPerThread, exactly. Correct variants (acquire/release native fetch-add, CAS loop, fence-based spinlock) must equal expectedTotal exactly every run. The plain broken variant and the volatile/seq-cst-without-RMW variant are deliberately NOT asserted to equal expectedTotal in the correctness suite (lost updates under contention are real but not exactly reproducible); their observed totals are reported as an honest empirical finding, never fabricated."
+  }
+}

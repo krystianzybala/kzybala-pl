@@ -1,0 +1,30 @@
+{
+  "labId": "gc-tail-latency",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Every dataset generates a deterministic value stream; every variant reads that same stream and accumulates a checksum from it, regardless of how it allocates (reused, freshly-allocated-and-discarded, bursty, retained-and-growing). Allocation pattern and collector choice change GC pressure and pause behavior, never the checksum.",
+  "semantics": {
+    "n": 1000000,
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "objectGraphChurn": "value[i] = i (linear, no RNG); extra payload = 8 longs/node",
+    "messagePipeline": "value[i] = xorshift64 stream (seed=60) unsigned-mod 1000000; extra payload = 16 longs/node",
+    "retainedCache": "value[i] = xorshift64 stream (seed=61) unsigned-mod 1000000; extra payload = 4 longs/node",
+    "lowAllocationReuse": "a single node is allocated once and its value field mutated every iteration — near-zero allocation",
+    "steadyHighAllocation": "a fresh node is allocated every iteration and discarded immediately after its value is read",
+    "burstyAllocation": "iterations alternate in fixed blocks: 100 reused (as lowAllocationReuse) then 20 freshly-allocated with an 8x larger payload, repeating for the full n",
+    "growingLiveSet": "a fresh node is allocated every iteration AND retained in a never-shrinking list — live set grows monotonically to n nodes by the end of the run",
+    "collectorMatrix": "IDENTICAL code and allocation pattern to steadyHighAllocation; only the launching JVM's collector flag differs (G1 vs Parallel) — a runner-level distinction, not a code distinction"
+  },
+  "expectedTotals": {
+    "objectGraphChurn": {
+      "first5": [0, 1, 2, 3, 4],
+      "total": "499999500000"
+    },
+    "messagePipeline": {
+      "first5": [185660, 657890, 900124, 364735, 174128],
+      "total": "500229738955"
+    },
+    "retainedCache": {
+      "first5": [193277, 370083, 430581, 204826, 290517],
+      "total": "499839503787"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "deoptimization-uncommon-traps",
+  "title": "Deoptimization and Uncommon Traps",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "jit",
+    "deoptimization",
+    "uncommon-traps",
+    "latency"
+  ],
+  "prerequisites": [
+    "jit-pipeline",
+    "inlining-call-site-shape"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

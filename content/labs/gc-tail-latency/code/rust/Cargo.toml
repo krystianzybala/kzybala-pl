@@ -1,0 +1,19 @@
+[package]
+name = "gc-tail-latency-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"GC algorithms and tail latency\" (kzybala.pl/lab/gc-tail-latency/)."
+publish = false
+
+[lib]
+name = "gc_tail_lab"
+path = "src/lib.rs"
+
+[[bench]]
+name = "gc_tail_bench"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"

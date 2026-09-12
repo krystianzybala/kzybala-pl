@@ -1,0 +1,26 @@
+{
+  "id": "simd-vector-api-rust",
+  "title": "SIMD: Java Vector API and Rust",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "simd",
+    "vector-api",
+    "auto-vectorization",
+    "intrinsics"
+  ],
+  "prerequisites": [
+    "cache-locality-working-set",
+    "bounds-checks-loop-shape"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

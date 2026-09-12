@@ -1,5 +1,84 @@
 [
   {
+    "id": "allocation-object-layout",
+    "title": "Allocation Cost and Object Layout",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 40,
+    "topics": [
+      "allocation",
+      "object-layout",
+      "memory",
+      "footprint"
+    ],
+    "prerequisites": [
+      "cache-locality-working-set"
+    ],
+    "unlocks": [
+      "ffm-memory-segments",
+      "struct-layout-alignment"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "aos-vs-soa",
+    "title": "Array of Structures vs Structure of Arrays",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 40,
+    "topics": [
+      "memory-layout",
+      "cache-density",
+      "simd-eligibility",
+      "ffm"
+    ],
+    "prerequisites": [
+      "cache-locality-working-set"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "arena-lifetimes-reuse",
+    "title": "Arena Lifetimes, Pools and Reuse",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "arenas",
+      "pooling",
+      "lifetimes",
+      "allocation"
+    ],
+    "prerequisites": [
+      "escape-analysis-scalar-replacement",
+      "ffm-memory-segments"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
     "id": "benchmark-harness-traps",
     "title": "Benchmark Harness Traps",
     "status": "draft",
@@ -14,8 +93,65 @@
     ],
     "prerequisites": [],
     "unlocks": [
-      "clocks-latency-histograms"
+      "clocks-latency-histograms",
+      "branch-prediction",
+      "bounds-checks-loop-shape",
+      "cache-locality-working-set"
     ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "bounds-checks-loop-shape",
+    "title": "Bounds Checks and Loop Shape",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 40,
+    "topics": [
+      "bounds-checks",
+      "jit-optimization",
+      "loop-shape",
+      "unsafe"
+    ],
+    "prerequisites": [
+      "benchmark-harness-traps",
+      "cache-locality-working-set"
+    ],
+    "unlocks": [
+      "ffm-memory-segments",
+      "simd-vector-api-rust"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "branch-prediction",
+    "title": "Branch Prediction and Data Distribution",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 35,
+    "topics": [
+      "branch-prediction",
+      "cpu-pipeline",
+      "measurement",
+      "data-distribution"
+    ],
+    "prerequisites": [
+      "benchmark-harness-traps"
+    ],
+    "unlocks": [],
     "languages": [
       "java",
       "rust"
@@ -48,6 +184,37 @@
     "conceptualModel": true
   },
   {
+    "id": "cache-locality-working-set",
+    "title": "Cache Locality and Working-Set Size",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "intermediate",
+    "durationMinutes": 40,
+    "topics": [
+      "cache-locality",
+      "working-set",
+      "memory-hierarchy",
+      "measurement"
+    ],
+    "prerequisites": [
+      "benchmark-harness-traps",
+      "clocks-latency-histograms"
+    ],
+    "unlocks": [
+      "aos-vs-soa",
+      "bounds-checks-loop-shape",
+      "allocation-object-layout",
+      "simd-vector-api-rust"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
     "id": "clocks-latency-histograms",
     "title": "Clocks, Latency Histograms and Percentiles",
     "status": "draft",
@@ -63,7 +230,65 @@
     "prerequisites": [
       "benchmark-harness-traps"
     ],
+    "unlocks": [
+      "safepoints-ttsp",
+      "gc-tail-latency"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "deoptimization-uncommon-traps",
+    "title": "Deoptimization and Uncommon Traps",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "jit",
+      "deoptimization",
+      "uncommon-traps",
+      "latency"
+    ],
+    "prerequisites": [
+      "jit-pipeline",
+      "inlining-call-site-shape"
+    ],
     "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "escape-analysis-scalar-replacement",
+    "title": "Escape Analysis and Scalar Replacement",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 40,
+    "topics": [
+      "jit",
+      "escape-analysis",
+      "allocation",
+      "gc"
+    ],
+    "prerequisites": [
+      "jit-pipeline",
+      "inlining-call-site-shape"
+    ],
+    "unlocks": [
+      "gc-tail-latency",
+      "arena-lifetimes-reuse"
+    ],
     "languages": [
       "java",
       "rust"
@@ -95,6 +320,92 @@
     "conceptualModel": true
   },
   {
+    "id": "ffm-memory-segments",
+    "title": "Heap vs Off-Heap with FFM MemorySegment",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "ffm",
+      "memory-segments",
+      "off-heap",
+      "arenas"
+    ],
+    "prerequisites": [
+      "allocation-object-layout",
+      "bounds-checks-loop-shape"
+    ],
+    "unlocks": [
+      "struct-layout-alignment",
+      "arena-lifetimes-reuse",
+      "zero-copy-binary-parsing",
+      "java-rust-ffm-interop"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "gc-tail-latency",
+    "title": "GC Algorithms and Tail Latency",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "gc",
+      "latency",
+      "allocation",
+      "jvm"
+    ],
+    "prerequisites": [
+      "clocks-latency-histograms",
+      "escape-analysis-scalar-replacement",
+      "safepoints-ttsp"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "inlining-call-site-shape",
+    "title": "Inlining and Call-Site Shape",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 40,
+    "topics": [
+      "jit",
+      "inlining",
+      "polymorphism",
+      "code-size"
+    ],
+    "prerequisites": [
+      "jit-pipeline"
+    ],
+    "unlocks": [
+      "escape-analysis-scalar-replacement",
+      "deoptimization-uncommon-traps"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
     "id": "jit-pipeline",
     "title": "JIT Pipeline: Interpretation, C1, C2 and Deoptimization",
     "status": "draft",
@@ -108,7 +419,12 @@
       "warmup"
     ],
     "prerequisites": [],
-    "unlocks": [],
+    "unlocks": [
+      "inlining-call-site-shape",
+      "escape-analysis-scalar-replacement",
+      "deoptimization-uncommon-traps",
+      "safepoints-ttsp"
+    ],
     "languages": [
       "java",
       "rust"
@@ -140,6 +456,115 @@
     "interactive": true,
     "benchmark": true,
     "conceptualModel": true
+  },
+  {
+    "id": "safepoints-ttsp",
+    "title": "Safepoints and Time to Safepoint",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "jit",
+      "safepoints",
+      "ttsp",
+      "concurrency"
+    ],
+    "prerequisites": [
+      "jit-pipeline",
+      "clocks-latency-histograms"
+    ],
+    "unlocks": [
+      "gc-tail-latency"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "simd-vector-api-rust",
+    "title": "SIMD: Java Vector API and Rust",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "simd",
+      "vector-api",
+      "auto-vectorization",
+      "intrinsics"
+    ],
+    "prerequisites": [
+      "cache-locality-working-set",
+      "bounds-checks-loop-shape"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "struct-layout-alignment",
+    "title": "Struct Layout, Alignment and Padding",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "struct-layout",
+      "alignment",
+      "padding",
+      "cache-lines"
+    ],
+    "prerequisites": [
+      "allocation-object-layout",
+      "ffm-memory-segments"
+    ],
+    "unlocks": [
+      "zero-copy-binary-parsing",
+      "fixed-binary-serialization"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "zero-copy-binary-parsing",
+    "title": "Zero-Copy Binary Parsing and Views",
+    "status": "draft",
+    "level": 1,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "zero-copy",
+      "parsing",
+      "views",
+      "serialization"
+    ],
+    "prerequisites": [
+      "ffm-memory-segments",
+      "struct-layout-alignment"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
   },
   {
     "id": "memory-ordering",
@@ -183,7 +608,8 @@
       "memory-ordering"
     ],
     "unlocks": [
-      "spsc-ring-buffer"
+      "spsc-ring-buffer",
+      "memory-ordering-atomics"
     ],
     "languages": [
       "java",
@@ -192,6 +618,32 @@
     "interactive": true,
     "benchmark": true,
     "conceptualModel": true
+  },
+  {
+    "id": "memory-ordering-atomics",
+    "title": "Memory Ordering: VarHandles and Rust Atomics",
+    "status": "draft",
+    "level": 4,
+    "difficulty": "advanced",
+    "durationMinutes": 35,
+    "topics": [
+      "concurrency",
+      "memory-model",
+      "atomics"
+    ],
+    "prerequisites": [
+      "cas-contention"
+    ],
+    "unlocks": [
+      "mpsc-contention"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
   },
   {
     "id": "spsc-ring-buffer",
@@ -220,6 +672,32 @@
     "conceptualModel": true
   },
   {
+    "id": "mpsc-contention",
+    "title": "MPSC Queues and Producer Contention",
+    "status": "draft",
+    "level": 5,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "lock-free",
+      "coherence"
+    ],
+    "prerequisites": [
+      "memory-ordering-atomics"
+    ],
+    "unlocks": [
+      "locks-spin-parking"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
     "id": "thread-per-core",
     "title": "Thread-per-Core Architecture",
     "status": "stable",
@@ -234,7 +712,9 @@
     "prerequisites": [
       "spsc-ring-buffer"
     ],
-    "unlocks": [],
+    "unlocks": [
+      "thread-per-core-sharding"
+    ],
     "languages": [
       "java",
       "rust"
@@ -242,5 +722,375 @@
     "interactive": true,
     "benchmark": true,
     "conceptualModel": true
+  },
+  {
+    "id": "fixed-binary-serialization",
+    "title": "Object Serialization vs Fixed Binary Layout",
+    "status": "draft",
+    "level": 6,
+    "difficulty": "intermediate",
+    "durationMinutes": 25,
+    "topics": [
+      "serialization",
+      "binary-layout",
+      "ffm",
+      "zero-copy"
+    ],
+    "prerequisites": [
+      "struct-layout-alignment"
+    ],
+    "unlocks": [
+      "memory-mapped-files"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "locks-spin-parking",
+    "title": "Locks, Spin Waiting and Parking",
+    "status": "draft",
+    "level": 6,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "lock-free",
+      "coherence"
+    ],
+    "prerequisites": [
+      "mpsc-contention"
+    ],
+    "unlocks": [
+      "thread-per-core-sharding"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "memory-mapped-files",
+    "title": "Memory-Mapped Files and Page Faults",
+    "status": "draft",
+    "level": 7,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "mmap",
+      "page-faults",
+      "io",
+      "page-cache"
+    ],
+    "prerequisites": [
+      "fixed-binary-serialization"
+    ],
+    "unlocks": [
+      "shared-memory-ipc"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "thread-per-core-sharding",
+    "title": "Thread-per-Core and Shared-Nothing Sharding",
+    "status": "draft",
+    "level": 7,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "lock-free",
+      "coherence"
+    ],
+    "prerequisites": [
+      "locks-spin-parking",
+      "thread-per-core"
+    ],
+    "unlocks": [
+      "virtual-platform-event-loop"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "shared-memory-ipc",
+    "title": "Shared-Memory IPC",
+    "status": "draft",
+    "level": 8,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "ipc",
+      "shared-memory",
+      "spsc",
+      "cross-process"
+    ],
+    "prerequisites": [
+      "memory-mapped-files"
+    ],
+    "unlocks": [
+      "udp-ingest-batching"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "virtual-platform-event-loop",
+    "title": "Virtual Threads vs Platform Threads vs Event Loops",
+    "status": "draft",
+    "level": 8,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "scheduling",
+      "production-engineering"
+    ],
+    "prerequisites": [
+      "thread-per-core-sharding"
+    ],
+    "unlocks": [
+      "backpressure-bounded-pipelines"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "backpressure-bounded-pipelines",
+    "title": "Backpressure and Bounded Pipelines",
+    "status": "draft",
+    "level": 9,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "queueing",
+      "production-engineering"
+    ],
+    "prerequisites": [
+      "virtual-platform-event-loop"
+    ],
+    "unlocks": [
+      "cpu-affinity-numa-irq",
+      "observability-overhead"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "udp-ingest-batching",
+    "title": "UDP Ingest, Batching and Packet Loss",
+    "status": "draft",
+    "level": 9,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "udp",
+      "networking",
+      "batching",
+      "packet-loss"
+    ],
+    "prerequisites": [
+      "shared-memory-ipc"
+    ],
+    "unlocks": [
+      "syscall-amortization-scatter-gather"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "cpu-affinity-numa-irq",
+    "title": "CPU Affinity, NUMA and IRQ Placement",
+    "status": "draft",
+    "level": 10,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "concurrency",
+      "numa",
+      "production-engineering"
+    ],
+    "prerequisites": [
+      "backpressure-bounded-pipelines"
+    ],
+    "unlocks": [
+      "deterministic-low-latency-pipeline"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "syscall-amortization-scatter-gather",
+    "title": "Syscall Amortization and Scatter/Gather I/O",
+    "status": "draft",
+    "level": 10,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "syscalls",
+      "vectored-io",
+      "batching",
+      "networking"
+    ],
+    "prerequisites": [
+      "udp-ingest-batching"
+    ],
+    "unlocks": [
+      "deterministic-low-latency-pipeline"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "java-rust-ffm-interop",
+    "title": "Java-Rust Interop with FFM Downcalls and Upcalls",
+    "status": "draft",
+    "level": 11,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "ffm",
+      "interop",
+      "downcall",
+      "upcall"
+    ],
+    "prerequisites": [
+      "ffm-memory-segments"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "observability-overhead",
+    "title": "Logging, Metrics and Profiling Overhead",
+    "status": "draft",
+    "level": 11,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "observability",
+      "logging",
+      "production-engineering"
+    ],
+    "prerequisites": [
+      "backpressure-bounded-pipelines"
+    ],
+    "unlocks": [
+      "coordinated-omission-load-generation"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "coordinated-omission-load-generation",
+    "title": "Coordinated Omission and Load Generation",
+    "status": "draft",
+    "level": 12,
+    "difficulty": "advanced",
+    "durationMinutes": 30,
+    "topics": [
+      "measurement",
+      "latency",
+      "production-engineering"
+    ],
+    "prerequisites": [
+      "observability-overhead"
+    ],
+    "unlocks": [
+      "deterministic-low-latency-pipeline"
+    ],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
+  },
+  {
+    "id": "deterministic-low-latency-pipeline",
+    "title": "Deterministic Low-Latency Pipeline Capstone",
+    "status": "draft",
+    "level": 13,
+    "difficulty": "advanced",
+    "durationMinutes": 45,
+    "topics": [
+      "capstone",
+      "concurrency",
+      "production-engineering"
+    ],
+    "prerequisites": [
+      "cpu-affinity-numa-irq",
+      "coordinated-omission-load-generation",
+      "syscall-amortization-scatter-gather"
+    ],
+    "unlocks": [],
+    "languages": [
+      "java",
+      "rust"
+    ],
+    "interactive": false,
+    "benchmark": true,
+    "conceptualModel": false
   }
 ]

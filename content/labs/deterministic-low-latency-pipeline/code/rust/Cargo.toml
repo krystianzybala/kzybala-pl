@@ -1,0 +1,20 @@
+[package]
+name = "deterministic-low-latency-pipeline-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the capstone Performance Lab \"Deterministic Low-Latency Pipeline Capstone\" (kzybala.pl/lab/deterministic-low-latency-pipeline/)."
+publish = false
+
+[lib]
+name = "dllp_lab"
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "deterministic_low_latency_pipeline"
+harness = false
+
+[profile.bench]
+inherits = "release"

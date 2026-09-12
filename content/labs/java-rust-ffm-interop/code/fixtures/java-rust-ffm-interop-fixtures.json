@@ -1,0 +1,17 @@
+{
+  "lab": "java-rust-ffm-interop",
+  "description": "Deterministic transform formula and fixed-record layout shared byte-for-byte between the Java and Rust suites. Every transform variant (pure Java, scalar downcall, batched downcall, zero-copy downcall, pure Rust baseline) must apply the identical formula; every validation variant must agree on the identical fixed-record layout and expected-value derivation.",
+  "numericTransform": {
+    "formula": "transform(x) = x * 2.0 + 1.0",
+    "note": "Identical in pl.kzybala.lab.ffminterop.FfmInteropOps#transformScalarPureJava (Java) and transform_scalar_pure (Rust) — the FFI wrappers on both sides call into this same logic, never a parallel reimplementation."
+  },
+  "fixedRecordValidation": {
+    "recordSizeBytes": 16,
+    "layout": "bytes[0..8) = id (LE u64), bytes[8..16) = value (LE u64)",
+    "expectedValueFormula": "expectedValue(id) = id * 2654435761 + 1 (wrapping/overflowing 64-bit arithmetic)",
+    "note": "A record is valid iff its stored value equals expectedValue(id). ffm_validate_records/validateRecords return the count of invalid records, or -1 if the buffer length is not a multiple of 16 bytes (an input-shaped error, never a panic/exception)."
+  },
+  "callbackNotification": {
+    "note": "The upcall variant invokes its callback exactly once per input element, in input order, with that element's transformed value — verified identically by both languages' test suites."
+  }
+}

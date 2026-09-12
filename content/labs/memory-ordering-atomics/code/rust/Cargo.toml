@@ -1,0 +1,20 @@
+[package]
+name = "memory-ordering-atomics-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Memory Ordering: VarHandles and Rust Atomics\" (kzybala.pl/lab/memory-ordering-atomics/)."
+publish = false
+
+[lib]
+name = "memory_ordering_atomics_lab"
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "memory_ordering_atomics"
+harness = false
+
+[profile.bench]
+inherits = "release"

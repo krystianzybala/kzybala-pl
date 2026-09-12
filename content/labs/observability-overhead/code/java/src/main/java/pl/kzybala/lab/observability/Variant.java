@@ -1,0 +1,11 @@
+package pl.kzybala.lab.observability;
+
+public enum Variant {
+    NO_INSTRUMENTATION,
+    DISABLED_EAGER_LOGGING,
+    DISABLED_LAZY_LOGGING,
+    SYNCHRONOUS_LOGGING,
+    ASYNC_BOUNDED_LOGGING,
+    METRICS_LABELS,
+    SAMPLED_TRACING
+}

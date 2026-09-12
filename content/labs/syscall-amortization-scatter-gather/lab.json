@@ -1,0 +1,15 @@
+{
+  "id": "syscall-amortization-scatter-gather",
+  "title": "Syscall Amortization and Scatter/Gather I/O",
+  "status": "draft",
+  "level": 10,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["syscalls", "vectored-io", "batching", "networking"],
+  "prerequisites": ["udp-ingest-batching"],
+  "unlocks": ["deterministic-low-latency-pipeline"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

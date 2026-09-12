@@ -1,0 +1,15 @@
+{
+  "id": "java-rust-ffm-interop",
+  "title": "Java-Rust Interop with FFM Downcalls and Upcalls",
+  "status": "draft",
+  "level": 11,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["ffm", "interop", "downcall", "upcall"],
+  "prerequisites": ["ffm-memory-segments"],
+  "unlocks": [],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

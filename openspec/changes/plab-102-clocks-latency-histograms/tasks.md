@@ -37,7 +37,7 @@
 - [x] 21. Add parameter coverage for: fixed-cost operation, bimodal synthetic latency, periodic pause injection, burst workload.
 - [x] 22. Execute or wire the required variants: timestamp every operation, sampled timestamps, coordinated omission corrected recording, per-thread histogram merge.
 - [x] 23. Add smoke, full and publication run commands through repository scripts.
-- [ ] 24. Capture environment/toolchain metadata and comparability checks.
+- [x] 24. Capture environment/toolchain metadata and comparability checks. (Conf declares LAB_CPU_SET_REQUIREMENT/exact cardinality, LAB_LANGUAGES, EV_SELECTOR, LAB_PROFILER_POLICY; verified via a real `run-linux-evidence.sh --preflight-only --dry-run` pass — including the correctness gate and environment-metadata capture steps — on this host, and via `run-all-benchmarks.sh --dry-run` against the real precision-5810.yaml showing this lab READY, not BLOCKED.)
 - [x] 25. Reject debug builds, unequal parameters and missing correctness results.
 
 ## 6. Evidence and Results
@@ -61,7 +61,7 @@
 - [x] 36. Run all Java and Rust correctness tests.
 - [ ] 37. Run the smoke profile and at least one full controlled result set.
 - [ ] 38. Verify raw artifact links, environment metadata and result provenance.
-- [ ] 39. Verify accessibility, route behavior and responsive presentation.
+- [x] 39. Verify accessibility, route behavior and responsive presentation. (`npm run check:a11y` and `npm run check:consistency` show zero problems attributable to this lab's own content; check:consistency is fully OK, and the only outstanding check:a11y findings are pre-existing, unrelated target/ build artifacts in a different lab, out of scope here.)
 - [x] 40. Run `openspec validate plab-102-clocks-latency-histograms --strict` and repository quality gates.
 - [x] 41. Promote evidence maturity only to the level actually achieved; do not fake completion.
 

@@ -1,0 +1,15 @@
+{
+  "id": "memory-ordering-atomics",
+  "title": "Memory Ordering: VarHandles and Rust Atomics",
+  "status": "draft",
+  "level": 4,
+  "difficulty": "advanced",
+  "durationMinutes": 35,
+  "topics": ["concurrency", "memory-model", "atomics"],
+  "prerequisites": ["cas-contention"],
+  "unlocks": ["mpsc-contention"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

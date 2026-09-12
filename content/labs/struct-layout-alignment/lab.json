@@ -1,0 +1,26 @@
+{
+  "id": "struct-layout-alignment",
+  "title": "Struct Layout, Alignment and Padding",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "struct-layout",
+    "alignment",
+    "padding",
+    "cache-lines"
+  ],
+  "prerequisites": [
+    "allocation-object-layout",
+    "ffm-memory-segments"
+  ],
+  "unlocks": ["zero-copy-binary-parsing", "fixed-binary-serialization"],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

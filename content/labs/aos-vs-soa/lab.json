@@ -1,0 +1,25 @@
+{
+  "id": "aos-vs-soa",
+  "title": "Array of Structures vs Structure of Arrays",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "intermediate",
+  "durationMinutes": 40,
+  "topics": [
+    "memory-layout",
+    "cache-density",
+    "simd-eligibility",
+    "ffm"
+  ],
+  "prerequisites": [
+    "cache-locality-working-set"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

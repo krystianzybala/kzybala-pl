@@ -1,0 +1,29 @@
+{
+  "labId": "escape-analysis-scalar-replacement",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Three datasets (coordinate, resultWrapper, parserState), each a pair of long streams (x,y). All five variants (nonEscaping, returnedObject, storedIntoField, passedToOpaqueCall, identityObserved) construct a small two-field aggregate per element and must sum to the IDENTICAL total sum(x[i]+y[i]) for a given dataset — how the aggregate is used (locally, returned, stored, passed opaquely, identity-observed) changes whether it is scalar-replaced, never the computed result. identityObserved calls System.identityHashCode/its Rust equivalent-concept for its SIDE EFFECT only (forcing materialization) — the non-deterministic hash value itself is never included in the correctness-checked sum.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "coordinate": "x[i] = i (linear, no RNG); y[i] = xorshift64 stream (seed=42) unsigned-mod 1000000",
+    "resultWrapper": "x[i] = xorshift64 stream (seed=43) unsigned-mod 1000000; y[i] = xorshift64 stream (seed=44) unsigned-mod 1000000",
+    "parserState": "x[i] = xorshift64 stream (seed=45) unsigned-mod 1000000; y[i] = xorshift64 stream (seed=46) unsigned-mod 1000000",
+    "perElementContribution": "x[i] + y[i], accumulated as a wrapping 64-bit sum over all elements"
+  },
+  "n": 1000000,
+  "expectedTotals": {
+    "coordinate": {
+      "xFirst5": [0, 1, 2, 3, 4],
+      "yFirst5": [805674, 905471, 320954, 629736, 84162],
+      "total": "999865210459"
+    },
+    "resultWrapper": {
+      "xFirst5": [75435, 585150, 59539, 476429, 785191],
+      "yFirst5": [869484, 806586, 360012, 316142, 143781],
+      "total": "1000116545743"
+    },
+    "parserState": {
+      "xFirst5": [139245, 651899, 615781, 740619, 242304],
+      "yFirst5": [884718, 14393, 986654, 804012, 226311],
+      "total": "1000153707544"
+    }
+  }
+}

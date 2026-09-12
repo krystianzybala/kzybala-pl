@@ -1,0 +1,31 @@
+{
+  "lab": "virtual-platform-event-loop",
+  "description": "Deterministic dataset parameters shared byte-for-byte between the Java and Rust suites. Each task's CPU-stage checksum is a pure function of its integer id and iteration count (xorshift64 with wrapping 64-bit arithmetic, identical bit pattern in Java's signed long and Rust's u64), so the expected total is independent of which variant runner executes the tasks or in what order. The blocking-wait component never affects the checksum; it only affects timing (which this correctness fixture does not assert on — timing is what benchmark.md measures on the native-Linux host).",
+  "taskCount": 200,
+  "checksumSeedMultiplier": "0x9E3779B97F4A7C15",
+  "datasets": {
+    "simulatedSocketWait": {
+      "ioWaitNanos": 2000000,
+      "cpuIterations": 100,
+      "note": "Models a task that mostly waits on a remote call: 2ms simulated blocking wait, a trivial CPU stage."
+    },
+    "shortCpuStage": {
+      "ioWaitNanos": 0,
+      "cpuIterations": 2000,
+      "note": "No blocking wait; a short CPU-only stage. Distinguishes scheduling overhead from blocking-scalability effects."
+    },
+    "longCpuStage": {
+      "ioWaitNanos": 0,
+      "cpuIterations": 200000,
+      "note": "No blocking wait; a long CPU-only stage, large enough to show a single-threaded event loop stalling on it."
+    },
+    "lockNativePinningCase": {
+      "ioWaitNanos": 1000000,
+      "cpuIterations": 500,
+      "synchronizedWrap": true,
+      "note": "The blocking wait and CPU stage both run inside a `synchronized` monitor (Java) / a held `std::sync::Mutex` guard (Rust) — the classic virtual-thread/carrier-pinning shape. As of JDK 24 (JEP 491) synchronized blocks no longer pin a virtual thread to its carrier for ordinary blocking calls, so this repository's JDK 26 toolchain does not reproduce the historical pinning penalty; see theory.md Limitations for the honest, non-fabricated account of what this dataset can and cannot demonstrate on this toolchain."
+    }
+  },
+  "expectedChecksumFormula": "sum over id in [0, taskCount) of xorshift64(seed = wrapping_mul(id, 0x9E3779B97F4A7C15) + 1, iterations = dataset.cpuIterations)",
+  "correctnessGate": "For every (variant, dataset) pair, totalChecksum must equal the dataset's expected total and completedCount must equal taskCount exactly, in both languages."
+}

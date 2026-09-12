@@ -1,0 +1,11 @@
+{
+  "lab": "observability-overhead",
+  "description": "Deterministic dataset parameters shared byte-for-byte between the Java and Rust suites. The hot-path checksum is a pure function of each event's id, identical under every instrumentation variant — instrumentation must never change the business result. Each variant's side-effect counts (formatCount/loggedCount/droppedCount/distinctLabelsSeen/sampledCount) are also deterministic: the async-bounded-logging variant models a bounded queue's accept/drop decision synchronously at call time (no real background drain thread races the count), the same 'bounded reject' shape as the Backpressure and Bounded Pipelines lab applied to a log queue.",
+  "datasets": {
+    "singleEvent": { "count": 1, "distinctKeyCount": 4, "sampleRate": 8, "asyncQueueCapacity": 16, "stackDepth": 3 },
+    "errorBurst": { "count": 2000, "distinctKeyCount": 4, "sampleRate": 8, "asyncQueueCapacity": 16, "stackDepth": 3, "note": "asyncQueueCapacity (16) is far below count (2000): the async-bounded-logging variant must drop 1984 of 2000 events by design, not fail." },
+    "highCardinalityKey": { "count": 2000, "distinctKeyCount": 500, "sampleRate": 8, "asyncQueueCapacity": 16, "stackDepth": 3, "note": "500 distinct label keys over 2000 events exercises the metrics-labels variant's per-key bookkeeping cost." },
+    "stackTracePath": { "count": 2000, "distinctKeyCount": 4, "sampleRate": 8, "asyncQueueCapacity": 16, "stackDepth": 12, "note": "12 stack frames of recursion before the hot path, so sampled-tracing's real stack-walk cost is representative." }
+  },
+  "correctnessInvariant": "The hot-path checksum (XOR-accumulated across all events) is identical across every variant for a given dataset, in both languages. Side-effect counts satisfy: formatCount/loggedCount/droppedCount/distinctLabelsSeen/sampledCount match the deterministic rule for that variant exactly (e.g. ASYNC_BOUNDED_LOGGING: loggedCount == min(count, asyncQueueCapacity), droppedCount == count - loggedCount)."
+}

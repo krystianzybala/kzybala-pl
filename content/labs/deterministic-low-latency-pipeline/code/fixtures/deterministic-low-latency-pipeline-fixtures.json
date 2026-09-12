@@ -1,0 +1,16 @@
+{
+  "lab": "deterministic-low-latency-pipeline",
+  "description": "Deterministic, single-threaded discrete-event simulation of the capstone pipeline, shared byte-for-byte between the Java and Rust suites. Each event's decision checksum is a pure function of (key, eventId, eventSizeBytes), never depending on which pipeline variant, shard count, or admission outcome routed it — this is what lets NAIVE and OPTIMIZED assert the identical checksum despite radically different queueing strategies. numShards=1 for NAIVE_OBJECT_QUEUE (a single shared unbounded queue, the anti-pattern baseline); numShards=4 with bounded per-shard admission for every other variant.",
+  "numShards": 4,
+  "datasets": {
+    "smallEventsUniformSteady": { "eventSizeBytes": 32, "keyPattern": "UNIFORM", "producedPerTick": "5 for 300 ticks", "capacityPerShard": 50, "consumeRatePerShard": 5 },
+    "largeEventsUniformSteady": { "eventSizeBytes": 1024, "keyPattern": "UNIFORM", "producedPerTick": "5 for 300 ticks", "capacityPerShard": 50, "consumeRatePerShard": 5 },
+    "mediumEventsHotKeyBurst": { "eventSizeBytes": 128, "keyPattern": "HOT_KEY_SKEW", "producedPerTick": "40 for 10 ticks, then 0 for 100 ticks", "capacityPerShard": 50, "consumeRatePerShard": 5, "note": "80% of events collapse onto key 0 (shard 0) — even though aggregate capacity across 4 shards is generous, shard 0 alone can still overflow under this skew." },
+    "mediumEventsUniformBurst": { "eventSizeBytes": 128, "keyPattern": "UNIFORM", "producedPerTick": "40 for 10 ticks, then 0 for 100 ticks", "capacityPerShard": 50, "consumeRatePerShard": 5 }
+  },
+  "variantOverrides": {
+    "OVERLOAD_PROFILE": "Same dataset, but capacityPerShard is forced to capacityPerShard/8 (rounded down, minimum 1) to deliberately induce drops even under a dataset that OPTIMIZED handles cleanly.",
+    "FAULT_RESTART_PROFILE": "Same dataset and capacity as OPTIMIZED, but shard 0's queue is forcibly cleared at tick 5 (restartAtTick=5, restartShard=0), and every event still queued there at that moment is counted as restartLoss rather than delivered or dropped."
+  },
+  "correctnessInvariant": "produced == delivered + dropped + restartLoss, for every (variant, dataset) pair, with zero events left queued at the end of the simulation."
+}

@@ -1,0 +1,23 @@
+[package]
+name = "cpu-affinity-numa-irq-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"CPU Affinity, NUMA and IRQ Placement\" (kzybala.pl/lab/cpu-affinity-numa-irq/)."
+publish = false
+
+[lib]
+name = "affinity_lab"
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "cpu_affinity_numa_irq"
+harness = false
+
+[profile.bench]
+inherits = "release"

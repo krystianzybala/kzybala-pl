@@ -1,0 +1,26 @@
+{
+  "id": "arena-lifetimes-reuse",
+  "title": "Arena Lifetimes, Pools and Reuse",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "arenas",
+    "pooling",
+    "lifetimes",
+    "allocation"
+  ],
+  "prerequisites": [
+    "escape-analysis-scalar-replacement",
+    "ffm-memory-segments"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

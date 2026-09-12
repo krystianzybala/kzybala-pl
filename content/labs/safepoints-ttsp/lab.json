@@ -1,0 +1,26 @@
+{
+  "id": "safepoints-ttsp",
+  "title": "Safepoints and Time to Safepoint",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "jit",
+    "safepoints",
+    "ttsp",
+    "concurrency"
+  ],
+  "prerequisites": [
+    "jit-pipeline",
+    "clocks-latency-histograms"
+  ],
+  "unlocks": ["gc-tail-latency"],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

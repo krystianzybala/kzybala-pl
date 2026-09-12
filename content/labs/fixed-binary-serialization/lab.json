@@ -1,0 +1,15 @@
+{
+  "id": "fixed-binary-serialization",
+  "title": "Object Serialization vs Fixed Binary Layout",
+  "status": "draft",
+  "level": 6,
+  "difficulty": "intermediate",
+  "durationMinutes": 25,
+  "topics": ["serialization", "binary-layout", "ffm", "zero-copy"],
+  "prerequisites": ["struct-layout-alignment"],
+  "unlocks": ["memory-mapped-files"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

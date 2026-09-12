@@ -1,0 +1,15 @@
+{
+  "id": "mpsc-contention",
+  "title": "MPSC Queues and Producer Contention",
+  "status": "draft",
+  "level": 5,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "lock-free", "coherence"],
+  "prerequisites": ["memory-ordering-atomics"],
+  "unlocks": ["locks-spin-parking"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

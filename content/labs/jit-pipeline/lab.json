@@ -7,7 +7,7 @@
   "durationMinutes": 25,
   "topics": ["jit", "tiered-compilation", "deoptimization", "warmup"],
   "prerequisites": [],
-  "unlocks": [],
+  "unlocks": ["inlining-call-site-shape", "escape-analysis-scalar-replacement", "deoptimization-uncommon-traps", "safepoints-ttsp"],
   "languages": ["java", "rust"],
   "interactive": false,
   "benchmark": true,

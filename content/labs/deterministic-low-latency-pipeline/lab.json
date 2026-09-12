@@ -1,0 +1,15 @@
+{
+  "id": "deterministic-low-latency-pipeline",
+  "title": "Deterministic Low-Latency Pipeline Capstone",
+  "status": "draft",
+  "level": 13,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": ["capstone", "concurrency", "production-engineering"],
+  "prerequisites": ["cpu-affinity-numa-irq", "coordinated-omission-load-generation", "syscall-amortization-scatter-gather"],
+  "unlocks": [],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

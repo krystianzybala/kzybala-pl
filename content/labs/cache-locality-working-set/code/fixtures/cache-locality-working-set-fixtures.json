@@ -1,0 +1,35 @@
+{
+  "labId": "cache-locality-working-set",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). n=1000000, seed=42. values[i]=i for all i (no RNG needed for payload — sidesteps the 'different dataset generation between languages' trap entirely for the data itself). Only the TRAVERSAL ORDER is randomized, via the same xorshift64 stream convention already established in this repository's cache-hierarchy lab. Every variant (sequential, random permutation, pointer chasing, blocked/tiled) must sum to the IDENTICAL total sum(values) = n*(n-1)/2 = 499999500000 — traversal order changes cost, never the total. Change a value here only together with both test files.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout); state seeded max(seed,1)",
+    "fisherYates": "for i from n-1 downto 1: state=xorshift64(state); j = state unsigned-mod (i+1) [INCLUSIVE of i]; swap(perm[i],perm[j]) — a genuine random permutation, self-swaps allowed",
+    "sattoloNext": "for i from n-1 downto 1: state=xorshift64(state); j = state unsigned-mod i [EXCLUSIVE of i, no self-swap] — guarantees a SINGLE n-cycle (identical algorithm to content/labs/cache-hierarchy's ChaseTables.randomCycle); next[perm[i]]=perm[(i+1) mod n]",
+    "traversalChecksum": "checksum*31 + idx (64-bit wrapping), following next[] from index 0 for n steps",
+    "blockedTraversal": "an n=side*side matrix stored row-major (index = row*side + col); iterate block-column bc in steps of blockSize, then block-row br in steps of blockSize, then column c in [bc, min(bc+blockSize,side)), then row r in [br, min(br+blockSize,side)); visited index = r*side + c — a tiled column-major traversal of a row-major matrix"
+  },
+  "n": 1000000,
+  "seed": 42,
+  "side": 1000,
+  "blockSize": 32,
+  "expectedTotalSum": "499999500000",
+  "cases": {
+    "randomPermutation": {
+      "first5": [712069, 917377, 307023, 717218, 274070],
+      "checksum": "-4372133131104027544",
+      "sum": "499999500000"
+    },
+    "pointerChaseNext": {
+      "nextArrayFirst5": [916089, 366385, 207944, 432012, 867535],
+      "traversalChecksum": "-6982732617436105870",
+      "visitedIndexSum": "499999500000"
+    },
+    "blockedTraversal": {
+      "side": 1000,
+      "blockSize": 32,
+      "first5VisitedIndices": [0, 1000, 2000, 3000, 4000],
+      "total": "499999500000",
+      "elementsVisited": 1000000
+    }
+  }
+}

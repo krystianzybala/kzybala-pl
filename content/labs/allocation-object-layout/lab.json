@@ -1,0 +1,25 @@
+{
+  "id": "allocation-object-layout",
+  "title": "Allocation Cost and Object Layout",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "intermediate",
+  "durationMinutes": 40,
+  "topics": [
+    "allocation",
+    "object-layout",
+    "memory",
+    "footprint"
+  ],
+  "prerequisites": [
+    "cache-locality-working-set"
+  ],
+  "unlocks": ["ffm-memory-segments", "struct-layout-alignment"],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

@@ -1,0 +1,24 @@
+[package]
+name = "ffm-interop-lab"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ffm_interop_lab"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bench]]
+name = "ffm_interop"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[profile.release]
+panic = "unwind" # required: extern "C" entry points catch_unwind internally, which needs unwind (not abort) panic strategy
+
+[profile.bench]
+inherits = "release"

@@ -1,0 +1,15 @@
+{
+  "lab": "coordinated-omission-load-generation",
+  "description": "Deterministic, single-threaded discrete-event simulation on a virtual (logical) clock — no real sleeping or wall-clock timing. A single FIFO server processes requests one at a time; each variant differs only in when it 'sends' a request (immediately after the previous completes for closed loop, or at a schedule independent of server state for open-loop variants) and how it admits/records that send. This is what makes admitted/missed counts and response-time totals a deterministic recurrence rather than a timing-sensitive race.",
+  "serviceModels": {
+    "PERIODIC_STALL": { "baseNanos": 100, "stallEveryN": 50, "stallNanos": 10000000, "note": "Every 50th request takes 10ms instead of 100ns — models a periodic GC-like pause." },
+    "GC_PAUSE_INJECTION": { "baseNanos": 100, "pauseAtIndex": 500, "pauseNanos": 50000000, "note": "A single one-off 50ms pause at request 500 — models an isolated GC/stop-the-world event." },
+    "BOUNDED_OVERLOAD": { "baseNanos": 150, "note": "Constant 150ns service time; paired with a 100ns arrival interval below, the server is persistently overloaded (arrival rate exceeds service rate)." }
+  },
+  "datasets": {
+    "periodicTenMsStall": { "count": 600, "serviceModel": "PERIODIC_STALL", "intervalNanos": 1000000, "queueCapacity": 1000, "burstSize": 5 },
+    "gcPauseInjection": { "count": 600, "serviceModel": "GC_PAUSE_INJECTION", "intervalNanos": 1000000, "queueCapacity": 1000, "burstSize": 5 },
+    "boundedServerOverload": { "count": 600, "serviceModel": "BOUNDED_OVERLOAD", "intervalNanos": 100, "queueCapacity": 20, "burstSize": 5 }
+  },
+  "correctnessInvariant": "produced == admitted + missed for every (variant, dataset) pair. CLOSED_LOOP and OMISSION_CORRECTED_RECORDING never miss (missed == 0) because they only ever send after the previous request completes. CLOSED_LOOP's recorded response time equals service time exactly, every request — the literal 'hides queueing' property. OMISSION_CORRECTED_RECORDING's recordedSamples exceeds produced whenever a stall's response time exceeds the target interval."
+}

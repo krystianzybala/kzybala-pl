@@ -1,0 +1,15 @@
+{
+  "id": "memory-mapped-files",
+  "title": "Memory-Mapped Files and Page Faults",
+  "status": "draft",
+  "level": 7,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["mmap", "page-faults", "io", "page-cache"],
+  "prerequisites": ["fixed-binary-serialization"],
+  "unlocks": ["shared-memory-ipc"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

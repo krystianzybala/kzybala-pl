@@ -1,0 +1,15 @@
+{
+  "id": "observability-overhead",
+  "title": "Logging, Metrics and Profiling Overhead",
+  "status": "draft",
+  "level": 11,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["observability", "logging", "production-engineering"],
+  "prerequisites": ["backpressure-bounded-pipelines"],
+  "unlocks": ["coordinated-omission-load-generation"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

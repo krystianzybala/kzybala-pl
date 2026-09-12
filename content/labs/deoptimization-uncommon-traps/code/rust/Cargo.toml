@@ -1,0 +1,26 @@
+[package]
+name = "deoptimization-uncommon-traps-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Deoptimization and uncommon traps\" lab (kzybala.pl/lab/deoptimization-uncommon-traps/)."
+publish = false
+
+[lib]
+name = "deopt_lab"
+path = "src/lib.rs"
+
+[dependencies]
+# Worker affinity for the native-Linux evidence binary only.
+libc = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+# cargo bench always builds this profile (inherits release). Benchmarking
+# a debug build is invalid input for this lab by definition.
+[profile.bench]
+inherits = "release"
+
+[[bench]]
+name = "deopt"
+harness = false

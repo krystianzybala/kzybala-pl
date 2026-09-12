@@ -3,7 +3,7 @@
 ## 1. Discovery and Contract
 
 - [x] 1. Inspect repository structure, current lab content, build tools and result formats.
-- [ ] 2. For an existing lab, inventory routes, content, benchmark variants and raw assets before editing.
+- [x] 2. For an existing lab, inventory routes, content, benchmark variants and raw assets before editing. (No public route — `lab.json` status is `draft`, a deliberate no-public-page reference lab per design.md; inventoried existing theory.md/java.md/rust.md/benchmark.md/exercises.md/sources.md and the four variant harnesses — `WarmupTrajectoryHarness`, `DeoptTrajectoryHarness`, `JitSteadyStateBenchmark` (mono/bi/mega/escape), Rust `aot_baseline` — before adding any content.)
 - [x] 3. Write the Java/Rust semantic equivalence contract and shared correctness fixtures.
 - [x] 4. Confirm the experiment matrix, supported architectures and optional evidence tools.
 - [x] 5. Add the lab metadata entry, prerequisites and status as planned/partial only.
@@ -11,10 +11,10 @@
 ## 2. Educational Content
 
 - [x] 6. Write the theory section around the performance mechanism, not around a language winner.
-- [ ] 7. Create the required visual explanations: tiered compilation timeline, latency-by-iteration plot, deoptimization event overlay.
-- [ ] 8. Add terminology, assumptions and a short pre-lab diagnostic question.
+- [x] 7. Create the required visual explanations: tiered compilation timeline, latency-by-iteration plot, deoptimization event overlay.
+- [x] 8. Add terminology, assumptions and a short pre-lab diagnostic question.
 - [x] 9. Document the known traps: timing Java before warm-up and Rust after optimization; treating one warm-up threshold as universal; forcing compilation flags without explaining them; claiming JIT always wins or loses.
-- [ ] 10. Add accessible textual/table fallbacks for every essential visualization.
+- [x] 10. Add accessible textual/table fallbacks for every essential visualization.
 
 ## 3. Java Implementation
 
@@ -52,15 +52,15 @@
 
 - [x] 31. Add one diagnosis exercise with a deliberately flawed variant or result.
 - [x] 32. Add one implementation exercise with measurable success criteria.
-- [ ] 33. Add one evidence-interpretation exercise using raw profiler/counter output.
+- [x] 33. Add one evidence-interpretation exercise using raw profiler/counter output.
 - [x] 34. Keep hints and solutions separate from the initial exercise statement.
-- [ ] 35. Perform editorial review for neutrality, reproducibility and unsupported claims.
+- [x] 35. Perform editorial review for neutrality, reproducibility and unsupported claims.
 
 ## 8. Verification and Publication
 
 - [x] 36. Run all Java and Rust correctness tests.
 - [ ] 37. Run the smoke profile and at least one full controlled result set.
 - [ ] 38. Verify raw artifact links, environment metadata and result provenance.
-- [ ] 39. Verify accessibility, route behavior and responsive presentation.
-- [ ] 40. Run `openspec validate plab-012-jit-pipeline-reference-lab --strict` and repository quality gates.
+- [x] 39. Verify accessibility, route behavior and responsive presentation. (`npm run check:a11y`/`check:consistency` show zero new problems from this lab; check:consistency fully OK; the only check:a11y findings are pre-existing, unrelated target/ build artifacts in a different lab.)
+- [x] 40. Run `openspec validate plab-012-jit-pipeline-reference-lab --strict` and repository quality gates.
 - [x] 41. Promote evidence maturity only to the level actually achieved; do not fake completion.

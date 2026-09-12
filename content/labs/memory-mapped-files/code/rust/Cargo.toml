@@ -1,0 +1,22 @@
+[package]
+name = "memory-mapped-files-lab"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "memory_mapped_files_lab"
+path = "src/lib.rs"
+
+[[bench]]
+name = "memory_mapped_files"
+harness = false
+
+[dependencies]
+memmap2 = "0.9"
+
+[dev-dependencies]
+criterion = "0.5"
+tempfile = "3"
+
+[profile.bench]
+inherits = "release"

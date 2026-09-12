@@ -1,0 +1,15 @@
+{
+  "id": "backpressure-bounded-pipelines",
+  "title": "Backpressure and Bounded Pipelines",
+  "status": "draft",
+  "level": 9,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "queueing", "production-engineering"],
+  "prerequisites": ["virtual-platform-event-loop"],
+  "unlocks": ["cpu-affinity-numa-irq", "observability-overhead"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

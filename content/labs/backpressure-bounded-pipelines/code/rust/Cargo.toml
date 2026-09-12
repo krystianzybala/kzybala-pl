@@ -1,0 +1,20 @@
+[package]
+name = "backpressure-bounded-pipelines-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Backpressure and Bounded Pipelines\" (kzybala.pl/lab/backpressure-bounded-pipelines/)."
+publish = false
+
+[lib]
+name = "bp_lab"
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "backpressure_bounded_pipelines"
+harness = false
+
+[profile.bench]
+inherits = "release"

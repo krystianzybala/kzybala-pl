@@ -1,0 +1,15 @@
+{
+  "id": "udp-ingest-batching",
+  "title": "UDP Ingest, Batching and Packet Loss",
+  "status": "draft",
+  "level": 9,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["udp", "networking", "batching", "packet-loss"],
+  "prerequisites": ["shared-memory-ipc"],
+  "unlocks": ["syscall-amortization-scatter-gather"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

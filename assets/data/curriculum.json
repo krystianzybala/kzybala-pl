@@ -225,7 +225,7 @@
     ],
     "durationMinutes": 25,
     "prerequisites": [
-      "clocks-latency-histograms"
+      "benchmark-harness-traps"
     ],
     "route": null,
     "sourceChange": null,
@@ -247,7 +247,8 @@
     ],
     "durationMinutes": 25,
     "prerequisites": [
-      "branch-prediction"
+      "benchmark-harness-traps",
+      "clocks-latency-histograms"
     ],
     "route": null,
     "sourceChange": null,
@@ -291,6 +292,7 @@
     ],
     "durationMinutes": 25,
     "prerequisites": [
+      "benchmark-harness-traps",
       "cache-locality-working-set"
     ],
     "route": null,
@@ -313,7 +315,7 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
-      "bounds-checks-loop-shape"
+      "jit-pipeline"
     ],
     "route": null,
     "sourceChange": null,
@@ -335,6 +337,7 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
+      "jit-pipeline",
       "inlining-call-site-shape"
     ],
     "route": null,
@@ -357,7 +360,8 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
-      "escape-analysis-scalar-replacement"
+      "jit-pipeline",
+      "inlining-call-site-shape"
     ],
     "route": null,
     "sourceChange": null,
@@ -379,7 +383,8 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
-      "deoptimization-uncommon-traps"
+      "jit-pipeline",
+      "clocks-latency-histograms"
     ],
     "route": null,
     "sourceChange": null,
@@ -401,6 +406,8 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
+      "clocks-latency-histograms",
+      "escape-analysis-scalar-replacement",
       "safepoints-ttsp"
     ],
     "route": null,
@@ -445,7 +452,8 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
-      "allocation-object-layout"
+      "allocation-object-layout",
+      "bounds-checks-loop-shape"
     ],
     "route": null,
     "sourceChange": null,
@@ -467,6 +475,7 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
+      "allocation-object-layout",
       "ffm-memory-segments"
     ],
     "route": null,
@@ -489,7 +498,8 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
-      "struct-layout-alignment"
+      "escape-analysis-scalar-replacement",
+      "ffm-memory-segments"
     ],
     "route": null,
     "sourceChange": null,
@@ -511,7 +521,8 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
-      "arena-lifetimes-reuse"
+      "ffm-memory-segments",
+      "struct-layout-alignment"
     ],
     "route": null,
     "sourceChange": null,
@@ -533,7 +544,8 @@
     ],
     "durationMinutes": 30,
     "prerequisites": [
-      "aos-vs-soa"
+      "cache-locality-working-set",
+      "bounds-checks-loop-shape"
     ],
     "route": null,
     "sourceChange": null,

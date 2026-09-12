@@ -14,7 +14,7 @@
   "prerequisites": [
     "benchmark-harness-traps"
   ],
-  "unlocks": [],
+  "unlocks": ["safepoints-ttsp", "gc-tail-latency"],
   "languages": [
     "java",
     "rust"

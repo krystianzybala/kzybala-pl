@@ -1,0 +1,26 @@
+{
+  "id": "zero-copy-binary-parsing",
+  "title": "Zero-Copy Binary Parsing and Views",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "zero-copy",
+    "parsing",
+    "views",
+    "serialization"
+  ],
+  "prerequisites": [
+    "ffm-memory-segments",
+    "struct-layout-alignment"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

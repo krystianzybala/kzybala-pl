@@ -71,3 +71,86 @@ re-speculates depends on JVM version and flags — which is exactly why the
 success criterion asks for your log, not a textbook answer.
 
 </details>
+
+## Exercise 3 — Evidence interpretation (reading a compilation log against a latency trajectory)
+
+Below is a **synthetic teaching example** — a fabricated, condensed
+compilation-log excerpt paired with a per-block latency series,
+constructed for this exercise, not captured from any real run. It is
+educational material for practicing log/trajectory correlation only: it
+is never used as measurement evidence, never supports this lab's
+performance conclusions, and never enters a comparison or maturity
+calculation. (This lab's real trajectory and compilation-log evidence
+comes exclusively from `WarmupTrajectoryHarness`/`DeoptTrajectoryHarness`
+run on the native-Linux evidence host; see benchmark.md.)
+
+```
+Compilation log (condensed, timestamps in ms since JVM start):
+  412   COMPILE   PricingKernel.priceMono (C1)
+  1889  COMPILE   PricingKernel.priceMono (C2)
+  6104  MAKE-NOT-ENTRANT  PricingKernel.priceMono  reason=class_check
+  6110  UNCOMMON-TRAP  PricingKernel.priceMono  reason=unstable_if
+  7350  COMPILE   PricingKernel.priceMono (C2)  note=guard widened
+
+Per-block latency (ns/call, one block = 1,000 calls, blocks 1-10):
+  1: 41,200   2: 6,800   3: 410   4: 210   5: 205
+  6: 198   7: 5,650   8: 640   9: 215   10: 202
+```
+
+**Task:** identify which block(s) correspond to which compilation-log
+event, and explain the latency at block 7 using the log — not just "it
+went up."
+
+**Success criteria:** you correctly match at least three distinct latency
+regions to their log-explained cause, and your explanation of block 7
+names the specific mechanism (not just "recompilation happened") using
+the reordering/ordering vocabulary this lab and its prerequisites use
+(guard, speculative assumption, uncommon trap).
+
+<details>
+<summary>Hint</summary>
+
+Block 1 is far more expensive than block 2, which is itself far more
+expensive than blocks 3 onward — that is two separate step-downs, not
+one. Now find the *single* block where cost goes back up after having
+already been low, and look for a log entry timestamped in that
+neighborhood.
+
+</details>
+
+<details>
+<summary>Solution</summary>
+
+- **Block 1** (41,200 ns): pure interpreter — no compilation has happened
+  yet (`C1` doesn't fire until 412 ms, and given roughly comparable
+  wall-clock pacing across blocks in this synthetic series, block 1 falls
+  before that first compile event).
+- **Block 2** (6,800 ns): C1-compiled but not yet C2-compiled — the drop
+  from block 1 lines up with the `(C1)` compile entry; still an order of
+  magnitude above the eventual floor because C1's output carries
+  profiling instrumentation and skips C2's aggressive optimizations.
+- **Blocks 3-6** (~200-410 ns, settling): steady state under the first C2
+  compilation — the `(C2)` entry at 1,889 ms explains the second, larger
+  step-down; block 3 is still slightly elevated as the newly-compiled
+  code's first invocations warm any remaining caches, and blocks 4-6
+  settle to the run's floor.
+- **Block 7** (5,650 ns): this is **not** a fresh warm-up cost — it is a
+  **deoptimization spike**. The `MAKE-NOT-ENTRANT`/`UNCOMMON-TRAP` pair at
+  ~6,104-6,110 ms falls in this block's time window: a speculative
+  assumption C2 had compiled into `priceMono` (the log's `reason=
+  unstable_if`, i.e. a branch C2 had speculated would resolve one way)
+  stopped holding, the guard fired, the compiled method was discarded
+  ("made not entrant"), and execution fell back to the interpreter for
+  this call site until the 7,350 ms recompilation — landing block 7's
+  cost back near interpreter-adjacent levels, not because the JVM is
+  "warming up again" from scratch, but because compiled code was
+  specifically invalidated.
+- **Blocks 8-10** (~200-640 ns): the post-recompile steady state — block 8
+  is still slightly elevated (freshly re-compiled code, same brief
+  settling pattern as blocks 2-3), and blocks 9-10 return close to the
+  original floor, consistent with the log's `note=guard widened` — the
+  new compilation guards a less specific (more robust) assumption than
+  the one that failed, so this call site is less likely to deopt again,
+  though this single log entry cannot prove that guarantee in general.
+
+</details>

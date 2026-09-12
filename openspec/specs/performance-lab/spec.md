@@ -754,3 +754,220 @@ The cas-contention lab MUST explain fairness, starvation risk, ABA at a conceptu
 #### Scenario: No universal backoff claim
 - **WHEN** a user reads the trade-offs section
 - **THEN** it states concrete conditions under which backoff does not help or actively hurts
+
+### Requirement: SPSC ownership model explained
+The spsc-ring-buffer lab MUST explain a bounded single-producer/single-consumer ring buffer as an ownership-discipline problem, distinct from the contended CAS retry loops in the CAS Contention lab.
+
+#### Scenario: Single-writer cursors explained
+- **WHEN** a user reads the lab's theory section
+- **THEN** it explains that exactly one thread ever writes the head cursor and exactly one thread ever writes the tail cursor, so neither cursor is ever contended
+
+#### Scenario: Contrasted with CAS contention
+- **WHEN** a user reads the lab's theory section
+- **THEN** it explicitly contrasts the SPSC buffer's zero-contention cursors with the CAS Contention lab's contended retry loop, as the "single-writer alternative" applied structurally
+
+### Requirement: Five-phase separation
+The spsc-ring-buffer lab MUST explicitly separate reservation, payload write, publication, payload read, and consumption acknowledgement as distinct phases.
+
+#### Scenario: Producer phases distinguished
+- **WHEN** a user reads the lab's theory section
+- **THEN** it describes reservation, payload write, and publication as three separate producer-side phases, in that order
+
+#### Scenario: Consumer phases distinguished
+- **WHEN** a user reads the lab's theory section
+- **THEN** it describes payload read and consumption acknowledgement as two separate consumer-side phases, in that order
+
+### Requirement: Interactive ring-buffer model
+The lab's interactive model MUST let a user step through normal flow, wrap-around, full-buffer, and empty-buffer scenarios and observe cursor state as text.
+
+#### Scenario: Eight scenarios selectable
+- **WHEN** a user opens the interactive model
+- **THEN** eight scenarios are selectable: normal flow, wrap-around, full buffer, empty buffer, cached cursor, batch publication, publish-before-write bug, and overwrite-unconsumed bug
+
+#### Scenario: Wrap-around demonstrated
+- **WHEN** a user steps through the "Wrap-around" scenario to its end
+- **THEN** a later produce reuses a slot index that an earlier, already-acknowledged produce also used, and the state inspector shows this as normal behaviour rather than an error
+
+#### Scenario: Full and empty backpressure demonstrated
+- **WHEN** a user steps through the "Full buffer" or "Empty buffer" scenario
+- **THEN** the rejected-reservation or starved-read counter increments respectively, and the event log states the buffer was full or empty rather than a crash
+
+#### Scenario: Keyboard accessible
+- **WHEN** a user operates the model without a pointing device
+- **THEN** every control (scenario tabs, step controls, code-language tabs) is reachable and operable by keyboard
+
+### Requirement: Cached-cursor optimisation
+The lab MUST demonstrate a producer-side and consumer-side cached cursor that avoids reading the other side's real cursor on every operation.
+
+#### Scenario: Cache hit vs refresh counted
+- **WHEN** a user steps through any scenario
+- **THEN** the state inspector shows separate producer and consumer cache-hit and cache-refresh counts
+
+#### Scenario: Refresh recovers capacity
+- **WHEN** a user steps through the "Cached cursor" scenario to its 5th reservation
+- **THEN** the reservation's cached view pessimistically reports the buffer full, triggers a refresh of the real tail, and then succeeds once the refresh reveals room the consumer had already freed
+
+### Requirement: Batch publication
+The lab MUST demonstrate batching multiple reservations into a single publish and multiple reads into a single acknowledgement.
+
+#### Scenario: Batch counters separate from single-item counters
+- **WHEN** a user steps through the "Batch publication" scenario to its end
+- **THEN** the state inspector shows exactly one batch publish and one batch acknowledgement, and zero single-item publishes or acknowledgements, for a 3-item batch
+
+### Requirement: Correctness bugs demonstrated
+The lab MUST demonstrate at least one incorrect publication-ordering bug and one overwrite bug, per spec.md's "Failure modes" requirement.
+
+#### Scenario: Publish-before-write bug
+- **WHEN** a user steps through the "Bug: publish before write" scenario
+- **THEN** the consumer reads a slot's pre-existing stale value because the producer advanced the head cursor before writing the real payload, and the incorrect-read counter increments
+
+#### Scenario: Overwrite-unconsumed bug
+- **WHEN** a user steps through the "Bug: overwrite unconsumed" scenario
+- **THEN** the producer overwrites a slot the consumer has not yet acknowledged because its reservation step skips the capacity check, and the overwrite counter increments
+
+### Requirement: SPSC Java and Rust coverage
+The lab MUST include buildable, zero-allocation-on-the-hot-path Java and Rust examples and comparable benchmark methodology.
+
+#### Scenario: Buildable examples
+- **WHEN** the Java and Rust example projects are built
+- **THEN** each compiles and its tests pass
+
+#### Scenario: Zero allocation on the hot path
+- **WHEN** the Java and Rust example's produce/consume methods are inspected
+- **THEN** neither allocates on a call, using primitive `long`/`u64` slots and a caller-provided output parameter (Java) or a plain return value (Rust) rather than boxing
+
+#### Scenario: JMH and Criterion benchmarks disclosed
+- **WHEN** a user reads the benchmark methodology section
+- **THEN** it discloses hardware, OS, runtime/toolchain versions, and measurement configuration for both languages, per the shared `.disclosure.measured` component
+
+### Requirement: Cross-language benchmark honesty
+The lab MUST NOT present its Java and Rust benchmark numbers as directly comparable when their measurement methodologies differ.
+
+#### Scenario: Methodology difference disclosed
+- **WHEN** a user reads the benchmark methodology section
+- **THEN** it explicitly states that the Java benchmark measures persistent-thread steady-state throughput while the Rust benchmark's timed region includes thread spawn/join overhead per sample, and that the two numbers must not be compared directly
+
+### Requirement: SPSC educational completion
+The spsc-ring-buffer lab MUST include common mistakes, usage guidance, an investigation task, review questions, and sources.
+
+#### Scenario: Common mistakes
+- **WHEN** a user reads the lab
+- **THEN** a "Common mistakes" section lists specific, concrete missteps, including the two bugs demonstrated above
+
+#### Scenario: When to use
+- **WHEN** a user reads the trade-offs section
+- **THEN** it states concrete conditions under which an SPSC ring buffer is the right structure
+
+#### Scenario: When not to use
+- **WHEN** a user reads the trade-offs section
+- **THEN** it states concrete conditions under which an SPSC ring buffer is not the right structure, including multi-producer/multi-consumer workloads
+
+#### Scenario: Investigation task
+- **WHEN** a user reads the lab
+- **THEN** an investigation task gives concrete steps to reproduce and measure the effect using the provided code, including reproducing the publish-before-write bug
+
+#### Scenario: At least three review questions
+- **WHEN** a user reads the lab
+- **THEN** it lists at least three review questions for self-study
+
+#### Scenario: Sources
+- **WHEN** a user reads the lab
+- **THEN** a sources list using the shared `.sources` component cites authoritative references covering the ring-buffer pattern, JVM, and Rust claims
+
+### Requirement: Thread-per-core mechanism explained
+The thread-per-core lab MUST explain thread-per-core as an ownership and execution model, not merely one thread for every logical CPU.
+
+#### Scenario: Ownership discipline distinguished from thread count
+- **WHEN** a user reads the lab's theory section
+- **THEN** it explains that thread-per-core means each thread exclusively owns a partition of state for its lifetime, and that spawning one thread per core while still sharing state through a lock does not qualify
+
+#### Scenario: Reuses SPSC ring buffer for handoff
+- **WHEN** a user reads the "Cross-core handoff" theory section
+- **THEN** it explains that handoff between cores is implemented as one bounded SPSC channel per ordered core pair, per the SPSC Ring Buffer lab's reservation/publication/read/acknowledgement discipline
+
+### Requirement: Architecture comparison
+The lab MUST compare a shared worker pool against thread-per-core owned-state execution.
+
+#### Scenario: Shared pool contention explained
+- **WHEN** a user reads the lab's theory section
+- **THEN** it explains that a shared worker pool's requests all serialize on one lock regardless of worker count, contrasted with owned-state execution's lack of any lock
+
+#### Scenario: Interactive comparison shows the turn-count difference
+- **WHEN** a user compares the "Shared worker pool" and "Thread-per-core ownership" scenarios for the same four requests
+- **THEN** the state inspector shows the shared-pool scenario taking more turns (steps) to fully process the same requests than the owned-state scenario
+
+### Requirement: Handoff and backpressure
+The lab MUST show bounded queues, handoff cost, and overload behaviour.
+
+#### Scenario: Handoff costs an extra turn
+- **WHEN** a user steps through the "Cross-core handoff" scenario to completion
+- **THEN** it takes more turns to fully process the same number of requests than the "Thread-per-core ownership" scenario, and the event log attributes the difference to handoff latency
+
+#### Scenario: Bounded queue rejects rather than grows unboundedly
+- **WHEN** a user steps through the "Backpressure" scenario
+- **THEN** requests that arrive after a core's inbox reaches capacity are rejected and counted, rather than the queue growing past its bound
+
+#### Scenario: Hot partition overloads one core while others idle
+- **WHEN** a user steps through the "Hot partition" scenario
+- **THEN** the targeted core's processed and rejected counts both rise while every other core's processed count stays at zero
+
+#### Scenario: Keyboard accessible
+- **WHEN** a user operates the model without a pointing device
+- **THEN** every control (scenario tabs, step controls, code-language tabs) is reachable and operable by keyboard
+
+### Requirement: Affinity caveats
+The lab MUST explain that affinity support and scheduler control differ across Linux, macOS, Windows, and container environments.
+
+#### Scenario: Per-OS affinity differences stated
+- **WHEN** a user reads the "Affinity and scheduler caveats" section
+- **THEN** it states that Linux exposes fairly direct affinity control, macOS treats affinity only as a hint the scheduler may ignore, and Windows/containers each add their own caveats
+
+#### Scenario: Migration distinguished from correctness
+- **WHEN** a user steps through the "Scheduler migration" scenario
+- **THEN** requests routed to the migrated core are still processed correctly, and the theory section explains that migration is a locality/performance concern, not a correctness concern
+
+#### Scenario: NUMA caveat stated
+- **WHEN** a user reads the "NUMA caveats" section
+- **THEN** it states that thread-per-core's benefit depends on NUMA-aware memory placement in addition to CPU affinity, and that the interactive model does not simulate NUMA distance
+
+### Requirement: Thread-per-core Java and Rust examples
+The lab MUST include buildable examples using bounded SPSC communication concepts, contrasting shared-lock state with owned-partition state.
+
+#### Scenario: Buildable examples
+- **WHEN** the Java and Rust example projects are built
+- **THEN** each compiles and its tests pass
+
+#### Scenario: Shared-lock and owned-partition variants both present
+- **WHEN** the Java and Rust examples are inspected
+- **THEN** each includes both a shared, lock-guarded counter pool and a per-partition owned counter with no synchronization
+
+#### Scenario: JMH and Criterion benchmarks disclosed
+- **WHEN** a user reads the benchmark methodology section
+- **THEN** it discloses hardware, OS, runtime/toolchain versions, and measurement configuration for both languages, per the shared `.disclosure.measured` component
+
+### Requirement: Thread-per-core trade-offs
+The lab MUST explain hot partitions, underutilised cores, operational complexity, and workloads where the model is inappropriate.
+
+#### Scenario: When to use stated
+- **WHEN** a user reads the trade-offs section
+- **THEN** it states concrete conditions under which thread-per-core is worth adopting
+
+#### Scenario: When not to use stated
+- **WHEN** a user reads the trade-offs section
+- **THEN** it states concrete conditions under which thread-per-core is not appropriate, including cross-partition operations and unsuitable deployment environments
+
+#### Scenario: Common mistakes
+- **WHEN** a user reads the lab
+- **THEN** a "Common mistakes" section lists specific, concrete missteps
+
+#### Scenario: Investigation task
+- **WHEN** a user reads the lab
+- **THEN** an investigation task gives concrete steps to reproduce and measure the effect using the provided code
+
+#### Scenario: At least three review questions
+- **WHEN** a user reads the lab
+- **THEN** it lists at least three review questions for self-study
+
+#### Scenario: Sources
+- **WHEN** a user reads the lab
+- **THEN** a sources list using the shared `.sources` component cites authoritative references covering the thread-per-core pattern, JVM, and Rust claims

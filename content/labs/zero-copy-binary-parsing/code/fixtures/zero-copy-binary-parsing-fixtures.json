@@ -1,0 +1,52 @@
+{
+  "labId": "zero-copy-binary-parsing",
+  "description": "Shared correctness fixtures for the five decoder variants (copyingDecoder, objectBuildingDecoder, validatedZeroCopyView, lazyFieldDecode, mutableInPlaceUpdate) over three datasets. Decoding strategy changes ns/message, B/message, bytes copied and validation cost, never the checksum.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "wireFormat": "big-endian (network byte order) throughout: every frame is msgType(1B) + seq(4B BE u32) + a dataset-specific length/count field(4B BE u32) + payload(variable). mutableInPlaceUpdate writes original XOR 0xFFFFFFFF into a fixed field, reads it back to verify the write, then writes the original value back before proceeding — the buffer is unchanged after the round trip, so its checksum matches the other four (read-only) variants exactly.",
+    "fixedHeaderPlusVariablePayload": {
+      "n": 200000,
+      "seed": 110,
+      "fields": "msgType = i % 4; seq = i; payloadWords = [4,8,16,32][i % 4]; payload = payloadWords longs, xorshift64 stream unsigned-mod 1,000,000 each",
+      "checksum": "wrapping sum of (msgType + seq + sum(payload)) over all messages"
+    },
+    "nestedRepeatedFields": {
+      "n": 150000,
+      "seed": 111,
+      "fields": "msgType = i % 4; seq = i; recordCount = [2,4,8][i % 3]; records = recordCount (id, amount) pairs, id = xorshift64 stream unsigned-mod 1,000,000, amount = xorshift64 stream unsigned-mod 10,000,000 — one advance each, id then amount, per record",
+      "checksum": "wrapping sum of (msgType + seq + sum(id + amount) over every record) over all messages"
+    },
+    "utf8Field": {
+      "n": 150000,
+      "seed": 112,
+      "fields": "msgType = i % 4; seq = i; textLen = [8,16,32,64][i % 4]; text = textLen bytes, each = 0x20 + (xorshift64 stream unsigned-mod 95) — guaranteed printable ASCII, therefore always valid UTF-8, one advance per byte",
+      "checksum": "wrapping sum of (msgType + seq + sum(byte values in text)) over all messages"
+    }
+  },
+  "expectedTotals": {
+    "fixedHeaderPlusVariablePayload": {
+      "first3": [
+        {"msgType": 0, "seq": 0, "payloadWords": 4, "payloadFirst3": [100846, 667353, 753374]},
+        {"msgType": 1, "seq": 1, "payloadWords": 8, "payloadFirst3": [832659, 339898, 70304]},
+        {"msgType": 2, "seq": 2, "payloadWords": 16, "payloadFirst3": [214289, 253428, 814126]}
+      ],
+      "total": "1519448080523"
+    },
+    "nestedRepeatedFields": {
+      "first3": [
+        {"msgType": 0, "seq": 0, "recordCount": 2, "records": [[593263, 2735768], [819639, 9181965]]},
+        {"msgType": 1, "seq": 1, "recordCount": 4, "records": [[688374, 6547131], [899473, 1503406], [933244, 474205], [89377, 1768323]]},
+        {"msgType": 2, "seq": 2, "recordCount": 8, "records": [[633975, 7820823], [120138, 1294868], [917871, 3119936], [674713, 9700079], [451717, 5649664], [994544, 6628894], [264567, 7051391], [38482, 1168458]]}
+      ],
+      "total": "3861687000575"
+    },
+    "utf8Field": {
+      "first3": [
+        {"msgType": 0, "seq": 0, "textLen": 8, "textFirst16": "^^XjzmM("},
+        {"msgType": 1, "seq": 1, "textLen": 16, "textFirst16": "(j?vyA{7I.{t|mG-"},
+        {"msgType": 2, "seq": 2, "textLen": 32, "textFirst16": "ji/1UM3;qI@\"IQ}6"}
+      ],
+      "total": "11605683083"
+    }
+  }
+}

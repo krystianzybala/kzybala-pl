@@ -7,7 +7,7 @@
   "durationMinutes": 35,
   "topics": ["concurrency", "architecture", "scheduling"],
   "prerequisites": ["spsc-ring-buffer"],
-  "unlocks": [],
+  "unlocks": ["thread-per-core-sharding"],
   "languages": ["java", "rust"],
   "interactive": true,
   "benchmark": true,

@@ -1,0 +1,11 @@
+{
+  "lab": "thread-per-core-sharding",
+  "description": "Deterministic dataset parameters shared byte-for-byte between the Java and Rust suites. The correctness oracle is: for every key, the final counter equals the exact expected request count for that key under the selected dataset (uniform or skewed) — regardless of which mechanism (shared map, mutex shards, single-writer thread-per-core) processed it.",
+  "keyCount": 16,
+  "shardCount": 4,
+  "requestsPerKeyUniform": 500,
+  "requesterThreads": 4,
+  "skewedHotKeyRequests": 4000,
+  "skewedColdKeyRequests": 200,
+  "note": "Uniform dataset: every key gets exactly requestsPerKeyUniform requests (total = keyCount * requestsPerKeyUniform = 8000). Skewed dataset: key 0 (the 'hot key') gets skewedHotKeyRequests; every other key gets skewedColdKeyRequests (total = 4000 + 15*200 = 7000) — this lab's disclosed model of 'skewed key distribution', not a claim about any particular real-world skew shape. 'partitioned aggregation' and full rebalance-under-load (migrating a shard's ownership without a full stop-the-world drain) are proposal dataset/scenario points not wired in this iteration — see theory.md's Assumptions and scope."
+}

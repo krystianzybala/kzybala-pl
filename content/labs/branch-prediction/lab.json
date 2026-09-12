@@ -1,0 +1,25 @@
+{
+  "id": "branch-prediction",
+  "title": "Branch Prediction and Data Distribution",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "intermediate",
+  "durationMinutes": 35,
+  "topics": [
+    "branch-prediction",
+    "cpu-pipeline",
+    "measurement",
+    "data-distribution"
+  ],
+  "prerequisites": [
+    "benchmark-harness-traps"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

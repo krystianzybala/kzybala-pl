@@ -1,0 +1,50 @@
+{
+  "labId": "deoptimization-uncommon-traps",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Three datasets, each a single input stream. Every variant applies a deterministic (never random) SEQUENCE of operation-type/value shifts at fixed indices — the variable under test is WHEN and HOW the JIT's speculative assumptions get violated over the course of one long run, never the final computed total, which is fixture-pinned per (variant, dataset) cell.",
+  "semantics": {
+    "n": 1000000,
+    "shiftPoint": 500000,
+    "rareExceptionIndex": 700000,
+    "nullStride": 1000,
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "strategyDispatch": "input[i] = i (linear, no RNG)",
+    "parsingMixedRecords": "input[i] = xorshift64 stream (seed=50) unsigned-mod 1000000",
+    "rareValidationFailure": "input[i] = xorshift64 stream (seed=51) unsigned-mod 1000000",
+    "typeA": "v -> v + 1",
+    "typeB": "v -> v * 3",
+    "typeC": "v -> v XOR 0x5A5A",
+    "fallbackException": -1,
+    "fallbackNull": 0,
+    "stableTypeProfile": "every index uses typeA — no shift ever occurs",
+    "profileShiftAfterWarmup": "i < shiftPoint: typeA; i >= shiftPoint: typeA if i is even else typeB — a second concrete type appears for the first time at shiftPoint",
+    "rareExceptionPath": "every index uses typeA EXCEPT index rareExceptionIndex, which contributes fallbackException instead (a caught, deterministic exception)",
+    "lateSubtypeLoading": "i < shiftPoint: typeA; i >= shiftPoint: typeC — a third concrete type, never before constructed, is used starting at shiftPoint",
+    "nullabilityShift": "i < shiftPoint: typeA, never null; i >= shiftPoint: typeA EXCEPT where (i - shiftPoint) mod nullStride == 0, which contributes fallbackNull instead (a null-marker input)"
+  },
+  "expectedTotals": {
+    "strategyDispatch": {
+      "first5": [0, 1, 2, 3, 4],
+      "stableTypeProfile": "500000500000",
+      "profileShiftAfterWarmup": "875000250000",
+      "rareExceptionPath": "499999799998",
+      "lateSubtypeLoading": "500121915392",
+      "nullabilityShift": "499625749500"
+    },
+    "parsingMixedRecords": {
+      "first5": [963762, 958315, 339298, 9905, 79709],
+      "stableTypeProfile": "500317225994",
+      "profileShiftAfterWarmup": "750461615780",
+      "rareExceptionPath": "500316711341",
+      "lateSubtypeLoading": "500445453298",
+      "nullabilityShift": "500058690181"
+    },
+    "rareValidationFailure": {
+      "first5": [971379, 504874, 867083, 317012, 469816],
+      "stableTypeProfile": "500280750092",
+      "profileShiftAfterWarmup": "750435887722",
+      "rareExceptionPath": "500280423156",
+      "lateSubtypeLoading": "500397852152",
+      "nullabilityShift": "500030587273"
+    }
+  }
+}

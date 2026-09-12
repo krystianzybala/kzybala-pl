@@ -1,0 +1,26 @@
+[package]
+name = "zero-copy-binary-parsing-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Zero-copy binary parsing and views\" lab (kzybala.pl/lab/zero-copy-binary-parsing/)."
+publish = false
+
+[lib]
+name = "zero_copy_binary_parsing_lab"
+path = "src/lib.rs"
+
+[dependencies]
+# Worker affinity for the native-Linux evidence binary only.
+libc = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+# cargo bench always builds this profile (inherits release). Benchmarking
+# a debug build is invalid input for this lab by definition.
+[profile.bench]
+inherits = "release"
+
+[[bench]]
+name = "zero_copy_binary_parsing"
+harness = false

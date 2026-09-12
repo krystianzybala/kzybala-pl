@@ -1,0 +1,28 @@
+{
+  "lab": "backpressure-bounded-pipelines",
+  "description": "Deterministic, single-threaded tick-simulation parameters shared byte-for-byte between the Java and Rust suites. Every dataset's production schedule includes a long trailing all-drain tail so the consumer always fully empties the queue by the end of the simulation — this is what lets the correctness invariant (produced == delivered + rejected + dropped + superseded) hold exactly, with no 'still queued at end' remainder to reconcile. The real concurrent wall-clock timing question this lab teaches is answered separately by the JMH/Criterion benchmark harness, not by this deterministic fixture.",
+  "capacity": 8,
+  "consumeRatePerTick": 4,
+  "keyCountForCoalesce": 4,
+  "loadSheddingThresholdPercent": 50,
+  "datasets": {
+    "steadyBelowCapacity": {
+      "producedPerTick": "4 for 200 ticks",
+      "note": "Producer rate equals consumer rate; the queue should never grow past a handful of items for any bounded policy, and the unbounded policy should behave identically to the bounded ones here (no overload to distinguish them)."
+    },
+    "shortBurst": {
+      "producedPerTick": "20 for 5 ticks, then 0 for 200 ticks",
+      "note": "A short burst well above capacity (20/tick vs a consume rate of 4/tick and capacity 8), followed by a long drain-only tail so every policy fully recovers."
+    },
+    "sustainedOverload": {
+      "producedPerTick": "10 for 50 ticks, then 0 for 400 ticks",
+      "note": "Sustained overload (10/tick vs consume rate 4/tick) for long enough that bounded policies must reject/drop/coalesce repeatedly, not just once."
+    },
+    "hotKeySkew": {
+      "producedPerTick": "10 for 50 ticks, then 0 for 400 ticks",
+      "keyCountForCoalesce": 3,
+      "note": "Same overload shape as sustainedOverload, but a much smaller key space (3 keys) so COALESCE_BY_KEY has heavy repeated-key collisions to collapse."
+    }
+  },
+  "correctnessInvariant": "produced == delivered + rejected + dropped + superseded, for every (policy, dataset) pair, with zero items left queued at the end of the simulation."
+}

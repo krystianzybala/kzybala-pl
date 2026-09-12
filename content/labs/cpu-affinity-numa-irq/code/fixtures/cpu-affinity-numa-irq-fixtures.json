@@ -1,0 +1,11 @@
+{
+  "lab": "cpu-affinity-numa-irq",
+  "description": "Deterministic dataset parameters shared byte-for-byte between the Java and Rust suites. Every checksum function is a pure function of its size/count parameters, independent of which CPU or NUMA node the thread computing it actually ran on — placement can only change how fast these run (the mechanism this lab measures via the native-Linux evidence run), never whether the checksum is correct. Real topology facts (isolated core id, SMT sibling, same/remote NUMA node) are probed at runtime from /sys on Linux and are never hardcoded, per the 'hardcoding CPU ids' trap this lab documents.",
+  "datasets": {
+    "spscHandoff": { "count": 5000 },
+    "memoryScan": { "size": 200000, "stride": 1 },
+    "udpIngest": { "packetCount": 2000, "packetSize": 128 }
+  },
+  "placementTargets": ["UNPINNED_BASELINE", "PINNED_ISOLATED_CORE", "SMT_SIBLINGS", "SAME_NUMA_NODE", "REMOTE_NUMA_NODE"],
+  "correctnessInvariant": "For every dataset, the checksum is identical across every placement target that could actually be resolved on the current host, and identical to the unpinned baseline's checksum, in both languages."
+}

@@ -1,0 +1,20 @@
+[package]
+name = "fixed-binary-serialization-lab"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "fixed_binary_serialization_lab"
+path = "src/lib.rs"
+
+[[bench]]
+name = "fixed_binary_serialization"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[profile.bench]
+inherits = "release"

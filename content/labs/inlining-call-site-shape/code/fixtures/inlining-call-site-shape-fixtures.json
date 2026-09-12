@@ -1,0 +1,37 @@
+{
+  "labId": "inlining-call-site-shape",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). One shared pool of six deterministic integer strategies (s0..s5) is dispatched over three named input domains (pricingFunctions: linear i; codecStrategies: xorshift64 stream seed=42; validationRules: xorshift64 stream seed=43) — the variable under test is CALL-SITE SHAPE (how many distinct concrete implementations a call site sees), not per-domain business logic, so the strategy pool is deliberately shared across datasets (documented in java.md/rust.md). Two pairwise equalities are the correctness oracle: monomorphic == oversizedCallee (same single strategy, different code size), and megamorphic == switchDispatch (same six-way round-robin, different dispatch mechanism). bimorphic has its own total (a genuinely different assignment pattern, no manual-dispatch counterpart in this lab).",
+  "semantics": {
+    "strategies": "s0(x)=x+1; s1(x)=x*3; s2(x)=x^0x5A5A; s3(x)=(x<<1)+7; s4(x)=x-11; s5(x)=(x>>2)|1 — six DISTINCT concrete implementations of one shared interface/trait",
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "pricingFunctions": "input[i] = i for i in [0, n) — linear, no RNG",
+    "codecStrategies": "input[i] = xorshift64 stream (seed=42) unsigned-mod 1000000",
+    "validationRules": "input[i] = xorshift64 stream (seed=43) unsigned-mod 1000000",
+    "monomorphicAssignment": "strategy index = 0 for every i (a single concrete type at the call site)",
+    "bimorphicAssignment": "strategy index = i mod 2 (exactly two concrete types at the call site)",
+    "megamorphicAssignment": "strategy index = i mod 6 (all six concrete types at the call site, round-robin)",
+    "switchDispatchAssignment": "IDENTICAL to megamorphicAssignment (i mod 6) but dispatched via a closed switch/enum match instead of interface/trait-object polymorphism",
+    "oversizedCalleeAssignment": "IDENTICAL to monomorphicAssignment (always strategy 0) but implemented as a deliberately bloated method body computing the same result"
+  },
+  "n": 1000000,
+  "expectedTotals": {
+    "pricingFunctions": {
+      "first5Inputs": [0, 1, 2, 3, 4],
+      "monomorphicAndOversizedCallee": "500000500000",
+      "bimorphic": "1000000000000",
+      "megamorphicAndSwitchDispatch": "687543385141"
+    },
+    "codecStrategies": {
+      "first5Inputs": [805674, 905471, 320954, 629736, 84162],
+      "monomorphicAndOversizedCallee": "499866710459",
+      "bimorphic": "999276779457",
+      "megamorphicAndSwitchDispatch": "687169279832"
+    },
+    "validationRules": {
+      "first5Inputs": [75435, 585150, 59539, 476429, 785191],
+      "monomorphicAndOversizedCallee": "499956129091",
+      "bimorphic": "999456305265",
+      "megamorphicAndSwitchDispatch": "687433423258"
+    }
+  }
+}

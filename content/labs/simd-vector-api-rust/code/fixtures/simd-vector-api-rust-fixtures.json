@@ -1,0 +1,41 @@
+{
+  "labId": "simd-vector-api-rust",
+  "description": "Shared correctness fixtures for the five variants (scalarBaseline, autoVectorizedCandidate, explicitSimd, misalignedInput, smallTailHeavyInput) over four datasets. Vectorization strategy changes ns/element and vector instructions, never the result.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "sumMinMax": {
+      "n": 1000000,
+      "seed": 120,
+      "fields": "value = xorshift64 stream unsigned-mod 1,000,000",
+      "result": "sum (wrapping 64-bit), min, max over all elements"
+    },
+    "thresholdFilter": {
+      "n": 1000000,
+      "seed": 121,
+      "threshold": 500000,
+      "fields": "value = xorshift64 stream unsigned-mod 1,000,000",
+      "result": "count of elements strictly greater than threshold"
+    },
+    "dotProduct": {
+      "n": 1000000,
+      "seedA": 122,
+      "seedB": 123,
+      "fields": "a[i], b[i] = xorshift64 stream unsigned-mod 1,000 each (small integers, exactly representable as f64, so summation order never changes the bit-exact result)",
+      "result": "sum(a[i] * b[i]) over all elements, as f64 (exact, no rounding, given the value ranges)"
+    },
+    "byteClassification": {
+      "n": 2000000,
+      "seed": 124,
+      "fields": "value = xorshift64 stream unsigned-mod 256 (full byte range)",
+      "result": "count of bytes in the printable-ASCII range [0x20, 0x7E] inclusive"
+    },
+    "smallTailHeavyInput": "the same generators, truncated to the first 17 elements (a value not a multiple of any common vector width, so the tail dominates)",
+    "misalignedInput": "the same full-length arrays, processed starting at element offset 1 instead of 0 (n-1 elements), so vector loads start at a position not aligned to the vector width's natural array-start alignment"
+  },
+  "expectedTotals": {
+    "sumMinMax": {"first5": [371320, 764164, 800248, 860543, 397729], "sum": "500149865068", "min": 0, "max": 999999},
+    "thresholdFilter": {"first5": [601593, 127237, 846353, 737690, 385924], "countAboveThreshold": 501050},
+    "dotProduct": {"aFirst5": [554, 623, 778, 973, 371], "bFirst5": [827, 870, 43, 144, 438], "total": "249655062671.0"},
+    "byteClassification": {"first5": [124, 66, 156, 251, 100], "printableCount": 741505}
+  }
+}

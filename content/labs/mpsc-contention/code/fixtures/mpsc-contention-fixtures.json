@@ -1,0 +1,9 @@
+{
+  "lab": "mpsc-contention",
+  "description": "Deterministic dataset parameters shared byte-for-byte between the Java and Rust suites. Every item is encoded as (producerId << 32) | localSeq; the correctness oracle is: total items received equals producerCount * itemsPerProducer, zero duplicates, and each producer's localSeq values arrive at the consumer in strictly increasing order (per-producer FIFO is the only ordering MPSC guarantees — global interleaving across producers is not, and is never asserted).",
+  "producerCounts": [2, 4],
+  "itemsPerProducer": 2000,
+  "capacity": 1024,
+  "batchSize": 32,
+  "note": "producerCounts is the correctness-suite matrix (kept small so mvn test/cargo test stay fast). The proposal's '8/physical-core producers' dataset point is exercised only by the benchmark matrix, where the physical-core count is capability-detected from the host at run time rather than hardcoded, and by the native-Linux evidence runner's CPU-set mapping — never invented on a fixed number that may not match the measuring host."
+}

@@ -1,0 +1,109 @@
+{
+  "labId": "branch-prediction",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). One xorshift64 stream (seed=42, n=1000000) drives three datasets (byteFlags, intThresholds, mixedHotCold) and four arrangement/implementation variants (biased9010, random5050, sorted, branchless). Both languages must reproduce every value below exactly: sequences via identical unsigned 64-bit integer arithmetic (Java: java.lang.Long unsigned operators; Rust: native u64), filtered sums via identical wrapping accumulation. The sorted and branchless variants apply to the SAME underlying random5050 data (permutation and implementation-technique changes only) so their filteredSum MUST equal random5050's filteredSum bit-for-bit — this equality is itself a correctness oracle, not just a fixture to reproduce. Change a value here only together with both test files.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "streamValue": "s = the raw xorshift64 output at each step, interpreted as UNSIGNED 64-bit for all modulo operations",
+    "biasArrangement": "isAbove = (s unsigned-mod 100) < biasPercent; biasPercent=90 for biased9010, biasPercent=50 for random5050 and (pre-sort) sorted and (pre-technique-change) branchless",
+    "byteFlags": {
+      "threshold": 128,
+      "domain": "[0,255]",
+      "valueWhenAbove": "128 + (s unsigned-mod 128)",
+      "valueWhenBelow": "s unsigned-mod 128",
+      "predicate": "value >= 128"
+    },
+    "intThresholds": {
+      "threshold": 500000,
+      "domain": "[0,999999]",
+      "valueWhenAbove": "500000 + (s unsigned-mod 500000)",
+      "valueWhenBelow": "s unsigned-mod 500000",
+      "predicate": "value >= 500000"
+    },
+    "mixedHotCold": {
+      "kindWhenAbove": 1,
+      "kindWhenBelow": 0,
+      "payload": "s unsigned-mod 1024",
+      "predicate": "kind == 1 (hot)",
+      "note": "kind and payload are both derived from the SAME stream value s at each index — not two independent streams"
+    },
+    "sortedTransform": "ascending sort of the random5050 value array (byteFlags/intThresholds); for mixedHotCold, a STABLE sort of (kind,payload) pairs by kind ascending (cold block then hot block, payload order preserved within each block)",
+    "branchlessTransform": "same random5050 data and predicate as the random5050 variant; only the accumulation technique changes (arithmetic mask/multiply instead of an if-branch) — not a new dataset",
+    "filteredSum": "wrapping 64-bit sum of value (or payload) over every element where the predicate is true; setup/generation/sorting excluded from the timed region",
+    "checksum": "checksum*31 + value, 64-bit wrapping, over the full sequence (values as generated, pre-sort)"
+  },
+  "operationDefinition": "one benchmark operation = one full pass over the declared dataset's 1,000,000 elements, accumulating the wrapping filtered sum via either the branchy (if-statement) or branchless (arithmetic mask) technique per the variant; the returned sum is consumed (used as the benchmark result) to block dead-code elimination",
+  "cases": {
+    "biased9010": {
+      "byteFlags": {
+        "checksum": "-2158142668497906325",
+        "first5": [170, 191, 250, 232, 130],
+        "filteredSum": "172388675",
+        "countAbove": 900335
+      },
+      "intThresholds": {
+        "checksum": "-4739254585402386741",
+        "first5": [805674, 905471, 820954, 629736, 584162],
+        "filteredSum": "675165658915",
+        "countAbove": 900335
+      },
+      "mixedHotCold": {
+        "kindChecksum": "2027598892701658837",
+        "payloadChecksum": "-20623316227680661",
+        "first5Kinds": [1, 1, 1, 1, 1],
+        "first5Payloads": [682, 703, 378, 360, 130],
+        "filteredSum": "460810947",
+        "countHot": 900335
+      }
+    },
+    "random5050": {
+      "byteFlags": {
+        "checksum": "-6276435397034852629",
+        "first5": [42, 63, 122, 232, 2],
+        "filteredSum": "95744342",
+        "countAbove": 499970
+      },
+      "intThresholds": {
+        "checksum": "2963978878734898219",
+        "first5": [305674, 405471, 320954, 629736, 84162],
+        "filteredSum": "374751514134",
+        "countAbove": 499970
+      },
+      "mixedHotCold": {
+        "kindChecksum": "4589498116125369640",
+        "payloadChecksum": "-20623316227680661",
+        "first5Kinds": [0, 0, 0, 1, 0],
+        "first5Payloads": [682, 703, 378, 360, 130],
+        "filteredSum": "255808086",
+        "countHot": 499970
+      }
+    },
+    "sorted": {
+      "byteFlags": {
+        "checksum": "-5030257529232730897",
+        "first5": [0, 0, 0, 0, 0],
+        "filteredSum": "95744342",
+        "countAbove": 499970,
+        "equalsRandom5050FilteredSum": true
+      },
+      "intThresholds": {
+        "checksum": "7579464363979959115",
+        "first5": [50, 51, 52, 52, 52],
+        "filteredSum": "374751514134",
+        "countAbove": 499970,
+        "equalsRandom5050FilteredSum": true
+      },
+      "mixedHotCold": {
+        "kindChecksum": "-2080036976520064992",
+        "payloadChecksum": "-8076951700959590119",
+        "first5Kinds": [0, 0, 0, 0, 0],
+        "first5Payloads": [682, 703, 378, 130, 211],
+        "filteredSum": "255808086",
+        "countHot": 499970,
+        "equalsRandom5050FilteredSum": true
+      }
+    },
+    "branchless": {
+      "note": "operates on IDENTICAL data to random5050 (no separate generation) — filteredSum for every dataset MUST equal the random5050 filteredSum above; this is asserted directly, not restated as separate numbers"
+    }
+  }
+}

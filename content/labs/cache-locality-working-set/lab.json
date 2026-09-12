@@ -1,0 +1,31 @@
+{
+  "id": "cache-locality-working-set",
+  "title": "Cache Locality and Working-Set Size",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "intermediate",
+  "durationMinutes": 40,
+  "topics": [
+    "cache-locality",
+    "working-set",
+    "memory-hierarchy",
+    "measurement"
+  ],
+  "prerequisites": [
+    "benchmark-harness-traps",
+    "clocks-latency-histograms"
+  ],
+  "unlocks": [
+    "aos-vs-soa",
+    "bounds-checks-loop-shape",
+    "allocation-object-layout",
+    "simd-vector-api-rust"
+  ],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

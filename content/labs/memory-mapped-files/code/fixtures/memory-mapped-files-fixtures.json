@@ -1,0 +1,28 @@
+{
+  "lab": "memory-mapped-files",
+  "description": "Deterministic fixed-record file parameters shared byte-for-byte between the Java and Rust suites. Every variant (buffered read, mmap sequential, mmap random, mmap write+flush) reads or writes the identical 64-byte record format and must reproduce the same checksum oracle; the correctness suite always uses the small 'fixedRecords' profile so tests stay fast, never the 64 MiB or larger-than-RAM profiles.",
+  "recordSizeBytes": 64,
+  "profiles": {
+    "fixedRecords": {
+      "recordCount": 4096,
+      "fileSizeBytes": 262144,
+      "note": "Correctness/smoke profile — 256 KiB, small enough to run in every test suite and CI without a large-file dependency."
+    },
+    "sixtyFourMebibyteFile": {
+      "recordCount": 1048576,
+      "fileSizeBytes": 67108864,
+      "note": "The lab's primary benchmark dataset — large enough that sequential mmap access spans many pages and cold-vs-warm behavior is observable, small enough to be a routine smoke/dev-machine size."
+    },
+    "largerThanRam": {
+      "recordCount": null,
+      "fileSizeBytes": null,
+      "note": "Capability-detected optional profile: only meaningful on a host whose configured size exceeds physical RAM. Not exercised by the correctness suite or the default smoke/publication profile on this repository's development or reference hosts; marked evidence-unavailable rather than fabricated wherever it would otherwise appear."
+    }
+  },
+  "recordDerivation": {
+    "value": "value(id) = id * 2654435761 + 1 (unsigned 64-bit wraparound arithmetic)",
+    "payloadByte": "payload(id)[i] = (id + i) & 0xFF, for i in [0, 48)",
+    "checksum": "checksum(id, value, payload) = fold: h = id*31 + value, then h = h*31 + b for every payload byte b (accumulated as a wrapping 64-bit integer, summed across all records in the file)"
+  },
+  "randomAccessSeed": 424242
+}

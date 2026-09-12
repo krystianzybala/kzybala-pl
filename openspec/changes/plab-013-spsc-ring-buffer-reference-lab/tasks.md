@@ -12,7 +12,7 @@
 
 - [x] 6. Write the theory section around the performance mechanism, not around a language winner.
 - [x] 7. Create the required visual explanations: ring state animation, sequence timeline, latency/CPU wait-strategy chart.
-- [ ] 8. Add terminology, assumptions and a short pre-lab diagnostic question.
+- [x] 8. Add terminology, assumptions and a short pre-lab diagnostic question.
 - [x] 9. Document the known traps: using SPSC with multiple producers; publishing before payload write; coordinated omission; ignoring shutdown and wraparound.
 - [x] 10. Add accessible textual/table fallbacks for every essential visualization.
 
@@ -52,9 +52,9 @@
 
 - [x] 31. Add one diagnosis exercise with a deliberately flawed variant or result.
 - [x] 32. Add one implementation exercise with measurable success criteria.
-- [ ] 33. Add one evidence-interpretation exercise using raw profiler/counter output.
+- [x] 33. Add one evidence-interpretation exercise using raw profiler/counter output.
 - [x] 34. Keep hints and solutions separate from the initial exercise statement.
-- [ ] 35. Perform editorial review for neutrality, reproducibility and unsupported claims.
+- [x] 35. Perform editorial review for neutrality, reproducibility and unsupported claims.
 
 ## 8. Verification and Publication
 
@@ -62,5 +62,5 @@
 - [ ] 37. Run the smoke profile and at least one full controlled result set.
 - [ ] 38. Verify raw artifact links, environment metadata and result provenance.
 - [x] 39. Verify accessibility, route behavior and responsive presentation.
-- [ ] 40. Run `openspec validate plab-013-spsc-ring-buffer-reference-lab --strict` and repository quality gates.
+- [x] 40. Run `openspec validate plab-013-spsc-ring-buffer-reference-lab --strict` and repository quality gates.
 - [x] 41. Promote evidence maturity only to the level actually achieved; do not fake completion.

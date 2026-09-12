@@ -1,0 +1,14 @@
+{
+  "lab": "syscall-amortization-scatter-gather",
+  "description": "Deterministic message generation and validation oracle shared byte-for-byte between the Java and Rust suites. Every sender variant writes the same 16-byte header (sequence, payloadLength, both little-endian u64) + deterministic payload wire format to a TCP loopback connection; the receiver validates every message and reports how many were delivered.",
+  "headerSizeBytes": 16,
+  "profiles": {
+    "headerPlusPayload": { "payloadSize": 256, "messageCount": 2000, "note": "The representative case: a small fixed header, a meaningfully-sized payload." },
+    "smallMessages": { "payloadSize": 8, "messageCount": 5000, "note": "Payload barely larger than the header itself — per-message fixed overhead dominates here." },
+    "mixedSizes": { "payloadSizes": [8, 64, 256, 1024], "messageCount": 2000, "note": "Payload size cycles through this list — exercises the wire format's variable-length payload support; each message's header still records its own exact payloadLength." }
+  },
+  "wireFormat": "header: bytes[0..8) = sequence (LE u64), bytes[8..16) = payloadLength (LE u64); payload: payload[i] = (sequence + i) & 0xFF for i in [0, payloadLength)",
+  "writeAccounting": {
+    "note": "writeCalls counts application-level write()/write_vectored() invocations — an honest proxy for kernel crossings, never a verified syscall count (see the 'counting application calls instead of syscalls' trap). Real syscall counts require strace on the native-Linux evidence host."
+  }
+}

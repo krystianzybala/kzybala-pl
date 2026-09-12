@@ -1,0 +1,54 @@
+{
+  "labId": "ffm-memory-segments",
+  "description": "Shared correctness fixtures for the five storage variants (heapPrimitiveArray, confinedSegment, sharedSegment, slicedView, copiedBoundaryCrossing) over three datasets. Storage location and access path change ns/access and ns/record, never the checksum.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "fixedRecords": {
+      "n": 500000,
+      "seed": 80,
+      "strideBytes": 24,
+      "fields": "id = i (linear, 8 bytes); value = xorshift64 stream unsigned-mod 1,000,000 (8 bytes); flag = xorshift64 stream unsigned-mod 8 (4 bytes, 4 bytes padding to keep the record 8-byte aligned) — two xorshift64 advances per record, in this order: value, flag",
+      "checksum": "wrapping sum of (id + value + flag) over all records"
+    },
+    "largeNumericBuffers": {
+      "n": 5000000,
+      "seed": 81,
+      "strideBytes": 8,
+      "fields": "value = xorshift64 stream unsigned-mod 1,000,000,000 (one advance per record) — deliberately large (40MB) to exceed typical L2/L3 cache and make storage-location access cost visible",
+      "checksum": "wrapping sum of value over all records"
+    },
+    "binaryFrames": {
+      "n": 100000,
+      "seed": 82,
+      "strideBytes": 56,
+      "fields": "length = 48 (constant, 4 bytes); type = xorshift64 stream unsigned-mod 4 (4 bytes); payload = 6 longs, xorshift64 stream unsigned-mod 1,000,000 each (48 bytes) — per record, one xorshift64 advance for type then six more for payload[0..6)",
+      "checksum": "wrapping sum of (length + type + sum(payload)) over all frames"
+    }
+  },
+  "expectedTotals": {
+    "fixedRecords": {
+      "first5": [
+        {"id": 0, "value": 580880, "flag": 0},
+        {"id": 1, "value": 222928, "flag": 5},
+        {"id": 2, "value": 584897, "flag": 1},
+        {"id": 3, "value": 143881, "flag": 4},
+        {"id": 4, "value": 810269, "flag": 6}
+      ],
+      "total": "375147506089"
+    },
+    "largeNumericBuffers": {
+      "first5": [646811153, 297511481, 23434489, 455771248, 594687588],
+      "total": "2499690517128328"
+    },
+    "binaryFrames": {
+      "first5": [
+        {"length": 48, "type": 2, "payload": [724347, 780162, 284439, 142947, 666954, 856302]},
+        {"length": 48, "type": 0, "payload": [648561, 424003, 644863, 545915, 62569, 733079]},
+        {"length": 48, "type": 0, "payload": [642317, 34367, 623962, 670465, 669770, 993743]},
+        {"length": 48, "type": 2, "payload": [854695, 710287, 606575, 113606, 437325, 441113]},
+        {"length": 48, "type": 0, "payload": [684911, 398183, 888044, 434674, 179607, 58570]}
+      ],
+      "total": "300295670129"
+    }
+  }
+}

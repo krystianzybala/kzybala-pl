@@ -7,7 +7,7 @@
   "durationMinutes": 30,
   "topics": ["concurrency", "lock-free", "coherence"],
   "prerequisites": ["memory-ordering"],
-  "unlocks": ["spsc-ring-buffer"],
+  "unlocks": ["spsc-ring-buffer", "memory-ordering-atomics"],
   "languages": ["java", "rust"],
   "interactive": true,
   "benchmark": true,

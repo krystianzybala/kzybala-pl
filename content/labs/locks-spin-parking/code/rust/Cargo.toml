@@ -1,0 +1,20 @@
+[package]
+name = "locks-spin-parking-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Locks, Spin Waiting and Parking\" (kzybala.pl/lab/locks-spin-parking/)."
+publish = false
+
+[lib]
+name = "locks_spin_parking_lab"
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "locks_spin_parking"
+harness = false
+
+[profile.bench]
+inherits = "release"

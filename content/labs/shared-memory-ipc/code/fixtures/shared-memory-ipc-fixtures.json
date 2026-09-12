@@ -1,0 +1,22 @@
+{
+  "lab": "shared-memory-ipc",
+  "description": "Deterministic message generation and checksum oracle shared byte-for-byte between the Java and Rust suites. Every variant (socket baseline, shared-memory copy, shared-memory slot view, batched, process restart/recovery) must reproduce the same checksum over the same message sequence.",
+  "payloadFormula": "payload(messageIndex, size)[j] = (messageIndex + j) & 0xFF, for j in [0, size)",
+  "checksumFormula": "checksum(messageIndex, payload, length) = fold: h = messageIndex*31, then h = h*31 + payload[i] for i in [0, length), all as wrapping 64-bit arithmetic",
+  "profiles": {
+    "small32Byte": { "payloadSize": 32, "messageCount": 2000 },
+    "medium128Byte": { "payloadSize": 128, "messageCount": 2000 },
+    "large1KiB": { "payloadSize": 1000, "messageCount": 2000 }
+  },
+  "ringProtocol": {
+    "protocolVersion": 1,
+    "headerSizeBytes": 192,
+    "slotSizeBytes": 1024,
+    "slotHeaderBytes": 4,
+    "payloadCapacityBytes": 1020,
+    "note": "capacity/protocolVersion at offsets 0/4; writerSeq at offset 64 (own cache line); readerSeq at offset 128 (own cache line); slots begin at offset 192. Single-writer/single-consumer SPSC cursor protocol identical in structure to the spsc-ring-buffer lab, applied to a memory-mapped shared segment instead of process-heap memory."
+  },
+  "recoveryScenario": {
+    "note": "The producer publishes an initial batch, the harness kills the consumer process, then starts a fresh consumer process that resumes reading from the segment's own recorded readerSeq (not from message index 0) and a fresh producer that resumes writerSeq via resumeWriter(). Correctness requires the resumed consumer to see every message exactly once, with none re-delivered or skipped."
+  }
+}

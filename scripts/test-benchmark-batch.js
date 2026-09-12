@@ -1065,10 +1065,41 @@ labs:
   cache-hierarchy: core_single
   mesi: core_pair
   memory-ordering: core_pair
+  memory-ordering-atomics: core_quad
+  mpsc-contention: core_octet
+  locks-spin-parking: core_quad
+  thread-per-core-sharding: core_octet
   thread-per-core: core_quad
   jit-pipeline: core_single
   benchmark-harness-traps: core_single
   clocks-latency-histograms: core_pair
+  branch-prediction: core_single
+  cache-locality-working-set: core_single
+  aos-vs-soa: core_single
+  bounds-checks-loop-shape: core_single
+  inlining-call-site-shape: core_single
+  escape-analysis-scalar-replacement: core_single
+  deoptimization-uncommon-traps: core_single
+  safepoints-ttsp: core_quad
+  gc-tail-latency: core_single
+  allocation-object-layout: core_single
+  ffm-memory-segments: core_single
+  struct-layout-alignment: core_single
+  arena-lifetimes-reuse: core_single
+  zero-copy-binary-parsing: core_single
+  simd-vector-api-rust: core_single
+  fixed-binary-serialization: core_single
+  memory-mapped-files: core_single
+  shared-memory-ipc: core_single
+  udp-ingest-batching: core_single
+  syscall-amortization-scatter-gather: core_single
+  java-rust-ffm-interop: core_single
+  virtual-platform-event-loop: core_quad
+  backpressure-bounded-pipelines: core_single
+  cpu-affinity-numa-irq: core_quad
+  observability-overhead: core_single
+  coordinated-omission-load-generation: core_single
+  deterministic-low-latency-pipeline: core_quad
 `);
     const r = (() => {
       try {

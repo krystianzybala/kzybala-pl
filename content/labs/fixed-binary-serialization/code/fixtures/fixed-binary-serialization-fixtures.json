@@ -1,0 +1,64 @@
+{
+  "lab": "fixed-binary-serialization",
+  "description": "Deterministic message instances shared byte-for-byte between the Java and Rust suites. Each entry is one EventRecord population representing one of the lab's four dataset profiles; every codec variant must encode/decode each one to exactly this data (round-trip equality), and the fixed-layout variants (ByteBuffer/FFM in Java, owned/borrowed in Rust) must all agree on the same WIRE_SIZE=70-byte little-endian layout.",
+  "wireSize": 70,
+  "maxSamples": 8,
+  "profiles": {
+    "smallCommand": {
+      "version": 1,
+      "id": 42,
+      "deviceId": 0,
+      "opcode": 7,
+      "flags": 1,
+      "value": 0.0,
+      "timestamp": 0,
+      "sampleCount": 0,
+      "samples": [0, 0, 0, 0, 0, 0, 0, 0],
+      "optionalPresent": false,
+      "optionalField": 0,
+      "note": "Minimal message: only id/opcode/flags are meaningful, everything else at its zero default. Exercises the fixed layout's fixed cost even when most fields carry no information."
+    },
+    "mediumEvent": {
+      "version": 1,
+      "id": 1000000007,
+      "deviceId": 314159,
+      "opcode": 2,
+      "flags": 0,
+      "value": 98.6,
+      "timestamp": 1731000000000,
+      "sampleCount": 0,
+      "samples": [0, 0, 0, 0, 0, 0, 0, 0],
+      "optionalPresent": false,
+      "optionalField": 0,
+      "note": "The representative 'typical' message: id, deviceId, value and timestamp all populated, no repeated or optional fields."
+    },
+    "repeatedFields": {
+      "version": 1,
+      "id": 99,
+      "deviceId": 5,
+      "opcode": 3,
+      "flags": 0,
+      "value": 0.0,
+      "timestamp": 0,
+      "sampleCount": 8,
+      "samples": [10, -20, 30, -40, 50, -60, 70, -80],
+      "optionalPresent": false,
+      "optionalField": 0,
+      "note": "All 8 fixed sample slots populated (sampleCount == MAX_SAMPLES) — exercises the repeated-field region of the layout at full occupancy."
+    },
+    "versionedOptionalField": {
+      "version": 2,
+      "id": 555,
+      "deviceId": 8,
+      "opcode": 9,
+      "flags": 4,
+      "value": 0.0,
+      "timestamp": 0,
+      "sampleCount": 0,
+      "samples": [0, 0, 0, 0, 0, 0, 0, 0],
+      "optionalPresent": true,
+      "optionalField": 123456,
+      "note": "version=2 with optionalPresent=true/optionalField set — a v1 reader that ignores optionalPresent and always reads optionalField still gets a well-defined value (0 when absent) because the slot is always reserved in the fixed layout; this is the explicit, non-silent version-evolution story this lab teaches, not a variable-length extension."
+    }
+  }
+}

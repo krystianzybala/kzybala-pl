@@ -1,0 +1,20 @@
+[package]
+name = "observability-overhead-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Logging, Metrics and Profiling Overhead\" (kzybala.pl/lab/observability-overhead/)."
+publish = false
+
+[lib]
+name = "obs_lab"
+path = "src/lib.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "observability_overhead"
+harness = false
+
+[profile.bench]
+inherits = "release"

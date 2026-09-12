@@ -1,0 +1,27 @@
+{
+  "id": "gc-tail-latency",
+  "title": "GC Algorithms and Tail Latency",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "gc",
+    "latency",
+    "allocation",
+    "jvm"
+  ],
+  "prerequisites": [
+    "clocks-latency-histograms",
+    "escape-analysis-scalar-replacement",
+    "safepoints-ttsp"
+  ],
+  "unlocks": [],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

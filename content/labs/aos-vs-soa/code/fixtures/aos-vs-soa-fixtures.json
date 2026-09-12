@@ -1,0 +1,55 @@
+{
+  "labId": "aos-vs-soa",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). One xorshift64 stream (seed=42, n=1000000) generates records with two 'hot' fields (hotA, hotB) and a dataset-specific number of 'cold' fields, in strict per-record order: hotA, hotB, cold[0..coldWords). Four layouts (AoS heap objects, AoS packed/off-heap, SoA primitive vectors, hybrid hot/cold split) store the SAME generated values differently. Both languages must reproduce every value below exactly, AND every layout of a given dataset must produce the IDENTICAL hotSum and coldChecksum — layout changes storage, never the data. Change a value here only together with both test files.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "generationOrder": "for each record index i in [0,n): x=xorshift64(x); hotA[i]=x unsigned-mod 1000000; x=xorshift64(x); hotB[i]=x unsigned-mod 1000000; then for w in [0,coldWords): x=xorshift64(x); cold[i][w]=x unsigned-mod 1000000",
+    "hotSum": "wrapping 64-bit sum of (hotA[i]+hotB[i]) over all i — the layout-invariance oracle: every layout of a dataset must produce this exact value",
+    "coldChecksum": "checksum*31 + v (64-bit wrapping) over every cold[i][w] in row-major (i then w) order — proves cold data survived the layout unchanged",
+    "checksumHotA": "checksum*31 + v (64-bit wrapping) over hotA alone",
+    "checksumHotB": "checksum*31 + v (64-bit wrapping) over hotB alone"
+  },
+  "operationDefinition": "one benchmark operation = one full pass over the declared dataset's 1,000,000 records, accumulating the wrapping sum of (hotA[i] + hotB[i]) via the layout's own hot-field access pattern; cold fields are never touched by the timed operation (this is what 'read-mostly scan over selected fields' means) — the returned sum is consumed to block dead-code elimination",
+  "recordShape": {
+    "hotFields": 2,
+    "hotFieldType": "i64 (u64-domain values 0..999999, always non-negative)",
+    "coldFieldType": "i64 (u64-domain values 0..999999, same domain as hot for a uniform generator)"
+  },
+  "n": 1000000,
+  "seed": 42,
+  "cases": {
+    "marketQuotes": {
+      "coldWords": 4,
+      "recordBytesAosPacked": 48,
+      "hotAChecksum": "-8491869883421422093",
+      "hotBChecksum": "1964254207014998244",
+      "hotAFirst5": [805674, 29075, 418483, 94591, 868695],
+      "hotBFirst5": [905471, 704114, 552213, 125452, 853729],
+      "hotSum": "999610704015",
+      "coldChecksum": "-2526446158705005686",
+      "coldFirstRow": [320954, 629736, 84162, 275427]
+    },
+    "positions": {
+      "coldWords": 8,
+      "recordBytesAosPacked": 80,
+      "hotAChecksum": "-6590571356256859184",
+      "hotBChecksum": "458225929394024333",
+      "hotAFirst5": [805674, 949407, 109719, 364481, 962125],
+      "hotBFirst5": [905471, 693788, 502434, 188859, 42853],
+      "hotSum": "999893110961",
+      "coldChecksum": "-3846297679626790457",
+      "coldFirstRow": [320954, 629736, 84162, 275427, 29075, 704114, 311536, 803557]
+    },
+    "spatialPoints": {
+      "coldWords": 2,
+      "recordBytesAosPacked": 32,
+      "hotAChecksum": "9215335623524743799",
+      "hotBChecksum": "-4924883481048905347",
+      "hotAFirst5": [805674, 84162, 311536, 418483, 363972],
+      "hotBFirst5": [905471, 275427, 803557, 552213, 116117],
+      "hotSum": "1000104865222",
+      "coldChecksum": "3239977018108460599",
+      "coldFirstRow": [320954, 629736]
+    }
+  }
+}

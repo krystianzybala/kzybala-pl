@@ -1,0 +1,26 @@
+{
+  "id": "bounds-checks-loop-shape",
+  "title": "Bounds Checks and Loop Shape",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "intermediate",
+  "durationMinutes": 40,
+  "topics": [
+    "bounds-checks",
+    "jit-optimization",
+    "loop-shape",
+    "unsafe"
+  ],
+  "prerequisites": [
+    "benchmark-harness-traps",
+    "cache-locality-working-set"
+  ],
+  "unlocks": ["ffm-memory-segments", "simd-vector-api-rust"],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

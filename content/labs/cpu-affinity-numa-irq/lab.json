@@ -1,0 +1,15 @@
+{
+  "id": "cpu-affinity-numa-irq",
+  "title": "CPU Affinity, NUMA and IRQ Placement",
+  "status": "draft",
+  "level": 10,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "numa", "production-engineering"],
+  "prerequisites": ["backpressure-bounded-pipelines"],
+  "unlocks": ["deterministic-low-latency-pipeline"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

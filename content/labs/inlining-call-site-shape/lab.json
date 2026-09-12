@@ -1,0 +1,28 @@
+{
+  "id": "inlining-call-site-shape",
+  "title": "Inlining and Call-Site Shape",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 40,
+  "topics": [
+    "jit",
+    "inlining",
+    "polymorphism",
+    "code-size"
+  ],
+  "prerequisites": [
+    "jit-pipeline"
+  ],
+  "unlocks": [
+    "escape-analysis-scalar-replacement",
+    "deoptimization-uncommon-traps"
+  ],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

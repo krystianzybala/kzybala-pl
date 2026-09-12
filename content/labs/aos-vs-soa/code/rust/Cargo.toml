@@ -1,0 +1,26 @@
+[package]
+name = "aos-vs-soa-lab"
+version = "0.1.0"
+edition = "2021"
+description = "Companion code for the Performance Lab \"Array of Structures vs Structure of Arrays\" lab (kzybala.pl/lab/aos-vs-soa/)."
+publish = false
+
+[lib]
+name = "aos_vs_soa_lab"
+path = "src/lib.rs"
+
+[dependencies]
+# Worker affinity for the native-Linux evidence binary only.
+libc = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+# cargo bench always builds this profile (inherits release). Benchmarking
+# a debug build is invalid input for this lab by definition.
+[profile.bench]
+inherits = "release"
+
+[[bench]]
+name = "aos_vs_soa"
+harness = false

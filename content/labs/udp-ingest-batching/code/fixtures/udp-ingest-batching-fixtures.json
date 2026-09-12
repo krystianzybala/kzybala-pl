@@ -1,0 +1,19 @@
+{
+  "lab": "udp-ingest-batching",
+  "description": "Deterministic datagram generation and payload-validation oracle shared byte-for-byte between the Java and Rust suites. Every variant sends/receives the same wire format over UDP loopback (127.0.0.1) — this lab tests exclusively over loopback and labels that fact everywhere a result appears; loopback has no real network latency, jitter, or link-layer loss.",
+  "sequenceSizeBytes": 8,
+  "profiles": {
+    "small64Byte": { "datagramSize": 64 },
+    "medium256Byte": { "datagramSize": 256 },
+    "large1400Byte": { "datagramSize": 1400 }
+  },
+  "loadProfiles": {
+    "steady": { "note": "fixed inter-send delay between datagrams" },
+    "microburst": { "note": "bursts of N back-to-back sends separated by an idle gap" },
+    "overload": { "note": "back-to-back sends with no pacing at all — the correctness/smoke test uses a bounded message count of this shape" }
+  },
+  "wireFormat": "bytes[0..8) = sequence number (little-endian u64); bytes[8..datagramSize) = payload, payload[i] = (sequence + i) & 0xFF",
+  "ingestAccounting": {
+    "note": "Every datagram sent is accounted for as exactly one of: delivered (received, queued, and payload-validated), applicationDropped (received off the socket but discarded because the bounded processing path was full — explicit and counted, never silent), or corrupted (delivered but failed payload validation — should never happen over loopback, asserted in tests). Kernel-level drops (the OS discarding a datagram before this process calls receive) are a distinct category this in-process accounting cannot observe on a development machine — see theory.md's Assumptions and scope."
+  }
+}

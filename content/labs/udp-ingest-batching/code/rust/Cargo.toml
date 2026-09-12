@@ -1,0 +1,20 @@
+[package]
+name = "udp-ingest-batching-lab"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "udp_ingest_batching_lab"
+path = "src/lib.rs"
+
+[[bench]]
+name = "udp_ingest_batching"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[profile.bench]
+inherits = "release"

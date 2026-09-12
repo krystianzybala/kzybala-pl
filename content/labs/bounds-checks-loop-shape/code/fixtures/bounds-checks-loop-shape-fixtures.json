@@ -1,0 +1,21 @@
+{
+  "labId": "bounds-checks-loop-shape",
+  "description": "Shared correctness fixtures (docs/benchmark-correctness-fixtures.md). Every dataset's payload is backing[i]=i (no RNG needed for the payload). Only the ACCESS ORDER for the irregularIndex variant is randomized, reusing the IDENTICAL xorshift64 + Fisher-Yates permutation already established in content/labs/cache-locality-working-set (n=1000000, seed=42) — same algorithm, same numbers, pinned once and reused by reference rather than recomputed. Every variant (canonical, opaqueLimit, irregularIndex, safeIterator, unchecked) on a given dataset must sum to the IDENTICAL closed-form total below — loop shape and check-elimination eligibility change cost, never the result.",
+  "semantics": {
+    "payload": "backing[i] = i for every dataset's backing array",
+    "irregularIndexPermutation": "the SAME Fisher-Yates permutation as content/labs/cache-locality-working-set (n=1000000, seed=42): first5=[712069,917377,307023,717218,274070], checksum=-4372133131104027544, sum(perm)=499999500000",
+    "primitiveArrays": "backing array of length N=1000000, values 0..N-1; canonical/opaque/safeIterator/unchecked sum backing[0..N) directly; irregularIndex sums backing[perm[i]] for i in [0,N) (same permutation, identity offset)",
+    "slicesSubranges": "backing array of length 2*N=2000000, values 0..2N-1; every variant operates on the sub-window [sliceStart, sliceStart+N) = [500000, 1500000); irregularIndex sums backing[sliceStart + perm[i]] for i in [0,N)",
+    "stridedAccess": "backing array of length N*stride=4000000 (stride=4), values 0..4N-1; every variant visits backing[i*stride] for i in [0,N); irregularIndex sums backing[perm[i]*stride] for i in [0,N)",
+    "javaRustSliceAsymmetry": "documented semantic note (not a bug): Java has no zero-copy borrowed-slice view type for a primitive array, so the Java slicesSubranges variants index the backing array directly with explicit [sliceStart, sliceStart+N) bounds; Rust's slicesSubranges variants build a genuine &[i64] via backing[sliceStart..sliceStart+N] and iterate 0-based within that slice. Both visit the identical backing values and produce the identical sum — see java.md/rust.md."
+  },
+  "n": 1000000,
+  "seed": 42,
+  "stride": 4,
+  "sliceStart": 500000,
+  "expectedTotals": {
+    "primitiveArrays": "499999500000",
+    "slicesSubranges": "999999500000",
+    "stridedAccess": "1999998000000"
+  }
+}

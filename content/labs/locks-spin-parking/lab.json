@@ -1,0 +1,15 @@
+{
+  "id": "locks-spin-parking",
+  "title": "Locks, Spin Waiting and Parking",
+  "status": "draft",
+  "level": 6,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "lock-free", "coherence"],
+  "prerequisites": ["mpsc-contention"],
+  "unlocks": ["thread-per-core-sharding"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

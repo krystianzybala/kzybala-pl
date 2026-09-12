@@ -1,0 +1,9 @@
+{
+  "lab": "locks-spin-parking",
+  "description": "Deterministic dataset parameters shared byte-for-byte between the Java and Rust suites. The correctness oracle for the shared-counter dataset (the only dataset this iteration wires — see theory.md's Assumptions and scope for the disclosed 'small map update'/'handoff flag' gap) is: the final counter value equals workerCount * opsPerWorker exactly, for every variant, every run.",
+  "workerCount": 4,
+  "opsPerWorker": 2000,
+  "longCriticalSectionBusyIterations": 200,
+  "spinLimit": 100,
+  "note": "workerCount is fixed at 4 for the correctness suite (kept small so mvn test/cargo test stay fast). The uncontended-mutex variant forces workerCount=1 regardless of this value, by definition (uncontended means no other thread ever contends for the lock)."
+}

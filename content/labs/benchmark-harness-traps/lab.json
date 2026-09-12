@@ -13,7 +13,10 @@
   ],
   "prerequisites": [],
   "unlocks": [
-    "clocks-latency-histograms"
+    "clocks-latency-histograms",
+    "branch-prediction",
+    "bounds-checks-loop-shape",
+    "cache-locality-working-set"
   ],
   "languages": [
     "java",

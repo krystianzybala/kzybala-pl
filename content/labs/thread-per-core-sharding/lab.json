@@ -1,0 +1,15 @@
+{
+  "id": "thread-per-core-sharding",
+  "title": "Thread-per-Core and Shared-Nothing Sharding",
+  "status": "draft",
+  "level": 7,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["concurrency", "lock-free", "coherence"],
+  "prerequisites": ["locks-spin-parking", "thread-per-core"],
+  "unlocks": ["virtual-platform-event-loop"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

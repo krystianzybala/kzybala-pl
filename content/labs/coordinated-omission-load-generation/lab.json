@@ -1,0 +1,15 @@
+{
+  "id": "coordinated-omission-load-generation",
+  "title": "Coordinated Omission and Load Generation",
+  "status": "draft",
+  "level": 12,
+  "difficulty": "advanced",
+  "durationMinutes": 30,
+  "topics": ["measurement", "latency", "production-engineering"],
+  "prerequisites": ["observability-overhead"],
+  "unlocks": ["deterministic-low-latency-pipeline"],
+  "languages": ["java", "rust"],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

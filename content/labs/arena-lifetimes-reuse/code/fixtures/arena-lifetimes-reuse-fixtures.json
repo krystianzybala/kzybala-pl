@@ -1,0 +1,50 @@
+{
+  "labId": "arena-lifetimes-reuse",
+  "description": "Shared correctness fixtures for the five lifecycle variants (allocatePerItem, batchArena, threadLocalReuse, globalPool, boundedPool) over three datasets. Lifecycle strategy changes B/op, allocations/op, reset/close cost and contention, never the checksum.",
+  "semantics": {
+    "xorshift64": "x ^= x << 13; x ^= x >>> 7 (unsigned/logical); x ^= x << 17 (64-bit wrapping, unsigned interpretation throughout)",
+    "messageBatches": {
+      "n": 500000,
+      "batchSize": 500,
+      "seed": 100,
+      "fields": "id = i (linear); value = xorshift64 stream unsigned-mod 1,000,000; flag = xorshift64 stream unsigned-mod 16 — two xorshift64 advances per message, in order: value, flag",
+      "checksum": "wrapping sum of (id + value + flag) over all messages"
+    },
+    "temporaryParseTrees": {
+      "docCount": 100000,
+      "nodesPerDoc": 8,
+      "docsPerBatch": 100,
+      "seed": 101,
+      "fields": "value[doc][node] = xorshift64 stream unsigned-mod 1,000,000, one advance per node, nodes generated in order within a doc, docs in order",
+      "checksum": "wrapping sum of value over every node in every document"
+    },
+    "scratchBuffers": {
+      "opCount": 200000,
+      "wordsPerOp": 8,
+      "opsPerBatch": 200,
+      "seed": 102,
+      "fields": "word[op][w] = xorshift64 stream unsigned-mod 1,000,000, one advance per word, words generated in order within an op, ops in order",
+      "checksum": "wrapping sum of word over every word in every buffer op (values round-trip through the scratch buffer as raw bytes before being summed)"
+    }
+  },
+  "expectedTotals": {
+    "messageBatches": {
+      "first5": [
+        {"id": 0, "value": 927524, "flag": 6},
+        {"id": 1, "value": 982852, "flag": 2},
+        {"id": 2, "value": 120507, "flag": 6},
+        {"id": 3, "value": 38665, "flag": 1},
+        {"id": 4, "value": 988982, "flag": 10}
+      ],
+      "total": "374972485120"
+    },
+    "temporaryParseTrees": {
+      "firstDocFirst5": [419941, 158871, 482861, 815367, 281118],
+      "total": "399735735737"
+    },
+    "scratchBuffers": {
+      "firstOp": [942758, 140821, 375446, 305568, 916761, 5365, 490926, 972169],
+      "total": "799513392927"
+    }
+  }
+}

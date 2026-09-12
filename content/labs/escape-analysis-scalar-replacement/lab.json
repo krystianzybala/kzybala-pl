@@ -1,0 +1,26 @@
+{
+  "id": "escape-analysis-scalar-replacement",
+  "title": "Escape Analysis and Scalar Replacement",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 40,
+  "topics": [
+    "jit",
+    "escape-analysis",
+    "allocation",
+    "gc"
+  ],
+  "prerequisites": [
+    "jit-pipeline",
+    "inlining-call-site-shape"
+  ],
+  "unlocks": ["gc-tail-latency", "arena-lifetimes-reuse"],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}

@@ -1,0 +1,26 @@
+{
+  "id": "ffm-memory-segments",
+  "title": "Heap vs Off-Heap with FFM MemorySegment",
+  "status": "draft",
+  "level": 1,
+  "difficulty": "advanced",
+  "durationMinutes": 45,
+  "topics": [
+    "ffm",
+    "memory-segments",
+    "off-heap",
+    "arenas"
+  ],
+  "prerequisites": [
+    "allocation-object-layout",
+    "bounds-checks-loop-shape"
+  ],
+  "unlocks": ["struct-layout-alignment", "arena-lifetimes-reuse", "zero-copy-binary-parsing", "java-rust-ffm-interop"],
+  "languages": [
+    "java",
+    "rust"
+  ],
+  "interactive": false,
+  "benchmark": true,
+  "conceptualModel": false
+}
