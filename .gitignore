@@ -9,6 +9,13 @@
 **/target/
 **/__pycache__/
 
+# maven-shade-plugin regenerates this on every `mvn package` (absolute
+# paths/ordering can differ run to run) — tracking it makes the tree
+# look "dirty" to the publication clean-tree gate after any local build,
+# aborting the whole batch (found via batch-20260913T160014Z: every lab
+# rejected identically at preflight before any measurement ran).
+**/dependency-reduced-pom.xml
+
 # Immutable raw benchmark run artifacts (docs/benchmark-artifact-layout.md).
 # Regenerable on your own hardware; committed only when it is the specific
 # evidence backing a benchmark.md number.
