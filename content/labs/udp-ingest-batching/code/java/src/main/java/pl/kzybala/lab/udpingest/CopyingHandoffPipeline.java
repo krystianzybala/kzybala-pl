@@ -2,6 +2,7 @@ package pl.kzybala.lab.udpingest;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -26,6 +27,7 @@ public final class CopyingHandoffPipeline implements AutoCloseable {
 
     public CopyingHandoffPipeline(int port, int queueCapacity) throws IOException {
         this.channel = DatagramChannel.open();
+        channel.setOption(StandardSocketOptions.SO_RCVBUF, 4 * 1024 * 1024);
         channel.bind(new InetSocketAddress("127.0.0.1", port));
         this.queueCapacity = queueCapacity;
     }
@@ -65,17 +67,20 @@ public final class CopyingHandoffPipeline implements AutoCloseable {
         consumer.start();
 
         ByteBuffer buf = ByteBuffer.allocateDirect(datagramSize);
-        for (long i = 0; i < messageCount; i++) {
-            buf.clear();
-            channel.receive(buf);
-            buf.flip();
-            int length = buf.remaining();
-            byte[] copy = new byte[length];
-            buf.get(copy);
-            if (!queue.offer(copy)) {
-                applicationDropped.incrementAndGet();
+        BoundedReceive.withDeadline(channel, receiver -> {
+            for (long i = 0; i < messageCount; i++) {
+                buf.clear();
+                receiver.receive(buf, i, messageCount);
+                buf.flip();
+                int length = buf.remaining();
+                byte[] copy = new byte[length];
+                buf.get(copy);
+                if (!queue.offer(copy)) {
+                    applicationDropped.incrementAndGet();
+                }
             }
-        }
+            return null;
+        });
         queue.put(poisonPill);
         consumerDone.await();
 

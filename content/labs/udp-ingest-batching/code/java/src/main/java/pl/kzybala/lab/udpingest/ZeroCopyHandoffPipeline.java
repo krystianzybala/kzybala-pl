@@ -2,6 +2,7 @@ package pl.kzybala.lab.udpingest;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -31,6 +32,7 @@ public final class ZeroCopyHandoffPipeline implements AutoCloseable {
 
     public ZeroCopyHandoffPipeline(int port, int slabSize) throws IOException {
         this.channel = DatagramChannel.open();
+        channel.setOption(StandardSocketOptions.SO_RCVBUF, 4 * 1024 * 1024);
         channel.bind(new InetSocketAddress("127.0.0.1", port));
         this.slabSize = slabSize;
     }
@@ -87,27 +89,35 @@ public final class ZeroCopyHandoffPipeline implements AutoCloseable {
         }, "udp-ingest-zero-copy-consumer");
         consumer.start();
 
-        for (long i = 0; i < messageCount; i++) {
-            int idx = (int) (i % slabSize);
-            if (inFlight[idx]) {
-                // Not yet freed by the consumer — receiving into it now would
-                // violate the bounded-lifetime contract. Drain the socket into
-                // a scratch buffer instead and count an explicit drop.
-                discardBuf.clear();
-                channel.receive(discardBuf);
-                applicationDropped.incrementAndGet();
-                continue;
+        BoundedReceive.withDeadline(channel, receiver -> {
+            for (long i = 0; i < messageCount; i++) {
+                int idx = (int) (i % slabSize);
+                if (inFlight[idx]) {
+                    // Not yet freed by the consumer — receiving into it now would
+                    // violate the bounded-lifetime contract. Drain the socket into
+                    // a scratch buffer instead and count an explicit drop.
+                    discardBuf.clear();
+                    receiver.receive(discardBuf, i, messageCount);
+                    applicationDropped.incrementAndGet();
+                    continue;
+                }
+                slab[idx].clear();
+                receiver.receive(slab[idx], i, messageCount);
+                inFlight[idx] = true;
+                try {
+                    readyIndices.put(idx);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("interrupted while queuing a ready slot index", e);
+                }
+                // Reclaim any slots the consumer has finished with since we last checked.
+                Integer freed;
+                while ((freed = freedSlots.poll()) != null) {
+                    inFlight[freed] = false;
+                }
             }
-            slab[idx].clear();
-            channel.receive(slab[idx]);
-            inFlight[idx] = true;
-            readyIndices.put(idx);
-            // Reclaim any slots the consumer has finished with since we last checked.
-            Integer freed;
-            while ((freed = freedSlots.poll()) != null) {
-                inFlight[freed] = false;
-            }
-        }
+            return null;
+        });
         readyIndices.put(poisonIndex);
         consumerDone.await();
 

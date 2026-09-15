@@ -117,6 +117,37 @@ JVM unable to exit cleanly after JMH's own benchmark loop finished
 ("did not exit, are there stray running threads?") — fixed by shutting
 the executor down explicitly in `@TearDown(Level.Trial)`.
 
+## A real bug found on the native-Linux publication host
+
+Every receive loop in this lab (`RawReceiveKernel`'s two variants,
+`CopyingHandoffPipeline`, `ZeroCopyHandoffPipeline`) originally waited
+for exactly `messageCount` datagrams with a plain blocking
+`channel.receive(buf)` per packet. This is correct only if UDP delivery
+over loopback is lossless — it is not, even on loopback, under real
+burst load: `LoadGenerator.sendBurst`'s unpaced send loop can outrun the
+kernel's UDP receive buffer (the `large1400Byte` profile alone sends
+~5.6 MB back-to-back against a default several-hundred-KB buffer), and
+any datagram the kernel drops for buffer overflow is gone permanently.
+The first publication-host run hit exactly this: `udp-ingest-batching`
+hung until the batch runner's hard wall-clock budget killed it
+(`failed-benchmark-timeout`) — a real, reproducible loss event under
+real host load and scheduling, not a flaky one-off, and not reproducible
+on a quiet development machine where loopback delivery is effectively
+lossless in practice.
+
+The fix has two parts, in `BoundedReceive`: `SO_RCVBUF` is widened to
+4 MiB on every receiving channel (a performance mitigation — it makes
+loss under this lab's own burst sizes much rarer) and every receive loop
+now runs against an overall 20-second wall-clock deadline via a
+`Selector`, failing with a clear diagnostic (`"receive timed out after
+N/messageCount datagrams"`) instead of hanging forever (the correctness
+backstop — no receive buffer is large enough to guarantee zero loss
+under an unbounded burst). This is the same "bound every wait with a
+deadline" discipline already applied to the SPSC lab's transfer harness
+after its own JMH hang incident: a benchmark that can wait forever for
+an event that will never happen must not be trusted to eventually finish
+on its own.
+
 The runnable Maven/JMH project (with correctness tests under
 `src/test/java/`) is at
 <a href="https://github.com/krystianzybala/kzybala-pl/tree/main/content/labs/udp-ingest-batching/code/java" rel="noopener"><code>content/labs/udp-ingest-batching/code/java/</code></a>
