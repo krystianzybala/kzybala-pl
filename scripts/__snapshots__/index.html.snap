@@ -67,12 +67,12 @@
   <div class="hero-grid">
     <div>
       <p class="eyebrow">Principal JVM Performance Engineer</p>
-      <h1>Building <span class="gradient-text">predictable systems</span> beneath the framework layer.</h1>
-      <p class="lead">I design and optimise latency-sensitive financial platforms, JVM runtimes and event-driven systems. My work spans architecture, JIT behaviour, memory allocation, concurrency, CPU caches and the operating system beneath the convenient abstractions.</p>
+      <h1>Fixing <span class="gradient-text">latency, throughput and memory problems</span> in JVM systems.</h1>
+      <p class="lead">I help engineering teams work through high p99 latency, latency regressions, throughput ceilings, memory pressure, GC pauses, lock contention and rising infrastructure cost — in JVM runtimes, low-latency concurrency and financial systems. Every engagement starts with profiling and measurement, not assumptions.</p>
       <div class="hero-actions">
-        <a class="button primary" href="/lab/">Enter Performance Lab</a>
-        <a class="button" href="/case-studies/">Explore case studies</a>
-        <a class="button ghost" href="mailto:contact@kzybala.pl">Contact</a>
+        <a class="button primary" href="/consulting.html#contact">Discuss a performance problem</a>
+        <a class="button" href="/case-studies/">See case studies</a>
+        <a class="button ghost" href="/lab/">Explore Performance Lab</a>
       </div>
     </div>
     <aside class="runtime-panel" aria-label="Runtime pipeline visualisation">
@@ -90,10 +90,27 @@
 </section>
 
 <section class="signal-strip" aria-label="Selected engineering impact">
-  <a class="signal" href="/case-studies/parallel-payment-engine.html"><strong>10×+</strong><span>faster payment workload — case study</span></a>
+  <a class="signal" href="/case-studies/parallel-payment-engine.html"><strong>30–50s → ~4s</strong><span>payment workload processing — case study</span></a>
   <a class="signal" href="/case-studies/parallel-payment-engine.html"><strong>75%</strong><span>lower memory footprint — case study</span></a>
   <a class="signal" href="/case-studies/in-memory-decision-runtime.html"><strong>90%</strong><span>lower infrastructure cost — case study</span></a>
   <div class="signal"><strong>10+ yrs</strong><span>financial and runtime systems</span></div>
+</section>
+
+<section class="section" id="consulting-teaser">
+  <div class="section-heading">
+    <div><p class="eyebrow">Consulting</p><h2>How I can help</h2></div>
+    <p>Four ways to engage, from a bounded investigation to hands-on training. Each starts with a conversation about the actual problem, not a fixed package.</p>
+  </div>
+  <div class="grid four">
+    <a class="card icon-card" href="/consulting.html#audit"><span class="icon">JVM</span><h3>Performance audit</h3><p>Profiling, allocation and GC review, contention analysis, a prioritised remediation plan.</p></a>
+    <a class="card icon-card" href="/consulting.html#design-review"><span class="icon">ARC</span><h3>Design review</h3><p>Execution model, state ownership, communication paths and failure semantics.</p></a>
+    <a class="card icon-card" href="/consulting.html#intervention"><span class="icon">P99</span><h3>Performance intervention</h3><p>Focused help for regressions, throughput collapse, memory pressure or scaling limits.</p></a>
+    <a class="card icon-card" href="/consulting.html#training"><span class="icon">EDU</span><h3>Engineering training</h3><p>Hands-on training in JVM internals, concurrency, profiling and benchmarking.</p></a>
+  </div>
+  <div class="hero-actions">
+    <a class="button primary" href="/consulting.html#contact">Discuss a performance problem</a>
+    <a class="button ghost" href="/consulting.html">See the full consulting offer →</a>
+  </div>
 </section>
 
 <section class="section">
@@ -140,7 +157,7 @@
 <section class="section">
   <div class="section-heading">
     <div><p class="eyebrow">Interactive learning</p><h2>Performance Lab</h2></div>
-    <p>Small visual models for concepts that are usually explained with three paragraphs, a dubious analogy and avoidable suffering. Every card below is a complete, stable reference laboratory — not a preview.</p>
+    <p>Small, interactive models for concepts that are usually explained in prose alone. Every card below is a complete, stable reference laboratory — not a preview.</p>
   </div>
   <div class="grid four">
     <a class="card" href="/lab/cache-hierarchy/"><p class="meta">CPU CACHE</p><h3>Cache hierarchy</h3><p>L1/L2/L3/RAM, spatial and temporal locality, and hardware prefetching.</p></a>
@@ -169,7 +186,7 @@
 <section class="section">
   <div class="section-heading">
     <div><p class="eyebrow">Guided curriculum</p><h2>Performance Academy</h2></div>
-    <p>A structured route from measurement fundamentals to runtime architecture. Not a “become principal in fourteen days” funnel. The universe has enough of those.</p>
+    <p>A structured route from measurement fundamentals to runtime architecture — depth over a fixed curriculum, not a shortcut to a title.</p>
   </div>
   <div class="grid two">
     <a class="card" href="/academy/"><p class="meta">LEVELS 01–03</p><h3>Measure, understand, optimise</h3><p>Profiling, benchmarking, JVM internals, memory, concurrency and CPU-aware design.</p></a>
@@ -183,7 +200,7 @@
   </div>
   <div class="about-grid">
     <div class="about-card">
-      <div class="about-avatar" aria-hidden="true">KZ</div>
+      <img class="about-avatar" src="/assets/images/me.jpeg" alt="Portrait of Krystian Zybała" width="96" height="96" loading="lazy">
       <h3>Krystian Zybała</h3>
       <p class="role">Performance Engineer</p>
       <nav class="about-links" aria-label="Krystian Zybała elsewhere">

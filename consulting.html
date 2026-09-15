@@ -52,21 +52,82 @@
   <main id="content">
 <section class="hero prose">
   <p class="eyebrow">Consulting</p>
-  <h1>Performance help for systems that have exhausted the easy explanations.</h1>
-  <p class="lead">I work with engineering teams on JVM performance, architecture and low-latency systems through targeted investigations, reviews and training.</p>
+  <h1>JVM and low-latency systems performance consulting.</h1>
+  <p class="lead">I work with engineering teams on high p99 latency, throughput ceilings, memory pressure, GC pauses, lock contention and rising infrastructure cost — through targeted investigations, architecture reviews and hands-on training. Every engagement starts with a conversation about the actual problem, not a fixed package.</p>
+  <div class="hero-actions"><a class="button primary" href="#contact">Discuss a performance problem</a></div>
 </section>
+
 <section class="section">
+  <div class="section-heading">
+    <div><p class="eyebrow">Ways to work together</p><h2>Four engagement types</h2></div>
+    <p>Each describes when it fits, what it covers, and what you get at the end. None of these are fixed-price packages — scope is agreed before work starts.</p>
+  </div>
   <div class="grid two">
-    <div class="card"><p class="meta">INVESTIGATION</p><h3>JVM performance audit</h3><p>Workload analysis, profiling, allocation and GC review, contention analysis, JIT behaviour and a prioritised remediation plan.</p></div>
-    <div class="card"><p class="meta">ARCHITECTURE</p><h3>Low-latency design review</h3><p>Review of execution model, state ownership, communication paths, persistence boundaries and failure semantics.</p></div>
-    <div class="card"><p class="meta">PRODUCTION</p><h3>Performance intervention</h3><p>Focused support for latency regressions, throughput collapse, memory pressure, high CPU, lock contention or scaling limits.</p></div>
-    <div class="card"><p class="meta">ENABLEMENT</p><h3>Advanced engineering training</h3><p>Hands-on training in JVM internals, concurrency, profiling, benchmarking and performance-conscious architecture.</p></div>
+    <article class="card" id="audit">
+      <p class="meta">INVESTIGATION</p><h3>JVM performance audit</h3>
+      <p><strong>When it fits:</strong> you have a specific performance concern — high p99, a throughput ceiling, unexplained GC pauses, rising CPU — but no clear diagnosis yet.</p>
+      <p><strong>What it covers:</strong> workload analysis, profiling, allocation and GC review, contention analysis and JIT/compilation behaviour, against a representative workload.</p>
+      <p><strong>What you get:</strong> a written diagnosis of the actual bottleneck(s), evidence behind each finding, and a prioritised list of remediation options — not a guaranteed percentage improvement.</p>
+    </article>
+    <article class="card" id="design-review">
+      <p class="meta">ARCHITECTURE</p><h3>Low-latency design review</h3>
+      <p><strong>When it fits:</strong> you're designing or reworking a latency-sensitive component and want a second, specialised opinion before or during implementation.</p>
+      <p><strong>What it covers:</strong> execution model, state ownership, communication paths, persistence boundaries and failure semantics, reviewed against your actual latency and throughput targets.</p>
+      <p><strong>What you get:</strong> a written review — risks, trade-offs and concrete recommendations tied to your constraints, not a generic architecture checklist.</p>
+    </article>
+    <article class="card" id="intervention">
+      <p class="meta">PRODUCTION</p><h3>Performance intervention</h3>
+      <p><strong>When it fits:</strong> something in production has regressed or hit a wall — a latency regression, throughput collapse, memory pressure, high CPU, lock contention or a scaling limit — and you need focused help resolving it.</p>
+      <p><strong>What it covers:</strong> targeted diagnosis on the affected path, working from your existing telemetry and profiling where available, adding instrumentation where it's missing.</p>
+      <p><strong>What you get:</strong> root-cause findings and a concrete fix or remediation plan your team can implement and validate.</p>
+    </article>
+    <article class="card" id="training">
+      <p class="meta">ENABLEMENT</p><h3>Advanced engineering training</h3>
+      <p><strong>When it fits:</strong> your team is capable but hasn't built deep intuition for JVM internals, concurrency or performance-conscious design, and would benefit from structured, hands-on sessions.</p>
+      <p><strong>What it covers:</strong> JVM internals, concurrency and memory ordering, profiling and benchmarking methodology, and performance-conscious architecture — tailored to your codebase and team level, not a generic slide deck.</p>
+      <p><strong>What you get:</strong> working material and exercises your team keeps, built around problems close to your own systems.</p>
+    </article>
   </div>
 </section>
+
+<section class="section">
+  <div class="section-heading">
+    <div><p class="eyebrow">Process</p><h2>How an engagement typically runs</h2></div>
+  </div>
+  <div class="grid four">
+    <article class="card principle-card"><p class="meta">01</p><h3>Discuss the problem</h3><p>A conversation about what's happening, what's been tried, and whether this is a good fit.</p></article>
+    <article class="card principle-card"><p class="meta">02</p><h3>Agree scope and access</h3><p>What's in scope, what data or environment access is needed, and what a useful outcome looks like.</p></article>
+    <article class="card principle-card"><p class="meta">03</p><h3>Analysis</h3><p>Profiling and investigation against the agreed scope and a representative workload.</p></article>
+    <article class="card principle-card"><p class="meta">04</p><h3>Recommendations and validation</h3><p>Findings, prioritised recommendations, and an agreed way to validate the result.</p></article>
+  </div>
+</section>
+
 <section class="section prose">
   <h2>Engagement principles</h2>
-  <p>No generic 200-page audit whose main purpose is proving the audit occurred. Work is measured against a concrete technical problem, representative workload and verifiable outcomes.</p>
-  <div class="hero-actions"><a class="button primary" href="mailto:contact@kzybala.pl">Discuss an engagement</a><a class="button" href="https://webosystem.pl">Visit Webosystem</a></div>
+  <p>Engagements are scoped to a concrete technical problem, a representative workload and outcomes agreed up front — not a fixed-template audit. A performance-report deliverable (findings, evidence, prioritised recommendations) is not the same thing as a guaranteed business outcome (a specific cost or latency reduction); the latter depends on what the investigation actually finds, which is why no percentage or timeline is promised before the analysis happens.</p>
+</section>
+
+<section class="section" id="contact" aria-labelledby="contact-heading">
+  <div class="section-heading">
+    <div><p class="eyebrow">Get in touch</p><h2 id="contact-heading">Start a conversation</h2></div>
+  </div>
+  <div class="grid two">
+    <div class="card prose">
+      <p>Email <a href="mailto:contact@kzybala.pl?subject=Performance%20engagement%20inquiry">contact@kzybala.pl</a> with a short description of the problem. No form, no backend — just email.</p>
+      <div class="hero-actions"><a class="button primary" href="mailto:contact@kzybala.pl?subject=Performance%20engagement%20inquiry">Email contact@kzybala.pl</a></div>
+    </div>
+    <div class="card prose">
+      <p><strong>Useful to include, if you have it:</strong></p>
+      <ul>
+        <li>the symptom — what's slow, unstable or expensive, and how you noticed</li>
+        <li>tech stack and runtime (JVM version, language, key frameworks)</li>
+        <li>rough scale — request rate, data volume, latency/throughput targets</li>
+        <li>what a good outcome would look like</li>
+      </ul>
+      <p>Please don't send production data, credentials or anything confidential in a first email — what to share, and how, gets agreed once we're talking.</p>
+    </div>
+  </div>
+  <div class="hero-actions"><a class="button" href="https://webosystem.pl" rel="noopener">Visit Webosystem</a></div>
 </section>
 </main>
   

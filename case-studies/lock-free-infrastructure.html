@@ -76,6 +76,7 @@
 <p>Lock-free access moved complexity from "one critical section to reason about" to "an ordering argument for each access" — correct, but harder for future maintainers to verify by inspection than a synchronized block. That cost was accepted because the component sat on enough hot paths that the alternative (leaving the lock in place) was multiplied across the whole platform.</p>
 <h2>Measured outcome</h2>
 <p>The redesigned path was near zero-allocation and removed the principal synchronized bottleneck, measured via the same allocation and contention profiling used to diagnose the original problem. Specific throughput/allocation-rate figures and component identity are withheld here as client-confidential; the qualitative before/after (coarse lock → lock-free, high allocation → near zero) is what this page discloses.</p>
+<p><a href="/consulting.html#contact">Dealing with lock contention or allocation pressure on a shared component? Get in touch.</a></p>
 </article>
 </main>
   
