@@ -70,7 +70,7 @@ public final class CopyingHandoffPipeline implements AutoCloseable {
         BoundedReceive.withDeadline(channel, receiver -> {
             for (long i = 0; i < messageCount; i++) {
                 buf.clear();
-                receiver.receive(buf, i, messageCount);
+                receiver.receive(buf);
                 buf.flip();
                 int length = buf.remaining();
                 byte[] copy = new byte[length];

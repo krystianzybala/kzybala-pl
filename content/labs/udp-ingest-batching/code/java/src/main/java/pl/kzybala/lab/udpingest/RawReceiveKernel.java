@@ -39,7 +39,7 @@ public final class RawReceiveKernel implements AutoCloseable {
             long validated = 0;
             for (long i = 0; i < messageCount; i++) {
                 ByteBuffer buf = ByteBuffer.allocateDirect(datagramSize);
-                receiver.receive(buf, i, messageCount);
+                receiver.receive(buf);
                 buf.flip();
                 byte[] bytes = new byte[buf.remaining()];
                 buf.get(bytes);
@@ -60,7 +60,7 @@ public final class RawReceiveKernel implements AutoCloseable {
             long validated = 0;
             for (long i = 0; i < messageCount; i++) {
                 buf.clear();
-                receiver.receive(buf, i, messageCount);
+                receiver.receive(buf);
                 buf.flip();
                 int length = buf.remaining();
                 buf.get(scratch, 0, length);

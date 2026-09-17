@@ -138,15 +138,37 @@ lossless in practice.
 The fix has two parts, in `BoundedReceive`: `SO_RCVBUF` is widened to
 4 MiB on every receiving channel (a performance mitigation — it makes
 loss under this lab's own burst sizes much rarer) and every receive loop
-now runs against an overall 20-second wall-clock deadline via a
-`Selector`, failing with a clear diagnostic (`"receive timed out after
-N/messageCount datagrams"`) instead of hanging forever (the correctness
-backstop — no receive buffer is large enough to guarantee zero loss
-under an unbounded burst). This is the same "bound every wait with a
-deadline" discipline already applied to the SPSC lab's transfer harness
-after its own JMH hang incident: a benchmark that can wait forever for
-an event that will never happen must not be trusted to eventually finish
-on its own.
+now runs against an overall 20-second wall-clock deadline, failing with a
+clear diagnostic instead of hanging forever (the correctness backstop —
+no receive buffer is large enough to guarantee zero loss under an
+unbounded burst). This is the same "bound every wait with a deadline"
+discipline already applied to the SPSC lab's transfer harness after its
+own JMH hang incident: a benchmark that can wait forever for an event
+that will never happen must not be trusted to eventually finish on its
+own.
+
+## A second bug, in the first fix
+
+The first version of the deadline enforced it by switching the channel
+to non-blocking mode and polling it with a `Selector`, timing out the
+`select()` call. It passed every test on this repository's development
+machine (aarch64/macOS) — and then hung the correctness gate on the
+native-Linux publication host, on datagram counts (a few thousand small
+packets over loopback) far too small to plausibly lose a single one.
+That ruled out real packet loss as the cause: the non-blocking/Selector
+polling loop itself behaved differently across the two platforms tested,
+for reasons that were not worth chasing down when a simpler, more
+established alternative exists. The fix switched to the standard
+"cancel a blocking NIO operation by closing the channel from another
+thread" idiom: the receive stays an ordinary blocking
+`DatagramChannel.receive`, and a daemon watchdog thread closes the
+channel after the deadline, which unblocks the in-progress receive with
+an `AsynchronousCloseException` — no non-blocking mode, no `Selector`,
+nothing that showed platform-dependent behaviour in testing. The lesson
+generalises: a hand-rolled polling loop is more platform surface area
+than a well-worn cancellation idiom, and "it passed on my machine"
+is not evidence a concurrency-adjacent fix is portable — this lab's own
+publication-host correctness gate is what actually caught it.
 
 The runnable Maven/JMH project (with correctness tests under
 `src/test/java/`) is at

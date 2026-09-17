@@ -1,10 +1,8 @@
 package pl.kzybala.lab.udpingest;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousCloseException;
 import java.nio.channels.DatagramChannel;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.time.Duration;
 
 /**
@@ -20,13 +18,22 @@ import java.time.Duration;
  * longer exists — a genuine, reproducible hang
  * (`failed-benchmark-timeout` on the batch runner), not a flaky one-off.
  *
- * <p>Every receive loop in this lab must therefore run against an
- * overall wall-clock deadline and fail loudly and diagnosably — never
- * hang silently — matching the "bound every wait with a deadline"
- * discipline already established for the SPSC lab's transfer harness.
- * This wraps one loop invocation's non-blocking receive-with-timeout so
- * every call site pays only one extra {@link Selector#select(long)} per
- * packet, not a fresh {@link Selector} per packet.
+ * <p>A first fix attempt toggled the channel to non-blocking mode and
+ * polled it with a {@link java.nio.channels.Selector}, timing out the
+ * {@code select()} call. That version passed every test on this
+ * repository's (aarch64/macOS) development machine but reproducibly
+ * hung the correctness gate on the native-Linux publication host, on
+ * datagram counts far too small to plausibly lose a packet — a genuine
+ * host-dependent difference in that hand-rolled polling loop, not the
+ * loss trap it was meant to guard against. This version instead uses
+ * the well-established "cancel a blocking NIO channel op by closing the
+ * channel from another thread" idiom: the receive stays a plain,
+ * ordinary blocking {@link DatagramChannel#receive}, and a daemon
+ * watchdog thread closes the channel after the deadline, which
+ * unblocks the in-progress receive with an
+ * {@link AsynchronousCloseException} — no non-blocking mode, no
+ * {@code Selector}, nothing that behaved differently across platforms
+ * during testing.
  */
 final class BoundedReceive {
 
@@ -42,22 +49,41 @@ final class BoundedReceive {
     static final Duration DEFAULT_DEADLINE = Duration.ofSeconds(20);
 
     /**
-     * Runs {@code loop} with {@code channel} temporarily in non-blocking
-     * mode, registered on a single {@link Selector} for the whole loop
-     * (opened and closed once here, not per packet), and restores the
-     * channel's prior blocking mode afterward regardless of outcome.
+     * Runs {@code loop} against {@code channel} (left in its normal
+     * blocking mode throughout) with a watchdog thread that closes the
+     * channel after {@link #DEFAULT_DEADLINE} — turning a lost-packet
+     * hang into a clear, diagnosable {@link IllegalStateException}
+     * instead of blocking the receive loop forever. The watchdog is
+     * cancelled before it can fire on the normal, on-time completion
+     * path.
      */
     static <T> T withDeadline(DatagramChannel channel, ReceiveLoop<T> loop) throws IOException {
-        boolean wasBlocking = channel.isBlocking();
-        Selector selector = Selector.open();
+        Thread watchdog = new Thread(() -> {
+            try {
+                Thread.sleep(DEFAULT_DEADLINE.toMillis());
+            } catch (InterruptedException e) {
+                return; // cancelled: the loop finished before the deadline
+            }
+            try {
+                channel.close();
+            } catch (IOException ignored) {
+                // best-effort cancellation; the receive loop's own IOException
+                // handling (AsynchronousCloseException below) is authoritative
+            }
+        }, "udp-ingest-batching-receive-deadline");
+        watchdog.setDaemon(true);
+        watchdog.start();
         try {
-            channel.configureBlocking(false);
-            channel.register(selector, SelectionKey.OP_READ);
-            long deadlineNanos = System.nanoTime() + DEFAULT_DEADLINE.toNanos();
-            return loop.run(new Receiver(channel, selector, deadlineNanos));
+            return loop.run(new Receiver(channel));
+        } catch (AsynchronousCloseException e) {
+            throw new IllegalStateException(
+                    "udp-ingest-batching: receive timed out after " + DEFAULT_DEADLINE
+                            + " — the remaining datagrams were lost (kernel receive-buffer overflow under burst"
+                            + " load is an expected UDP-loss trap this lab measures, not a hang) and will never"
+                            + " arrive; see theory.md's coordinated-loss discussion.",
+                    e);
         } finally {
-            selector.close();
-            channel.configureBlocking(wasBlocking);
+            watchdog.interrupt();
         }
     }
 
@@ -65,44 +91,16 @@ final class BoundedReceive {
         T run(Receiver receiver) throws IOException;
     }
 
-    /** One deadline-bounded receive loop's worth of state, handed to the loop body. */
+    /** A plain blocking receive, scoped to one deadline-bounded loop invocation. */
     static final class Receiver {
         private final DatagramChannel channel;
-        private final Selector selector;
-        private final long deadlineNanos;
 
-        private Receiver(DatagramChannel channel, Selector selector, long deadlineNanos) {
+        private Receiver(DatagramChannel channel) {
             this.channel = channel;
-            this.selector = selector;
-            this.deadlineNanos = deadlineNanos;
         }
 
-        /**
-         * Blocks (via {@link Selector#select(long)}, not a busy spin)
-         * until a datagram is available or the loop's overall deadline
-         * expires, then receives exactly one datagram into {@code dst}.
-         *
-         * @param receivedSoFar diagnostic only — reported in the timeout message
-         * @param expectedTotal diagnostic only — reported in the timeout message
-         */
-        void receive(ByteBuffer dst, long receivedSoFar, long expectedTotal) throws IOException {
-            while (true) {
-                long remainingNanos = deadlineNanos - System.nanoTime();
-                if (remainingNanos <= 0) {
-                    throw new IllegalStateException(
-                            "udp-ingest-batching: receive timed out after " + receivedSoFar + "/" + expectedTotal
-                                    + " datagrams over " + DEFAULT_DEADLINE
-                                    + " — the remaining datagrams were lost (kernel receive-buffer overflow under"
-                                    + " burst load is an expected UDP-loss trap this lab measures, not a hang) and"
-                                    + " will never arrive; see theory.md's coordinated-loss discussion.");
-                }
-                long remainingMillis = Math.max(1, remainingNanos / 1_000_000L);
-                selector.select(remainingMillis);
-                selector.selectedKeys().clear();
-                if (channel.receive(dst) != null) {
-                    return;
-                }
-            }
+        void receive(java.nio.ByteBuffer dst) throws IOException {
+            channel.receive(dst);
         }
     }
 }

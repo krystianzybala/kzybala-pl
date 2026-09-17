@@ -97,12 +97,12 @@ public final class ZeroCopyHandoffPipeline implements AutoCloseable {
                     // violate the bounded-lifetime contract. Drain the socket into
                     // a scratch buffer instead and count an explicit drop.
                     discardBuf.clear();
-                    receiver.receive(discardBuf, i, messageCount);
+                    receiver.receive(discardBuf);
                     applicationDropped.incrementAndGet();
                     continue;
                 }
                 slab[idx].clear();
-                receiver.receive(slab[idx], i, messageCount);
+                receiver.receive(slab[idx]);
                 inFlight[idx] = true;
                 try {
                     readyIndices.put(idx);
