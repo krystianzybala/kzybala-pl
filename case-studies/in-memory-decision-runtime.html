@@ -55,7 +55,7 @@
   <h1>In-memory decision runtime</h1>
   <p class="lead">A decision workload was database-centric, underused available CPU and took minutes to process.</p>
 </section>
-<section class="section"><div class="grid three"><div class="card"><div class="metric">~90% lower</div><div class="metric-label">Cost</div></div><div class="card"><div class="metric">minutes → 1–2s</div><div class="metric-label">Latency</div></div><div class="card"><div class="metric">underused → saturated</div><div class="metric-label">CPU</div></div></div></section>
+<section class="section"><div class="grid two"><div class="card"><div class="metric">~90% lower</div><div class="metric-label">Cost</div></div><div class="card"><div class="metric">minutes → 1–2s</div><div class="metric-label">Processing time</div></div></div></section>
 <article class="section prose">
 <h2>Context</h2>
 <p>A decision-serving system used PostgreSQL as both the system of record and the compute engine: scoring logic ran as SQL, and the application tier mainly shuttled requests to and from the database.</p>
